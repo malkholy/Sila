@@ -1,0 +1,23 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-20T19:40:00Z"},
+  "title": "Sila App Mockups",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Home.dc.html": {"x": 0, "y": 0, "w": 1440, "h": 900, "title": "Home — everything in one list", "expand": "fill", "is_interactive": true},
+    "Main.dc.html": {"x": 0, "y": 1020, "w": 1440, "h": 900, "title": "Chats — one-to-one", "expand": "fill", "is_interactive": true},
+    "Groups.dc.html": {"x": 1520, "y": 1020, "w": 1440, "h": 900, "title": "Groups", "expand": "fill", "is_interactive": true},
+    "Channels.dc.html": {"x": 3040, "y": 1020, "w": 1440, "h": 900, "title": "Channels — ticket system", "expand": "fill", "is_interactive": true},
+    "NewTicket.dc.html": {"x": 3040, "y": 2040, "w": 640, "h": 780, "title": "Dialog — New ticket"},
+    "Forward.dc.html": {"x": 3760, "y": 2040, "w": 560, "h": 560, "title": "Dialog — Forward ticket"},
+    "Avatar.dc.html": {"x": 4400, "y": 2040, "w": 64, "h": 64, "title": "Component — Avatar"},
+    "MediaPanel.dc.html": {"x": 4544, "y": 2040, "w": 320, "h": 620, "title": "Component — Media, links and docs", "is_interactive": true},
+    "ChatMessage.dc.html": {"x": 4944, "y": 2040, "w": 560, "h": 220, "title": "Component — Chat message + options", "is_interactive": true}
+  },
+  "order": ["Home.dc.html", "Main.dc.html", "Groups.dc.html", "Channels.dc.html", "NewTicket.dc.html", "Forward.dc.html", "Avatar.dc.html", "MediaPanel.dc.html", "ChatMessage.dc.html"],
+  "notes": {
+    "flows": {"x": 0, "y": -300, "text": "Sila — Home, Chats, Groups, Channels", "kind": "title1", "maxW": 4480}
+  },
+  "designSystems": []
+}

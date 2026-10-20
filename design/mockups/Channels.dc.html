@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — Channels and tickets</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#c2410c}a:hover{color:#9a3412}
+button,input{font-family:inherit}
+</style>
+</helmet>
+<div style="position: relative; height: 100vh; min-height: 640px; display: flex; flex-wrap: wrap; overflow-y: auto; background: #f1f5f9; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <!-- Rail -->
+  <nav aria-label="Main" style="flex: 0 0 84px; background: #1a2332; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 0">
+    <div style="width: 44px; height: 44px; border-radius: 13px; background: #c2410c; color: #ffffff; font-weight: 800; font-size: 18px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px">S</div>
+    <a href="Home.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path><path d="M10 20v-6h4v6"></path></svg>
+      Home
+    </a>
+    <a href="Main.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg>
+      Chats
+    </a>
+    <a href="Groups.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0"></path><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"></path><path d="M18 14.5a6.5 6.5 0 0 1 3.5 5.5"></path></svg>
+      Groups
+    </a>
+    <a href="Channels.dc.html" aria-current="page" style="width: 68px; min-height: 60px; border-radius: 12px; background: #c2410c; color: #ffffff; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700; position: relative">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+      Channels
+      <span style="position: absolute; top: 6px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ffffff; color: #c2410c; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{totalUnread}}</span>
+    </a>
+    <div style="flex: 1"></div>
+    <dc-import name="Avatar" p="{{me}}" size="40" hint-size="40px,40px"></dc-import>
+  </nav>
+
+  <div style="flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; min-height: 0">
+
+    <!-- TOP FILTER PANEL -->
+    <div style="flex-shrink: 0; padding: 12px 20px; background: #ffffff; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 14px">
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 11px; font-weight: 700; color: #475569">View</span>
+        <div role="tablist" aria-label="Board view" style="display: inline-flex">
+          <sc-for list="{{views}}" as="v" hint-placeholder-count="4">
+            <button role="tab" aria-selected="{{v.selected}}" onClick="{{v.pick}}" style="height: 36px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: 700; border: 1px solid {{v.border}}; margin-left: {{v.ml}}; background: {{v.bg}}; color: {{v.fg}}; border-radius: {{v.radius}}; position: relative; z-index: {{v.z}}">
+              <sc-if value="{{v.isConv}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg></sc-if>
+              <sc-if value="{{v.isStatus}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 7 2 2 4-4M3 17l2 2 4-4M13 7h8M13 17h8"></path></svg></sc-if>
+              <sc-if value="{{v.isChannel}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg></sc-if>
+              <sc-if value="{{v.isCreator}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg></sc-if>
+              {{v.label}}
+            </button>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="position: relative; display: flex; flex-direction: column; gap: 4px">
+        <span style="font-size: 11px; font-weight: 700; color: #475569">Status</span>
+        <button onClick="{{toggleStatus}}" aria-expanded="{{statusExpanded}}" style="height: 36px; min-width: 170px; padding: 0 12px; border-radius: 8px; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer">
+          {{statusText}}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>
+        </button>
+        <sc-if value="{{statusOpen}}" hint-placeholder-val="{{false}}">
+          <div style="position: absolute; top: 62px; left: 0; z-index: 50; width: 240px; padding: 8px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 8px 28px rgba(15,23,42,.14); display: flex; flex-direction: column; gap: 2px">
+            <sc-for list="{{statusOptions}}" as="o" hint-placeholder-count="7">
+              <label style="display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 8px; border-radius: 8px; cursor: pointer; font-size: 13px">
+                <input type="checkbox" checked="{{o.on}}" onChange="{{o.toggle}}" style="width: 16px; height: 16px; accent-color: #c2410c">
+                <span style="flex: 1; display: flex; align-items: center; gap: 8px"><span style="width: 8px; height: 8px; border-radius: 4px; background: {{o.fg}}"></span>{{o.label}}</span>
+                <span style="font-size: 12px; color: #64748b">{{o.count}}</span>
+              </label>
+            </sc-for>
+            <div style="display: flex; gap: 6px; padding: 6px 4px 2px; border-top: 1px solid #e2e8f0; margin-top: 4px">
+              <button onClick="{{pickAll}}" style="flex: 1; height: 32px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; font-size: 12px; font-weight: 700; cursor: pointer; color: #0f172a">All</button>
+              <button onClick="{{pickNone}}" style="flex: 1; height: 32px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; font-size: 12px; font-weight: 700; cursor: pointer; color: #0f172a">Clear</button>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+      <button onClick="{{openOnly}}" title="New, In progress, Forwarded" style="height: 36px; padding: 0 12px; font-size: 12px; font-weight: 700; cursor: pointer; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; color: #0f172a">Open only</button>
+
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <label for="f-from" style="font-size: 11px; font-weight: 700; color: #475569">Created from</label>
+        <input id="f-from" type="date" value="{{dateFrom}}" onChange="{{onFrom}}" style="height: 36px; padding: 0 8px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 12px; color: #0f172a">
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px">
+        <label for="f-to" style="font-size: 11px; font-weight: 700; color: #475569">to</label>
+        <input id="f-to" type="date" value="{{dateTo}}" onChange="{{onTo}}" style="height: 36px; padding: 0 8px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 12px; color: #0f172a">
+      </div>
+      <div style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px">
+        <label for="f-q" style="font-size: 11px; font-weight: 700; color: #475569">Search</label>
+        <input id="f-q" value="{{q}}" onChange="{{onQ}}" placeholder="Ticket #, subject or person" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; color: #0f172a">
+      </div>
+    </div>
+
+    <!-- CONVERSATION VIEW -->
+    <sc-if value="{{isConv}}" hint-placeholder-val="{{true}}">
+      <div style="flex: 1; min-height: 0; display: flex; flex-wrap: wrap; overflow-y: auto">
+
+        <section aria-label="Channels" style="flex: 0 1 220px; max-width: 100%; min-width: 0; background: #f8fafc; border-right: 1px solid #e2e8f0; overflow-y: auto; padding: 14px 8px; display: flex; flex-direction: column; gap: 14px">
+          <sc-for list="{{cats}}" as="cat" hint-placeholder-count="3">
+            <div style="display: flex; flex-direction: column; gap: 2px">
+              <h2 style="margin: 0; padding: 4px 10px; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #475569">{{cat.name}}</h2>
+              <sc-for list="{{cat.channels}}" as="c" hint-placeholder-count="2">
+                <button onClick="{{c.pick}}" style="display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 10px; border-radius: 10px; border: none; background: {{c.bg}}; color: {{c.fg}}; font-weight: {{c.weight}}; font-size: 14px; text-align: left; cursor: pointer">
+                  <span aria-hidden="true" style="color: #64748b; font-weight: 700">#</span>
+                  <span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{c.name}}</span>
+                  <sc-if value="{{c.hasUnread}}"><span style="min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{c.unread}}</span></sc-if>
+                </button>
+              </sc-for>
+            </div>
+          </sc-for>
+        </section>
+
+        <section aria-label="Tickets" style="flex: 1 1 290px; max-width: 100%; min-width: 0; background: #ffffff; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; min-height: 0">
+          <div style="padding: 14px 16px 10px; display: flex; align-items: center; gap: 10px">
+            <div style="flex: 1; min-width: 0">
+              <h2 style="margin: 0; font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"># {{chan.name}}</h2>
+              <div style="font-size: 12px; color: #64748b">{{convCount}} tickets match the filters</div>
+            </div>
+            <a href="NewTicket.dc.html" style="height: 40px; padding: 0 12px; border-radius: 10px; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; text-decoration: none; flex-shrink: 0">+ New</a>
+          </div>
+          <div style="flex: 1; overflow-y: auto; padding: 0 8px 12px; display: flex; flex-direction: column; gap: 4px">
+            <sc-if value="{{noConvTickets}}" hint-placeholder-val="{{false}}">
+              <div style="margin: 24px 12px; padding: 20px; border-radius: 12px; border: 1px dashed #cbd5e1; color: #64748b; font-size: 13px; text-align: center">No tickets match the filters.</div>
+            </sc-if>
+            <sc-for list="{{convTickets}}" as="t" hint-placeholder-count="4">
+              <button onClick="{{t.pick}}" style="display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid {{t.border}}; background: {{t.bg}}; text-align: left; cursor: pointer; color: #0f172a">
+                <span style="display: flex; align-items: center; gap: 8px; width: 100%">
+                  <span style="font-size: 12px; font-weight: 700; color: #475569">#{{t.id}}</span>
+                  <span style="padding: 1px 8px; border-radius: 999px; background: {{t.sBg}}; color: {{t.sFg}}; font-size: 11px; font-weight: 700">{{t.sLabel}}</span>
+                  <span style="flex: 1"></span>
+                  <span style="font-size: 12px; color: #64748b">{{t.time}}</span>
+                </span>
+                <span style="font-weight: 700; font-size: 14px">{{t.subject}}</span>
+                <span style="display: flex; align-items: center; gap: 8px; width: 100%">
+                  <span style="flex: 1; min-width: 0; font-size: 13px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{t.preview}}</span>
+                  <sc-if value="{{t.hasUnread}}"><span style="min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{t.unread}}</span></sc-if>
+                </span>
+              </button>
+            </sc-for>
+          </div>
+        </section>
+
+        <main style="flex: 999 1 420px; min-width: 0; display: flex; flex-direction: column; background: #f8fafc; min-height: 0">
+          <sc-if value="{{m.has}}" hint-placeholder-val="{{true}}">
+            <header style="flex-shrink: 0; padding: 14px 24px; background: #ffffff; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px">
+              <div style="flex: 1 1 240px; min-width: 0">
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+                  <span style="font-size: 13px; font-weight: 700; color: #475569">#{{m.cur.id}}</span>
+                  <span style="padding: 2px 10px; border-radius: 999px; background: {{m.cur.sBg}}; color: {{m.cur.sFg}}; font-size: 12px; font-weight: 700">{{m.cur.sLabel}}</span>
+                </div>
+                <h2 style="margin: 2px 0 0; font-size: 17px; font-weight: 800">{{m.cur.subject}}</h2>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                <sc-for list="{{m.actions}}" as="a" hint-placeholder-count="2">
+                  <sc-if value="{{a.primary}}" hint-placeholder-val="{{true}}">
+                    <button onClick="{{a.run}}" style="height: 40px; padding: 0 16px; border-radius: 10px; border: none; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; cursor: pointer">{{a.label}}</button>
+                  </sc-if>
+                  <sc-if value="{{a.secondary}}" hint-placeholder-val="{{false}}">
+                    <button onClick="{{a.run}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; cursor: pointer">{{a.label}}</button>
+                  </sc-if>
+                </sc-for>
+                <sc-if value="{{m.canForward}}" hint-placeholder-val="{{false}}">
+                  <a href="Forward.dc.html" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; display: flex; align-items: center; text-decoration: none">Forward</a>
+                </sc-if>
+              </div>
+            </header>
+            <sc-if value="{{m.isPendingForward}}" hint-placeholder-val="{{false}}">
+              <div style="flex-shrink: 0; margin: 16px 24px 0; padding: 14px 16px; border-radius: 12px; background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12; font-size: 13px"><strong>Forwarded from # {{m.cur.fromChannel}}</strong> by {{m.cur.forwardedBy}}. Accept to move the ticket and its history into this channel, or reject to send it back.</div>
+            </sc-if>
+            <sc-if value="{{m.isForwardedAway}}" hint-placeholder-val="{{false}}">
+              <div style="flex-shrink: 0; margin: 16px 24px 0; padding: 14px 16px; border-radius: 12px; background: #f5f3ff; border: 1px solid #ddd6fe; color: #4c1d95; font-size: 13px"><strong>Waiting for # {{m.cur.toChannel}}</strong> to accept this ticket. You can cancel the forward until they do.</div>
+            </sc-if>
+            <div style="flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 12px">
+              <sc-for list="{{m.msgs}}" as="x" hint-placeholder-count="4">
+                <dc-import name="ChatMessage" m="{{x}}" hint-size="100%,64px"></dc-import>
+              </sc-for>
+            </div>
+            <sc-if value="{{m.hasBar}}" hint-placeholder-val="{{false}}">
+              <div style="flex-shrink: 0; padding: 8px 12px 8px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px">
+                <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 4px 10px; border-inline-start: 3px solid #c2410c">
+                  <span style="font-size: 12px; font-weight: 800; color: #9a3412">{{m.barTitle}}</span>
+                  <span style="font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{m.barText}}</span>
+                </span>
+                <button onClick="{{m.cancelBar}}" aria-label="{{m.cancelLabel}}" style="width: 44px; height: 44px; border-radius: 22px; border: none; background: transparent; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+                </button>
+              </div>
+            </sc-if>
+            <sc-if value="{{m.adminOn}}" hint-placeholder-val="{{false}}">
+              <div role="status" style="flex-shrink: 0; padding: 8px 24px; background: #fffbeb; border-top: 1px solid #fde68a; color: #92400e; font-size: 12px; font-weight: 700">Only ticket admins will see this message. It won't start the ticket.</div>
+            </sc-if>
+            <sc-if value="{{m.canChat}}" hint-placeholder-val="{{true}}">
+              <form onSubmit="{{m.send}}" style="flex-shrink: 0; padding: 14px 24px 18px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px">
+                <sc-if value="{{m.isAdmin}}" hint-placeholder-val="{{true}}">
+                  <button type="button" onClick="{{m.toggleAdmin}}" aria-pressed="{{m.adminPressed}}" style="height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid {{m.adminBtnBorder}}; background: {{m.adminBtnBg}}; color: {{m.adminBtnFg}}; font-weight: 700; font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+                    Admins only
+                  </button>
+                </sc-if>
+                <label for="t-composer" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Reply to ticket</label>
+                <input id="t-composer" value="{{m.draft}}" onChange="{{m.onDraft}}" placeholder="{{m.composerHint}}" autocomplete="off" style="flex: 1; min-width: 0; height: 44px; padding: 0 16px; border-radius: 12px; border: 1.5px solid {{m.inputBorder}}; background: {{m.inputBg}}; font-size: 14px; color: #0f172a; outline-color: #c2410c">
+                <button type="submit" aria-label="Send" style="width: 44px; height: 44px; border-radius: 12px; border: none; background: #c2410c; color: #ffffff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12 20 4l-6 16-3-7z"></path></svg>
+                </button>
+              </form>
+            </sc-if>
+            <sc-if value="{{m.cannotChat}}" hint-placeholder-val="{{false}}">
+              <div style="flex-shrink: 0; padding: 16px 24px; background: #ffffff; border-top: 1px solid #e2e8f0; color: #475569; font-size: 13px">{{m.lockedText}}</div>
+            </sc-if>
+          </sc-if>
+          <sc-if value="{{m.none}}" hint-placeholder-val="{{false}}">
+            <div style="flex: 1; display: flex; align-items: center; justify-content: center; color: #64748b; padding: 24px; text-align: center">Select a ticket to see its conversation.</div>
+          </sc-if>
+        </main>
+
+        <aside aria-label="Ticket details" style="flex: 1 1 250px; max-width: 100%; min-width: 0; background: #ffffff; border-left: 1px solid #e2e8f0; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 16px">
+          <sc-if value="{{m.has}}" hint-placeholder-val="{{true}}">
+            <h3 style="margin: 0; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #475569">Details</h3>
+            <dl style="margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; font-size: 13px">
+              <div><dt style="color: #64748b; font-size: 12px">Channel</dt><dd style="margin: 0; font-weight: 600"># {{m.cur.channelName}}</dd></div>
+              <div><dt style="color: #64748b; font-size: 12px">Status</dt><dd style="margin: 0; font-weight: 600">{{m.cur.sLabel}}</dd></div>
+              <div><dt style="color: #64748b; font-size: 12px">Created by</dt><dd style="margin: 0"><button onClick="{{m.openCreator}}" style="padding: 0; border: none; background: none; color: #c2410c; font-weight: 700; font-size: 13px; text-decoration: underline; cursor: pointer">{{m.cur.creatorName}}</button><span style="display: block; font-size: 12px; color: #64748b">{{m.cur.creatorTitle}}</span></dd></div>
+              <div><dt style="color: #64748b; font-size: 12px">Created</dt><dd style="margin: 0; font-weight: 600">{{m.cur.created}}</dd></div>
+              <div><dt style="color: #64748b; font-size: 12px">Started by</dt><dd style="margin: 0; font-weight: 600">{{m.cur.startedBy}}</dd></div>
+              <div><dt style="color: #64748b; font-size: 12px">Last update</dt><dd style="margin: 0; font-weight: 600">{{m.cur.time}}</dd></div>
+            </dl>
+            <div style="height: 1px; background: #e2e8f0"></div>
+            <dc-import name="MediaPanel" set="t{{m.cur.id}}" hint-size="100%,130px"></dc-import>
+            <div style="height: 1px; background: #e2e8f0"></div>
+            <h3 style="margin: 0; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #475569">Members · {{memberCount}}</h3>
+            <sc-for list="{{members}}" as="p" hint-placeholder-count="5">
+              <div style="display: flex; align-items: center; gap: 10px; min-height: 40px">
+                <dc-import name="Avatar" p="{{p.person}}" size="34" hint-size="34px,34px"></dc-import>
+                <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+                  <span style="font-weight: 600; font-size: 13px">{{p.name}}</span>
+                  <span style="font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{p.title}}</span>
+                </span>
+                <span style="padding: 2px 8px; border-radius: 999px; background: {{p.bg}}; color: {{p.fg}}; font-size: 11px; font-weight: 700">{{p.role}}</span>
+              </div>
+            </sc-for>
+          </sc-if>
+        </aside>
+      </div>
+    </sc-if>
+
+    <!-- GROUPED (BOARD) VIEWS -->
+    <sc-if value="{{isBoard}}" hint-placeholder-val="{{false}}">
+      <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px 28px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px">
+          <h1 style="margin: 0; font-size: 20px; font-weight: 800">{{boardTitle}}</h1>
+          <span style="font-size: 13px; color: #64748b; font-weight: 600">{{groupCount}} groups · {{ticketCount}} tickets · {{boardUnread}} unread</span>
+          <span style="flex: 1"></span>
+          <span style="font-size: 12px; font-weight: 700; color: #475569">Sort by</span>
+          <div role="group" aria-label="Sort by" style="display: inline-flex">
+            <sc-for list="{{sorts}}" as="s" hint-placeholder-count="3">
+              <button onClick="{{s.pick}}" aria-pressed="{{s.pressed}}" style="height: 34px; padding: 0 10px; font-size: 12px; font-weight: 700; cursor: pointer; border: 1px solid {{s.border}}; margin-left: {{s.ml}}; background: {{s.bg}}; color: {{s.fg}}; border-radius: {{s.radius}}; position: relative; z-index: {{s.z}}">{{s.label}}</button>
+            </sc-for>
+          </div>
+          <button onClick="{{expandAll}}" style="height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; font-size: 12px; font-weight: 700; color: #0f172a; cursor: pointer">Expand all</button>
+          <button onClick="{{collapseAll}}" style="height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; font-size: 12px; font-weight: 700; color: #0f172a; cursor: pointer">Collapse all</button>
+          <a href="NewTicket.dc.html" style="height: 34px; padding: 0 12px; border-radius: 8px; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 12px; display: flex; align-items: center; text-decoration: none">+ New ticket</a>
+        </div>
+
+        <sc-if value="{{noGroups}}" hint-placeholder-val="{{false}}">
+          <div style="padding: 28px; border-radius: 12px; border: 1px dashed #cbd5e1; color: #64748b; text-align: center; background: #ffffff">No tickets match the filters.</div>
+        </sc-if>
+
+        <sc-for list="{{groups}}" as="g" hint-placeholder-count="4">
+          <section style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px">
+              <button onClick="{{g.toggle}}" aria-expanded="{{g.expandedText}}" aria-label="{{g.toggleLabel}}" style="width: 36px; height: 36px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+                <sc-if value="{{g.expanded}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg></sc-if>
+                <sc-if value="{{g.collapsed}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg></sc-if>
+              </button>
+              <sc-if value="{{g.isStatus}}">
+                <span style="width: 12px; height: 12px; border-radius: 6px; background: {{g.fg}}; flex-shrink: 0"></span>
+              </sc-if>
+              <sc-if value="{{g.isChannel}}">
+                <span style="width: 34px; height: 34px; border-radius: 10px; background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0">#</span>
+              </sc-if>
+              <sc-if value="{{g.isCreator}}">
+                <dc-import name="Avatar" p="{{g.person}}" size="40" hint-size="40px,40px"></dc-import>
+              </sc-if>
+              <div style="display: flex; flex-direction: column; min-width: 0">
+                <sc-if value="{{g.isCreator}}">
+                  <button onClick="{{g.openPerson}}" style="padding: 0; border: none; background: none; text-align: left; font-size: 15px; font-weight: 800; color: #0f172a; text-decoration: underline; text-decoration-color: #cbd5e1; cursor: pointer">{{g.label}}</button>
+                </sc-if>
+                <sc-if value="{{g.notCreator}}">
+                  <span style="font-size: 15px; font-weight: 800">{{g.label}}</span>
+                </sc-if>
+                <span style="font-size: 12px; color: #64748b">{{g.sub}}</span>
+              </div>
+              <div style="display: flex; gap: 4px; flex-wrap: wrap">
+                <sc-for list="{{g.mix}}" as="x" hint-placeholder-count="2">
+                  <span style="padding: 2px 8px; border-radius: 999px; background: {{x.bg}}; color: {{x.fg}}; font-size: 11px; font-weight: 700">{{x.label}} {{x.count}}</span>
+                </sc-for>
+              </div>
+              <span style="flex: 1"></span>
+              <dl style="margin: 0; display: flex; gap: 18px; text-align: right">
+                <div><dt style="font-size: 11px; color: #64748b; font-weight: 600">Tickets</dt><dd style="margin: 0; font-weight: 800; font-family: 'JetBrains Mono', monospace">{{g.count}}</dd></div>
+                <div><dt style="font-size: 11px; color: #64748b; font-weight: 600">Open</dt><dd style="margin: 0; font-weight: 800; font-family: 'JetBrains Mono', monospace">{{g.open}}</dd></div>
+                <div><dt style="font-size: 11px; color: #64748b; font-weight: 600">Unread</dt><dd style="margin: 0; font-weight: 800; font-family: 'JetBrains Mono', monospace; color: {{g.unreadColor}}">{{g.unread}}</dd></div>
+                <div><dt style="font-size: 11px; color: #64748b; font-weight: 600">Last update</dt><dd style="margin: 0; font-weight: 700">{{g.last}}</dd></div>
+              </dl>
+            </div>
+            <sc-if value="{{g.expanded}}">
+              <div style="overflow-x: auto; border-top: 1px solid #e2e8f0">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px">
+                  <thead>
+                    <tr style="background: #f8fafc">
+                      <th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569; white-space: nowrap">Ticket</th>
+                      <th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569">Subject</th>
+                      <sc-if value="{{showChannel}}"><th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569">Channel</th></sc-if>
+                      <sc-if value="{{showStatus}}"><th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569">Status</th></sc-if>
+                      <sc-if value="{{showCreator}}"><th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569; white-space: nowrap">Created by</th></sc-if>
+                      <th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569; white-space: nowrap">Last update</th>
+                      <th scope="col" style="padding: 8px 12px; text-align: right; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569">Unread</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <sc-for list="{{g.rows}}" as="r" hint-placeholder-count="3">
+                      <tr style="border-top: 1px solid #e2e8f0">
+                        <td style="padding: 8px 12px; white-space: nowrap"><button onClick="{{r.open}}" style="padding: 0; border: none; background: none; color: #c2410c; font-weight: 800; text-decoration: underline; font-family: 'JetBrains Mono', monospace; font-size: 13px; cursor: pointer">{{r.id}}</button></td>
+                        <td style="padding: 8px 12px; font-weight: 600; min-width: 220px">{{r.subject}}</td>
+                        <sc-if value="{{showChannel}}"><td style="padding: 8px 12px; white-space: nowrap; color: #334155"># {{r.channelName}}</td></sc-if>
+                        <sc-if value="{{showStatus}}"><td style="padding: 8px 12px"><span style="padding: 2px 8px; border-radius: 999px; background: {{r.sBg}}; color: {{r.sFg}}; font-size: 11px; font-weight: 700; white-space: nowrap">{{r.sLabel}}</span></td></sc-if>
+                        <sc-if value="{{showCreator}}"><td style="padding: 8px 12px; white-space: nowrap"><button onClick="{{r.openCreator}}" style="padding: 0; border: none; background: none; color: #0f172a; font-size: 13px; text-decoration: underline; text-decoration-color: #cbd5e1; cursor: pointer">{{r.creatorName}}</button></td></sc-if>
+                        <td style="padding: 8px 12px; white-space: nowrap; color: #475569">{{r.time}}</td>
+                        <td style="padding: 8px 12px; text-align: right; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: {{r.unreadColor}}">{{r.unread}}</td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+            </sc-if>
+          </section>
+        </sc-for>
+      </div>
+    </sc-if>
+  </div>
+
+  <!-- PERSON DRAWER -->
+  <sc-if value="{{personOpen}}" hint-placeholder-val="{{false}}">
+    <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(15,23,42,.35); z-index: 90"></div>
+    <aside role="dialog" aria-label="Tickets created by {{person.name}}" style="position: absolute; top: 0; right: 0; bottom: 0; width: min(680px, 100%); z-index: 100; background: #ffffff; box-shadow: -12px 0 32px rgba(15,23,42,.18); display: flex; flex-direction: column">
+      <header style="padding: 18px 22px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 12px">
+        <dc-import name="Avatar" p="{{person.p}}" size="56" hint-size="56px,56px"></dc-import>
+        <div style="flex: 1; min-width: 0">
+          <div style="font-size: 12px; color: #64748b; font-weight: 600">Created by · all tickets</div>
+          <h2 style="margin: 0; font-size: 19px; font-weight: 800">{{person.name}}</h2>
+          <div style="font-size: 13px; color: #475569">{{person.title}}</div>
+        </div>
+        <button onClick="{{closePerson}}" aria-label="Close" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </header>
+      <div style="flex: 1; overflow-y: auto; padding: 18px 22px; display: flex; flex-direction: column; gap: 16px">
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+          <sc-for list="{{person.cards}}" as="k" hint-placeholder-count="4">
+            <div style="padding: 12px 14px; border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0">
+              <div style="font-size: 12px; color: #64748b; font-weight: 600">{{k.label}}</div>
+              <div style="font-size: 22px; font-weight: 800; font-family: 'JetBrains Mono', monospace">{{k.value}}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap">
+          <sc-for list="{{person.chips}}" as="c" hint-placeholder-count="5">
+            <button onClick="{{c.pick}}" aria-pressed="{{c.pressed}}" style="height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid {{c.border}}; background: {{c.bg}}; color: {{c.fg}}; font-weight: 700; font-size: 12px; cursor: pointer">{{c.label}} · {{c.count}}</button>
+          </sc-for>
+        </div>
+        <div style="overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 12px">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px">
+            <thead>
+              <tr style="background: #f8fafc">
+                <th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #475569">Ticket</th>
+                <th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #475569">Subject</th>
+                <th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #475569">Channel</th>
+                <th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #475569">Status</th>
+                <th scope="col" style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 800; text-transform: uppercase; color: #475569; white-space: nowrap">Last update</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{person.rows}}" as="r" hint-placeholder-count="3">
+                <tr style="border-top: 1px solid #e2e8f0">
+                  <td style="padding: 8px 12px"><button onClick="{{r.open}}" style="padding: 0; border: none; background: none; color: #c2410c; font-weight: 800; text-decoration: underline; font-family: 'JetBrains Mono', monospace; font-size: 13px; cursor: pointer">{{r.id}}</button></td>
+                  <td style="padding: 8px 12px; font-weight: 600">{{r.subject}}</td>
+                  <td style="padding: 8px 12px; white-space: nowrap; color: #334155"># {{r.channelName}}</td>
+                  <td style="padding: 8px 12px"><span style="padding: 2px 8px; border-radius: 999px; background: {{r.sBg}}; color: {{r.sFg}}; font-size: 11px; font-weight: 700; white-space: nowrap">{{r.sLabel}}</span></td>
+                  <td style="padding: 8px 12px; white-space: nowrap; color: #475569">{{r.time}}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+          <sc-if value="{{person.empty}}"><div style="padding: 18px; text-align: center; color: #64748b; font-size: 13px">No tickets in this status.</div></sc-if>
+        </div>
+      </div>
+    </aside>
+  </sc-if>
+
+  <!-- TICKET DRAWER -->
+  <sc-if value="{{d.has}}" hint-placeholder-val="{{false}}">
+    <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(15,23,42,.25); z-index: 110"></div>
+    <aside role="dialog" aria-label="Ticket {{d.cur.id}}" style="position: absolute; top: 0; right: 0; bottom: 0; width: min(600px, 100%); z-index: 120; background: #f8fafc; box-shadow: -12px 0 32px rgba(15,23,42,.22); display: flex; flex-direction: column">
+      <header style="flex-shrink: 0; padding: 16px 20px; background: #ffffff; border-bottom: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; align-items: flex-start; gap: 12px">
+          <div style="flex: 1; min-width: 0">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: #475569; font-weight: 600">
+              # {{d.cur.channelName}} · #{{d.cur.id}}
+              <span style="padding: 2px 10px; border-radius: 999px; background: {{d.cur.sBg}}; color: {{d.cur.sFg}}; font-size: 11px; font-weight: 700">{{d.cur.sLabel}}</span>
+            </div>
+            <h2 style="margin: 2px 0 0; font-size: 18px; font-weight: 800">{{d.cur.subject}}</h2>
+            <div style="font-size: 12px; color: #64748b">Created by {{d.cur.creatorName}}, {{d.cur.creatorTitle}} · {{d.cur.created}}</div>
+          </div>
+          <button onClick="{{closeTicket}}" aria-label="Close" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+          </button>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap">
+          <sc-for list="{{d.actions}}" as="a" hint-placeholder-count="2">
+            <sc-if value="{{a.primary}}" hint-placeholder-val="{{true}}">
+              <button onClick="{{a.run}}" style="height: 38px; padding: 0 14px; border-radius: 10px; border: none; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; cursor: pointer">{{a.label}}</button>
+            </sc-if>
+            <sc-if value="{{a.secondary}}" hint-placeholder-val="{{false}}">
+              <button onClick="{{a.run}}" style="height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; cursor: pointer">{{a.label}}</button>
+            </sc-if>
+          </sc-for>
+          <sc-if value="{{d.canForward}}">
+            <a href="Forward.dc.html" style="height: 38px; padding: 0 12px; border-radius: 10px; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; display: flex; align-items: center; text-decoration: none">Forward</a>
+          </sc-if>
+        </div>
+      </header>
+      <sc-if value="{{d.isPendingForward}}">
+        <div style="flex-shrink: 0; margin: 14px 20px 0; padding: 12px 14px; border-radius: 12px; background: #fff7ed; border: 1px solid #fed7aa; color: #7c2d12; font-size: 13px"><strong>Forwarded from # {{d.cur.fromChannel}}</strong> by {{d.cur.forwardedBy}}.</div>
+      </sc-if>
+      <sc-if value="{{d.isForwardedAway}}">
+        <div style="flex-shrink: 0; margin: 14px 20px 0; padding: 12px 14px; border-radius: 12px; background: #f5f3ff; border: 1px solid #ddd6fe; color: #4c1d95; font-size: 13px"><strong>Waiting for # {{d.cur.toChannel}}</strong> to accept this ticket.</div>
+      </sc-if>
+      <div style="flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px">
+        <sc-for list="{{d.msgs}}" as="x" hint-placeholder-count="3">
+          <dc-import name="ChatMessage" m="{{x}}" hint-size="100%,64px"></dc-import>
+        </sc-for>
+      </div>
+      <sc-if value="{{d.hasBar}}">
+        <div style="flex-shrink: 0; padding: 8px 10px 8px 20px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px">
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 4px 10px; border-inline-start: 3px solid #c2410c">
+            <span style="font-size: 12px; font-weight: 800; color: #9a3412">{{d.barTitle}}</span>
+            <span style="font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{d.barText}}</span>
+          </span>
+          <button onClick="{{d.cancelBar}}" aria-label="{{d.cancelLabel}}" style="width: 44px; height: 44px; border-radius: 22px; border: none; background: transparent; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+          </button>
+        </div>
+      </sc-if>
+      <sc-if value="{{d.adminOn}}">
+        <div role="status" style="flex-shrink: 0; padding: 8px 20px; background: #fffbeb; border-top: 1px solid #fde68a; color: #92400e; font-size: 12px; font-weight: 700">Only ticket admins will see this message.</div>
+      </sc-if>
+      <sc-if value="{{d.canChat}}">
+        <form onSubmit="{{d.send}}" style="flex-shrink: 0; padding: 12px 20px 16px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px">
+          <sc-if value="{{d.isAdmin}}">
+            <button type="button" onClick="{{d.toggleAdmin}}" aria-pressed="{{d.adminPressed}}" aria-label="Admins only" style="width: 44px; height: 44px; border-radius: 12px; border: 1.5px solid {{d.adminBtnBorder}}; background: {{d.adminBtnBg}}; color: {{d.adminBtnFg}}; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+            </button>
+          </sc-if>
+          <label for="d-composer" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Reply to ticket</label>
+          <input id="d-composer" value="{{d.draft}}" onChange="{{d.onDraft}}" placeholder="{{d.composerHint}}" autocomplete="off" style="flex: 1; min-width: 0; height: 44px; padding: 0 14px; border-radius: 12px; border: 1.5px solid {{d.inputBorder}}; background: {{d.inputBg}}; font-size: 14px; color: #0f172a; outline-color: #c2410c">
+          <button type="submit" aria-label="Send" style="width: 44px; height: 44px; border-radius: 12px; border: none; background: #c2410c; color: #ffffff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12 20 4l-6 16-3-7z"></path></svg>
+          </button>
+        </form>
+      </sc-if>
+      <sc-if value="{{d.cannotChat}}">
+        <div style="flex-shrink: 0; padding: 14px 20px; background: #ffffff; border-top: 1px solid #e2e8f0; color: #475569; font-size: 13px">{{d.lockedText}}</div>
+      </sc-if>
+    </aside>
+  </sc-if>
+
+  <!-- DELETE CONFIRM (in-app, not window.confirm) -->
+  <sc-if value="{{confirmOpen}}" hint-placeholder-val="{{false}}">
+    <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(15,23,42,.45); z-index: 200"></div>
+    <div role="alertdialog" aria-modal="true" aria-labelledby="del-title" aria-describedby="del-desc" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 210; width: min(400px, calc(100% - 32px)); box-sizing: border-box; padding: 22px; border-radius: 16px; background: #ffffff; box-shadow: 0 20px 48px rgba(15,23,42,.28); display: flex; flex-direction: column; gap: 10px">
+      <h2 id="del-title" style="margin: 0; font-size: 17px; font-weight: 800">Delete this message?</h2>
+      <p id="del-desc" style="margin: 0; font-size: 13px; color: #475569">Everyone in the ticket will see “This message was deleted”. This can't be undone.</p>
+      <blockquote style="margin: 4px 0 0; padding: 8px 12px; border-radius: 10px; background: #f8fafc; border-inline-start: 3px solid #cbd5e1; font-size: 13px; color: #334155">{{confirmText}}</blockquote>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px">
+        <button onClick="{{cancelDelete}}" style="height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 14px; cursor: pointer">Cancel</button>
+        <button onClick="{{confirmDelete}}" style="height: 44px; padding: 0 18px; border-radius: 12px; border: none; background: #b91c1c; color: #ffffff; font-weight: 700; font-size: 14px; cursor: pointer">Delete</button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{hasToast}}" hint-placeholder-val="{{false}}">
+    <div role="status" style="position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 300; padding: 10px 16px; border-radius: 12px; background: #0f172a; color: #ffffff; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(15,23,42,.3)">{{toast}}</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"viewAsAdmin":{"editor":"boolean","default":true},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const open = (who, name, text, at) => [{ sys: name + ' opened the ticket', at }, { from: who, t: text, at }];
+    const T = (id, ch, subject, state, time, seq, unread, creator, created, startedBy, msgs, extra) =>
+      ({ id, ch, subject, state, time, seq, unread, creator, created, startedBy, msgs, ...(extra || {}) });
+    this.state = {
+      view: 'conv', picked: [0, 1, 2, 3], statusOpen: false, q: '', dateFrom: '2026-10-01', dateTo: '2026-10-20',
+      sortBy: 'count', sortDir: 'desc', collapsed: {},
+      chan: 'cashpay', sel: '2507460', draft: '', adminOnly: false, drawerAdminOnly: false,
+      ui: { draft: { reply: null, edit: null }, drawerDraft: { reply: null, edit: null } }, confirm: null, toast: '',
+      personId: null, personChip: 'all', drawerId: null, drawerDraft: '',
+      tickets: [
+        T('2507460', 'cashpay', 'Supplier payment — Al Nour Trading', 1, '10:48', 120, 3, 'mona', 'Today 09:05', 'Omar Nabil',
+          open('mona', 'Mona Adel', 'Please pay Al Nour Trading, invoice 4471, due Thursday.', '09:05').concat([
+          { sys: 'Omar Nabil started the ticket', at: '09:20' },
+          { me: true, t: 'The invoice copy is in the attachments.', at: '10:02' },
+          { from: 'omar', t: 'Balance is fine. Waiting for approval.', at: '10:40', reply: { from: 'You', text: 'The invoice copy is in the attachments.' } },
+          { from: 'mona', t: 'Internal: the supplier has an open dispute — check their statement before paying.', at: '10:45', admin: true },
+          { from: 'mona', t: 'Approved — go ahead.', at: '10:48' }])),
+        T('2507465', 'pricing', 'New price list approval', 1, '10:36', 118, 1, 'mona', 'Today 08:30', 'Mona Adel',
+          open('mona', 'Mona Adel', 'The October price list is ready for approval.', '08:30')),
+        T('2507463', 'orders', 'Price exception for order 1203', 1, '10:30', 117, 2, 'yasmin', 'Today 10:00', 'Mona Adel',
+          open('yasmin', 'Yasmin Fathy', 'Customer asks for last month’s price on order 1203.', '10:00')),
+        T('2507461', 'cashrec', 'Cheque collection — Sinai Co.', 1, '10:12', 116, 2, 'karim', 'Today 08:40', 'Sara Mostafa',
+          open('karim', 'Karim Hassan', 'Three cheques are due this week.', '08:40')),
+        T('2507458', 'cashpay', 'Petty cash top-up, Alexandria branch', 0, '09:31', 114, 1, 'karim', 'Today 09:31', '—',
+          open('karim', 'Karim Hassan', 'The branch petty cash is running low. Requesting a top-up.', '09:31')),
+        T('2507464', 'support', 'Printer not working, Alexandria branch', 0, '09:20', 113, 0, 'yasmin', 'Today 09:20', '—',
+          open('yasmin', 'Yasmin Fathy', 'The invoice printer shows a paper jam error.', '09:20')),
+        T('2507459', 'treasury', 'Transfer between treasuries', 0, '09:10', 112, 1, 'omar', 'Today 09:10', '—',
+          open('omar', 'Omar Nabil', 'Move cash from the branch treasury to the main one.', '09:10')),
+        T('2507462', 'cashpay', 'Customer deposit — Delta Foods', 3, '08:55', 111, 0, 'sara', 'Today 08:10', '—',
+          open('sara', 'Sara Mostafa', 'Delta Foods paid a deposit that must be refunded, not received.', '08:10').concat([
+          { from: 'omar', t: 'Internal: confirm the refund amount with the bank first.', at: '08:50', admin: true },
+          { sys: 'Omar Nabil forwarded the ticket from # Cash Receive', at: '08:55' }]),
+          { fromChannel: 'Cash Receive', forwardedBy: 'Omar Nabil' }),
+        T('2507452', 'cashrec', 'Customer deposit — Delta Foods', 2, '08:55', 110, 0, 'sara', 'Today 08:10', '—',
+          open('sara', 'Sara Mostafa', 'Delta Foods paid a deposit that must be refunded, not received.', '08:10').concat([
+          { sys: 'Omar Nabil forwarded the ticket to # Cash Payable', at: '08:55' }]),
+          { toChannel: 'Cash Payable' }),
+        T('2507466', 'treasury', 'Cash count discrepancy', 5, 'Yesterday', 100, 0, 'sara', 'Yesterday 14:00', 'Omar Nabil',
+          open('sara', 'Sara Mostafa', 'The evening count is short by a small amount.', '14:00').concat([
+          { sys: 'Omar Nabil put the ticket on hold', at: '16:30' }])),
+        T('2507455', 'cashpay', 'Refund for returned order 1187', 5, 'Yesterday', 99, 0, 'yasmin', 'Yesterday 11:20', 'Omar Nabil',
+          open('yasmin', 'Yasmin Fathy', 'Customer returned order 1187. Please refund.', '11:20').concat([
+          { sys: 'Omar Nabil put the ticket on hold', at: '12:11' }])),
+        T('2507447', 'orders', 'Delivery delay — order 1190', 10, 'Mon', 90, 0, 'karim', 'Mon 09:00', 'Mona Adel',
+          open('karim', 'Karim Hassan', 'Order 1190 will arrive one day late.', '09:00').concat([
+          { sys: 'Mona Adel ended the ticket', at: '15:00' }])),
+        T('2507449', 'cashpay', 'Duplicate payment check', 10, 'Mon', 89, 0, 'sara', 'Mon 10:00', 'Omar Nabil',
+          open('sara', 'Sara Mostafa', 'Two payments to the same vendor on the same day — please check.', '10:00').concat([
+          { sys: 'Omar Nabil ended the ticket', at: '13:06' }])),
+        T('2507443', 'support', 'VPN access for new accountant', 50, 'Oct 8', 80, 0, 'sara', 'Oct 8 09:00', 'Karim Hassan',
+          open('sara', 'Sara Mostafa', 'Please give VPN access to our new accountant.', '09:00').concat([
+          { sys: 'Karim Hassan closed the ticket', at: '12:00' }])),
+        T('2507440', 'cashpay', 'Bank fees for September', 50, 'Oct 2', 79, 0, 'omar', 'Oct 1 09:00', 'Omar Nabil',
+          open('omar', 'Omar Nabil', 'Recording September bank fees.', '09:00').concat([
+          { sys: 'Omar Nabil closed the ticket', at: '16:00' }]))
+      ]
+    };
+  }
+  now() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  setUi(key, patch) {
+    this.setState({ ui: { ...this.state.ui, [key]: { ...(this.state.ui[key] || {}), ...patch } } });
+  }
+  editMessage(id, idx, fn) {
+    this.setState({ tickets: this.state.tickets.map(t => t.id !== id ? t : { ...t, msgs: t.msgs.map((m, i) => i === idx ? fn(m) : m) }) });
+  }
+  copy(text) {
+    try { navigator.clipboard.writeText(text); } catch (e) { /* clipboard blocked: still show the notice in the mockup */ }
+    this.flash('Message copied');
+  }
+  flash(text) {
+    clearTimeout(this.toastTimer);
+    this.setState({ toast: text });
+    this.toastTimer = setTimeout(() => this.setState({ toast: '' }), 1800);
+  }
+  componentWillUnmount() { clearTimeout(this.toastTimer); }
+  patchTicket(id, fn) {
+    const top = Math.max(...this.state.tickets.map(t => t.seq)) + 1;
+    this.setState({ tickets: this.state.tickets.map(t => t.id !== id ? t : { ...fn(t), seq: top, time: this.now() }) });
+  }
+  ticketView(t, draftKey) {
+    const P = this.P, S = this.S, CH = this.CH;
+    if (!t) return { has: false, none: true, actions: [], msgs: [] };
+    const s = t.state, id = t.id, at = this.now();
+    const go = (state, sys, extra) => () => this.patchTicket(id, x => ({ ...x, ...(extra || {}), state, msgs: x.msgs.concat([{ sys, at: this.now() }]) }));
+    const act = (label, primary, run) => ({ label, primary, secondary: !primary, run });
+    const actions = [];
+    if (s === 0) { actions.push(act('Start', true, go(1, 'You started the ticket', { startedBy: 'You' }))); actions.push(act('End', false, go(10, 'You ended the ticket'))); actions.push(act('Close', false, go(50, 'You closed the ticket'))); }
+    if (s === 1) { actions.push(act('Hold', false, go(5, 'You put the ticket on hold'))); actions.push(act('End ticket', true, go(10, 'You ended the ticket'))); }
+    if (s === 5) actions.push(act('Reopen', true, go(1, 'You reopened the ticket')));
+    if (s === 10) { actions.push(act('Reopen', false, go(1, 'You reopened the ticket'))); actions.push(act('Close ticket', true, go(50, 'You closed the ticket'))); }
+    if (s === 2) actions.push(act('Cancel forward', true, go(0, 'You cancelled the forward')));
+    if (s === 3) {
+      // like the SP's Accept Forward: the previous channel's admin-only notes are deleted
+      actions.push(act('Accept', true, () => this.patchTicket(id, x => ({ ...x, state: 0,
+        msgs: x.msgs.filter(m => !m.admin).concat([{ sys: 'You accepted the forwarded ticket — admin-only notes from the previous channel were removed', at: this.now() }]) }))));
+      actions.push(act('Reject', false, () => this.setState({
+        tickets: this.state.tickets.filter(x => x.id !== id),
+        sel: this.state.sel === id ? null : this.state.sel,
+        drawerId: this.state.drawerId === id ? null : this.state.drawerId })));
+    }
+    const canChat = s === 0 || s === 1;
+    const locked = { 2: 'Messages are paused until the forward is accepted or cancelled.', 3: 'Accept the forward to reply to this ticket.',
+      5: 'This ticket is on hold. Reopen it to send messages.', 10: 'This ticket has ended. Reopen it to send messages, or close it.', 50: 'This ticket is closed and read-only.' };
+    // Admin-only messages (TicketChatHistory.IsAdmin = 1): shown to ticket admins only.
+    const isAdmin = this.props.viewAsAdmin ?? true;
+    const adminKey = draftKey === 'draft' ? 'adminOnly' : 'drawerAdminOnly';
+    const adminOn = isAdmin && canChat && !!this.state[adminKey];
+    // Message options: Reply (ReplayMsgID), Copy (client), Edit / Delete own messages (Edit Chat / Delete Chat).
+    const ui = this.state.ui[draftKey] || {};
+    const senderOf = (m) => m.me ? 'You' : P[m.from].name;
+    const msgs = t.msgs.map((m, i) => ({ m, i })).filter(({ m }) => !m.admin || isAdmin).map(({ m, i }) => {
+      if (m.sys) return { kind: 'system', text: m.sys, time: m.at };
+      const p = m.me ? null : P[m.from];
+      return {
+        kind: m.me ? 'mine' : 'theirs', text: m.t, time: m.at, admin: !!m.admin, edited: !!m.edited, deleted: !!m.deleted,
+        reply: m.reply || null, showSender: !m.me, person: p, from: p ? p.name : 'You', jobTitle: p ? p.title : '', color: p ? p.color : '',
+        canReply: canChat, canEdit: canChat, canDelete: canChat,
+        onReply: () => this.setUi(draftKey, { reply: i, edit: null }),
+        onCopy: () => this.copy(m.t),
+        onEdit: () => this.setState({ [draftKey]: m.t, ui: { ...this.state.ui, [draftKey]: { reply: null, edit: i } } }),
+        onDelete: () => this.setState({ confirm: { id, idx: i } })
+      };
+    });
+    const replyMsg = ui.reply != null ? t.msgs[ui.reply] : null;
+    const editMsg = ui.edit != null ? t.msgs[ui.edit] : null;
+    const draft = this.state[draftKey];
+    return {
+      has: true, none: false, actions, msgs, canChat, cannotChat: !canChat, lockedText: locked[s] || '',
+      canForward: s === 0, isPendingForward: s === 3, isForwardedAway: s === 2,
+      hasBar: canChat && !!(replyMsg || editMsg),
+      barTitle: editMsg ? 'Editing message' : replyMsg ? 'Replying to ' + senderOf(replyMsg) : '',
+      barText: editMsg ? editMsg.t : replyMsg ? replyMsg.t : '',
+      cancelLabel: editMsg ? 'Cancel editing' : 'Cancel reply',
+      cancelBar: () => this.setState({ [draftKey]: editMsg ? '' : this.state[draftKey], ui: { ...this.state.ui, [draftKey]: { reply: null, edit: null } } }),
+      composerHint: editMsg ? 'Edit your message…' : adminOn ? 'Note for ticket admins only…' : s === 0 ? 'Reply — your first reply as an admin starts the ticket' : 'Reply to the ticket…',
+      isAdmin, adminOn, adminPressed: adminOn ? 'true' : 'false',
+      toggleAdmin: () => this.setState({ [adminKey]: !this.state[adminKey] }),
+      adminBtnBg: adminOn ? '#fef3c7' : '#ffffff', adminBtnFg: adminOn ? '#92400e' : '#475569', adminBtnBorder: adminOn ? '#d97706' : '#e2e8f0',
+      inputBorder: adminOn ? '#d97706' : '#e2e8f0', inputBg: adminOn ? '#fffbeb' : '#f8fafc',
+      draft,
+      openCreator: () => this.setState({ personId: t.creator, personChip: 'all' }),
+      cur: { ...t, sLabel: S[s].label, sBg: S[s].bg, sFg: S[s].fg, channelName: (CH.find(c => c.id === t.ch) || {}).name,
+        creatorName: P[t.creator].name, creatorTitle: P[t.creator].title, fromChannel: t.fromChannel || '', forwardedBy: t.forwardedBy || '', toChannel: t.toChannel || '' },
+      onDraft: (e) => this.setState({ [draftKey]: e.target.value }),
+      send: (e) => {
+        e.preventDefault();
+        const text = (this.state[draftKey] || '').trim();
+        if (!text || !canChat) return;
+        const now = this.now();
+        const reset = { [draftKey]: '', [adminKey]: false, ui: { ...this.state.ui, [draftKey]: { reply: null, edit: null } } };
+        if (editMsg) {
+          // Edit Chat: same message, new text, marked edited
+          const idx = ui.edit;
+          this.setState(reset);
+          this.editMessage(id, idx, x => ({ ...x, t: text, edited: true }));
+          return;
+        }
+        const admin = adminOn;
+        const reply = replyMsg ? { from: senderOf(replyMsg), text: replyMsg.t } : null;
+        // like the SP: an admin-only message never starts a New ticket; the toggle resets after each send
+        this.setState(reset);
+        this.patchTicket(id, x => {
+          const starts = x.state === 0 && !admin;
+          const msg = { me: true, t: text, at: now, admin: starts ? false : admin, reply };
+          return { ...x, state: starts ? 1 : x.state, startedBy: starts ? 'You' : x.startedBy,
+            msgs: x.msgs.concat(starts ? [{ sys: 'You started the ticket', at: now }, msg] : [msg]) };
+        });
+      }
+    };
+  }
+  renderVals() {
+    // photo = UserMaster.AttachmentID -> AttachmentHistory.FileURL; title = UserJobMaster.JobName · UserDepartmentMaster.DepartmentName
+    const P = this.P = {
+      mona: { name: 'Mona Adel', initials: 'MA', color: '#7c3aed', title: 'Sales Manager · Sales', photo: { bg: '#ede9fe', skin: '#e0ac69', hair: '#3b2417', shirt: '#7c3aed', long: true } },
+      omar: { name: 'Omar Nabil', initials: 'ON', color: '#1d4ed8', title: 'Treasury Supervisor · Finance', photo: { bg: '#dbeafe', skin: '#c68642', hair: '#1f1f1f', shirt: '#1d4ed8', long: false } },
+      karim: { name: 'Karim Hassan', initials: 'KH', color: '#0f766e', title: 'Warehouse Lead · Operations', photo: null },
+      yasmin: { name: 'Yasmin Fathy', initials: 'YF', color: '#be123c', title: 'Sales Representative · Sales', photo: { bg: '#ffe4e6', skin: '#f1c27d', hair: '#5a3825', shirt: '#be123c', long: true } },
+      sara: { name: 'Sara Mostafa', initials: 'SM', color: '#b45309', title: 'Senior Accountant · Finance', photo: { bg: '#fef3c7', skin: '#8d5524', hair: '#111827', shirt: '#b45309', long: true } }
+    };
+    const ME = { name: 'You', initials: 'ME', color: '#0f766e', title: 'Finance Manager · Finance', photo: { bg: '#ccfbf1', skin: '#d29a6a', hair: '#2b1b12', shirt: '#0f766e', long: false } };
+    const S = this.S = {
+      0: { label: 'New', bg: '#eff6ff', fg: '#1d4ed8' },
+      1: { label: 'In progress', bg: '#f0fdf4', fg: '#15803d' },
+      3: { label: 'Forward request', bg: '#fff7ed', fg: '#9a3412' },
+      2: { label: 'Forwarded', bg: '#f5f3ff', fg: '#6d28d9' },
+      5: { label: 'On hold', bg: '#fffbeb', fg: '#92400e' },
+      10: { label: 'Ended', bg: '#f1f5f9', fg: '#475569' },
+      50: { label: 'Closed', bg: '#e2e8f0', fg: '#334155' }
+    };
+    const ORDER = [0, 1, 3, 2, 5, 10, 50];
+    const OPEN = [0, 1, 2, 3];
+    const CH = this.CH = [
+      { id: 'cashpay', name: 'Cash Payable', cat: 'Finance' },
+      { id: 'cashrec', name: 'Cash Receive', cat: 'Finance' },
+      { id: 'treasury', name: 'Treasury', cat: 'Finance' },
+      { id: 'orders', name: 'Customer Orders', cat: 'Sales' },
+      { id: 'pricing', name: 'Pricing', cat: 'Sales' },
+      { id: 'support', name: 'IT Support', cat: 'IT' }
+    ];
+    const st = this.state;
+    const all = st.tickets;
+    const chName = (id) => (CH.find(c => c.id === id) || {}).name;
+    const seg = (i, n, on) => ({ border: on ? '#c2410c' : '#cbd5e1', bg: on ? '#fff7ed' : '#ffffff', fg: on ? '#9a3412' : '#475569',
+      ml: i ? '-1px' : '0', z: on ? 1 : 0, radius: n === 1 ? '8px' : i === 0 ? '8px 0 0 8px' : i === n - 1 ? '0 8px 8px 0' : '0' });
+
+    // ----- panel
+    const VIEWS = [['conv', 'Conversation'], ['status', 'By Status'], ['channel', 'By Channel'], ['creator', 'Created by']];
+    const views = VIEWS.map(([id, label], i) => ({ id, label, ...seg(i, VIEWS.length, st.view === id), selected: st.view === id ? 'true' : 'false',
+      isConv: id === 'conv', isStatus: id === 'status', isChannel: id === 'channel', isCreator: id === 'creator',
+      pick: () => this.setState({ view: id, statusOpen: false }) }));
+    const q = st.q.trim().toLowerCase();
+    const matchQ = (t) => !q || t.id.includes(q) || t.subject.toLowerCase().includes(q) || P[t.creator].name.toLowerCase().includes(q);
+    const qSet = all.filter(matchQ);
+    const statusOptions = ORDER.map(s => ({ label: S[s].label, fg: S[s].fg, count: qSet.filter(t => t.state === s).length, on: st.picked.includes(s),
+      toggle: () => this.setState({ picked: st.picked.includes(s) ? st.picked.filter(x => x !== s) : st.picked.concat([s]) }) }));
+    const isOpenSet = st.picked.length === OPEN.length && OPEN.every(s => st.picked.includes(s));
+    const statusText = st.picked.length === ORDER.length ? 'All statuses' : isOpenSet ? 'Open only' : st.picked.length === 0 ? 'No status' :
+      st.picked.length === 1 ? S[st.picked[0]].label : st.picked.length + ' statuses';
+    const filtered = qSet.filter(t => st.picked.includes(t.state));
+
+    // ----- conversation view
+    const chanRow = (c) => {
+      const unread = all.filter(t => t.ch === c.id).reduce((n, t) => n + t.unread, 0);
+      const on = c.id === st.chan;
+      return { ...c, unread, hasUnread: unread > 0, bg: on ? '#ffedd5' : 'transparent', fg: on ? '#7c2d12' : '#0f172a', weight: on ? 700 : 500,
+        pick: () => {
+          const first = filtered.filter(t => t.ch === c.id).sort((a, b) => b.seq - a.seq)[0];
+          this.setState({ chan: c.id, sel: first ? first.id : null, draft: '' });
+        } };
+    };
+    const cats = ['Finance', 'Sales', 'IT'].map(name => ({ name, channels: CH.filter(c => c.cat === name).map(chanRow) }));
+    const convTickets = filtered.filter(t => t.ch === st.chan).sort((a, b) => b.seq - a.seq).map(t => {
+      const on = t.id === st.sel;
+      const viewAdmin = this.props.viewAsAdmin ?? true;
+      const last = [...t.msgs].reverse().find(m => !m.sys && (!m.admin || viewAdmin)) || t.msgs[t.msgs.length - 1];
+      const preview = last.sys ? last.sys : (last.me ? 'You' : P[last.from].name.split(' ')[0]) + ': ' + last.t;
+      return { ...t, sLabel: S[t.state].label, sBg: S[t.state].bg, sFg: S[t.state].fg, hasUnread: t.unread > 0, preview,
+        bg: on ? '#fff7ed' : '#ffffff', border: on ? '#fdba74' : '#e2e8f0',
+        pick: () => this.setState({ sel: t.id, draft: '', adminOnly: false, ui: { ...this.state.ui, draft: { reply: null, edit: null } }, tickets: all.map(x => x.id === t.id ? { ...x, unread: 0 } : x) }) };
+    });
+    const mainT = all.find(t => t.id === st.sel && t.ch === st.chan);
+    const m = this.ticketView(mainT, 'draft');
+    const R = { creator: ['Creator', '#f0fdf4', '#15803d'], admin: ['Admin', '#fff7ed', '#9a3412'], lead: ['Team leader', '#eff6ff', '#1d4ed8'], cc: ['CC', '#f1f5f9', '#334155'] };
+    const members = mainT ? [
+      { ...P[mainT.creator], r: R.creator },
+      { ...ME, r: R.admin },
+      { ...P.omar, r: R.lead },
+      { ...P.sara, r: R.cc }
+    ].filter((p, i, a) => a.findIndex(x => x.name === p.name) === i).map(p => ({ ...p, person: p, role: p.r[0], bg: p.r[1], fg: p.r[2] })) : [];
+
+    // ----- grouped views
+    const by = st.view;
+    const keyOf = by === 'status' ? (t) => t.state : by === 'channel' ? (t) => t.ch : (t) => t.creator;
+    const keys = [...new Set(filtered.map(keyOf))];
+    const row = (t) => ({ ...t, channelName: chName(t.ch), creatorName: P[t.creator].name,
+      sLabel: S[t.state].label, sBg: S[t.state].bg, sFg: S[t.state].fg, unreadColor: t.unread ? '#c2410c' : '#94a3b8',
+      open: () => this.setState({ drawerId: t.id, drawerDraft: '', drawerAdminOnly: false, ui: { ...this.state.ui, drawerDraft: { reply: null, edit: null } }, tickets: this.state.tickets.map(x => x.id === t.id ? { ...x, unread: 0 } : x) }),
+      openCreator: () => this.setState({ personId: t.creator, personChip: 'all' }) });
+    let groups = keys.map(k => {
+      const ts = filtered.filter(t => keyOf(t) === k).sort((a, b) => b.seq - a.seq);
+      const mixStates = ORDER.filter(s => ts.some(t => t.state === s));
+      const base = { key: String(k), count: ts.length, open: ts.filter(t => OPEN.includes(t.state)).length,
+        unread: ts.reduce((n, t) => n + t.unread, 0), lastSeq: ts[0].seq, last: ts[0].time, rows: ts.map(row),
+        mix: by === 'status' ? [] : mixStates.map(s => ({ label: S[s].label, count: ts.filter(t => t.state === s).length, bg: S[s].bg, fg: S[s].fg })),
+        isStatus: by === 'status', isChannel: by === 'channel', isCreator: by === 'creator', notCreator: by !== 'creator' };
+      if (by === 'status') return { ...base, label: S[k].label, sub: OPEN.includes(k) ? 'Open' : 'Not open', fg: S[k].fg, order: ORDER.indexOf(k) };
+      if (by === 'channel') { const c = CH.find(x => x.id === k); return { ...base, label: '# ' + c.name, sub: c.cat }; }
+      return { ...base, label: P[k].name, sub: P[k].title, person: P[k],
+        openPerson: () => this.setState({ personId: k, personChip: 'all' }) };
+    });
+    const dir = st.sortDir === 'desc' ? -1 : 1;
+    groups.sort((a, b) => {
+      if (st.sortBy === 'count') return dir * (a.count - b.count) || a.label.localeCompare(b.label);
+      if (st.sortBy === 'last') return dir * (a.lastSeq - b.lastSeq);
+      if (by === 'status') return -dir * (a.order - b.order);
+      return -dir * a.label.localeCompare(b.label);
+    });
+    groups = groups.map(g => {
+      const expanded = !st.collapsed[g.key];
+      return { ...g, expanded, collapsed: !expanded, expandedText: expanded ? 'true' : 'false', unreadColor: g.unread ? '#c2410c' : '#94a3b8',
+        toggleLabel: (expanded ? 'Collapse ' : 'Expand ') + g.label,
+        toggle: () => this.setState({ collapsed: { ...this.state.collapsed, [g.key]: expanded } }) };
+    });
+    const SORTS = [['count', 'Count'], ['name', 'Name'], ['last', 'Last update']];
+    const sorts = SORTS.map(([id, label], i) => {
+      const on = st.sortBy === id;
+      return { label: label + (on ? (st.sortDir === 'desc' ? ' ↓' : ' ↑') : ''), pressed: on ? 'true' : 'false', ...seg(i, SORTS.length, on),
+        pick: () => this.setState(on ? { sortDir: st.sortDir === 'desc' ? 'asc' : 'desc' } : { sortBy: id, sortDir: id === 'name' ? 'asc' : 'desc' }) };
+    });
+
+    // ----- person drawer (ignores the panel filters, like Order Board's party drawer)
+    let person = { cards: [], chips: [], rows: [] };
+    if (st.personId) {
+      const p = P[st.personId];
+      const mine = all.filter(t => t.creator === st.personId).sort((a, b) => b.seq - a.seq);
+      const CHIPS = [['all', 'All', null], ['open', 'Open', OPEN], ['hold', 'On hold', [5]], ['ended', 'Ended', [10]], ['closed', 'Closed', [50]]];
+      const chips = CHIPS.map(([id, label, set]) => {
+        const on = st.personChip === id;
+        return { label, count: set ? mine.filter(t => set.includes(t.state)).length : mine.length, pressed: on ? 'true' : 'false',
+          bg: on ? '#0f172a' : '#ffffff', fg: on ? '#ffffff' : '#334155', border: on ? '#0f172a' : '#cbd5e1',
+          pick: () => this.setState({ personChip: id }) };
+      });
+      const set = (CHIPS.find(c => c[0] === st.personChip) || CHIPS[0])[2];
+      const rows = mine.filter(t => !set || set.includes(t.state)).map(row);
+      person = { ...p, p, chips, rows, empty: rows.length === 0, cards: [
+        { label: 'Open', value: mine.filter(t => OPEN.includes(t.state)).length },
+        { label: 'On hold', value: mine.filter(t => t.state === 5).length },
+        { label: 'Ended', value: mine.filter(t => t.state === 10).length },
+        { label: 'Unread', value: mine.reduce((n, t) => n + t.unread, 0) }] };
+    }
+    const d = this.ticketView(all.find(t => t.id === st.drawerId), 'drawerDraft');
+
+    const cf = st.confirm;
+    const cfMsg = cf ? ((all.find(t => t.id === cf.id) || { msgs: [] }).msgs[cf.idx] || null) : null;
+    return {
+      me: ME,
+      confirmOpen: !!cfMsg, confirmText: cfMsg ? cfMsg.t : '',
+      cancelDelete: () => this.setState({ confirm: null }),
+      confirmDelete: () => {
+        // Delete Chat: the row stays, the text is replaced and IsDeleted = 1
+        this.editMessage(cf.id, cf.idx, x => ({ ...x, deleted: true }));
+        this.setState({ confirm: null });
+        this.flash('Message deleted');
+      },
+      toast: st.toast, hasToast: !!st.toast,
+      views, statusOptions, statusText, statusOpen: st.statusOpen, statusExpanded: st.statusOpen ? 'true' : 'false',
+      toggleStatus: () => this.setState({ statusOpen: !st.statusOpen }),
+      pickAll: () => this.setState({ picked: ORDER.slice() }), pickNone: () => this.setState({ picked: [] }),
+      openOnly: () => this.setState({ picked: OPEN.slice(), statusOpen: false }),
+      q: st.q, onQ: (e) => this.setState({ q: e.target.value }),
+      dateFrom: st.dateFrom, dateTo: st.dateTo,
+      onFrom: (e) => this.setState({ dateFrom: e.target.value }), onTo: (e) => this.setState({ dateTo: e.target.value }),
+      totalUnread: all.reduce((n, t) => n + t.unread, 0),
+      isConv: by === 'conv', isBoard: by !== 'conv',
+      cats, chan: CH.find(c => c.id === st.chan), convTickets, convCount: convTickets.length, noConvTickets: convTickets.length === 0,
+      m, members, memberCount: members.length,
+      boardTitle: by === 'status' ? 'Tickets by status' : by === 'channel' ? 'Tickets by channel' : 'Tickets by creator',
+      groups, groupCount: groups.length, ticketCount: filtered.length, boardUnread: filtered.reduce((n, t) => n + t.unread, 0), noGroups: groups.length === 0,
+      sorts, showChannel: by !== 'channel', showStatus: by !== 'status', showCreator: by !== 'creator',
+      expandAll: () => this.setState({ collapsed: {} }),
+      collapseAll: () => this.setState({ collapsed: Object.fromEntries(groups.map(g => [g.key, true])) }),
+      personOpen: !!st.personId, person, closePerson: () => this.setState({ personId: null }),
+      d, closeTicket: () => this.setState({ drawerId: null })
+    };
+  }
+}
+</script>
+</body>
+</html>

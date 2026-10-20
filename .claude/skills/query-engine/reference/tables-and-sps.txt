@@ -1,0 +1,428 @@
+================================================================================
+ PlusV1 — Tables & Stored-Procedure Operations Reference
+ Canonical copy: .claude/skills/query-engine/reference/tables-and-sps.txt
+================================================================================
+Everything the web app touches goes through TWO stored procedures:
+
+    Pls.APIPlusOperationV1      (SQLScript/APIPlusOperationV1.sql)      -- generic engine
+    Pls.APIPlusUserOperationV1  (SQLScript/APIPlusUserOperationV1.sql)  -- user identity
+
+Both are routers: @Operation picks a branch, @LineData carries a JSON payload,
+@User is the caller. Result envelope: { State, Message, List0, List1, ... }.
+State = 0 success; State = 1 validation error; State = -1 "no query bound".
+
+Pls.APIPlusOperationV1 is metadata + generic query engine only (schema [PLS],
+DB [ERPMega25]) and never touches the real Users/Groups table. Pls.
+APIPlusUserOperationV1 owns everything about *who the caller is* --
+authentication, account CRUD, password reset, group assignment -- and is the
+only thing that touches the real user accounts table directly:
+ERPManagement25.[System].[UserMaster]. Unlike the router SP (deployed by a
+human in SSMS), APIPlusUserOperationV1 deploys normally via db.sh, and its
+SQL body is never copied between projects -- each project's real Users/Groups
+table differs (see code-standards skill's "User-identity operations"
+section). The router SP reads [PLS].[V1User] / [PLS].[V1UserGroups] (below)
+instead of UserMaster whenever it needs IsAdmin or a group list.
+
+--------------------------------------------------------------------------------
+ SECTION 1 — TABLES
+--------------------------------------------------------------------------------
+
+[PLS].[V1PagesAndGroups]
+    The sidebar navigation tree. Every page and every group is a row.
+    Key cols: PageGroupID (PK, IDENTITY), Label, Icon, Description,
+              IsGroup (1 = folder), ParentID, SortOrder.
+    Objective: define what pages exist and how they are grouped in the UI.
+
+[PLS].[V1QueryMaster]
+    The central registry of every SQL query the app may run. Nothing is
+    exposed to the app without a row here.
+    Key cols: QueryID (PK), QueryName, QueryType ('Base' | 'Detail'),
+              QuerySQL (SELECT body, no WHERE/ORDER BY),
+              QueryFilter (admin WHERE body, appended at runtime),
+              QueryOrderBy (ORDER BY body, appended at runtime),
+              ViewName (Detail queries: [PLS].[V1QD<name>] the engine runs),
+              Operation, ApiUrl, CreatedBy/Date.
+    Objective: one governed definition per dataset (Base = the page's main
+               data; Detail = every extra query the page needs).
+
+[PLS].[V1PageQueries]
+    M:N link between a page and the queries it may use.
+    Key cols: PageQueryID (PK), PageGroupID, QueryID, UNIQUE(PageGroupID,QueryID).
+    Objective: a query only runs for a page if this link exists.
+
+[PLS].[V1QueryFields]
+    Per-query column configuration (discovered from the result set, then
+    hand-tuned).
+    Key cols: ID (PK), QueryID, FieldName, DataType ('number'|'date'|'bool'|
+              'text'), Length, Label, Format ('number:2'|'date'|'mono'|'yesno'),
+              Width, SortOrder, Hidden, ColorRules (JSON).
+    Objective: drives grid columns, value quoting in generated predicates, and
+               validates Group By / aggregate / filter field choices.
+
+[PLS].[V1UserQueryPermissions]
+    Per-(user, query) row-level filter.
+    Key cols: PermissionID (PK), Username, QueryID, SQLFilter (a WHERE body),
+              GrantedBy/Date.
+    Objective: restrict which rows a specific user sees for a query. Applied
+               inside every GetGridData / View run (admins bypass).
+
+[PLS].[V1QueryFilter]
+    Named filter sources ("Filter Master"). Each row is backed by a view
+    [PLS].[QF<Name>] built from SourceSQL.
+    Key cols: QueryFilterID (PK), FilterName, ViewName, SourceSQL,
+              ValueField, LabelField, DisplayFields (comma list: 1st = bold
+              line, rest = muted line), OrderBy, Description.
+    Objective: reusable option lists for filter-panel controls (e.g. a vendor
+               picker) with their own permission layer.
+
+[PLS].[V1QueryFilterLink]
+    Attaches a Filter Master row (or a stand-alone date range) to a page's
+    Base query as a panel control or a fixed rule.
+    Key cols: LinkID (PK), QueryID, PageGroupID, QueryFilterID (NULL for
+              DATE_RANGE), FilterType (RANGE|MIN|LIKE|EQUALS|LIST|DATE_RANGE),
+              QueryField (Base-query column), FilterField (QF-view column),
+              UsePanel (1 = interactive, 0 = fixed rule), FixedFrom, FixedTo,
+              LabelOverride, SortOrder.
+    Objective: define the filter widgets that appear on a page and how each
+               maps to a column; GetGridData turns them into WHERE predicates.
+
+[PLS].[V1UserFilterPermissions]
+    Per-(user, filter) row-level filter on a QF view (parallels
+    V1UserQueryPermissions).
+    Key cols: PermissionID (PK), Username, QueryFilterID, SQLFilter, GrantedBy/Date.
+    Objective: restrict the option list a user sees for a filter.
+
+[PLS].[V1OperationMaster]
+    Reusable, permissioned actions (View Details, Export, Print, Approve...).
+    Key cols: OperationID (PK), OperationKey (unique, e.g. PO_VIEW_DETAILS),
+              Label, Icon, Description, BackendOperation (the SP op it invokes,
+              e.g. 'View'), Config (JSON passthrough), IsActive.
+    Objective: define actions once, reuse across pages.
+
+[PLS].[V1PageOperations]
+    M:N link: which pages expose which operation, and the page's query it runs.
+    Key cols: PageOperationID (PK), PageGroupID, OperationID, QueryID (the
+              page-specific Detail/View query), ConfigOverride (JSON merged
+              over master Config), SortOrder, UNIQUE(PageGroupID,OperationID).
+    Objective: bind a global operation to a page + its data.
+
+[PLS].[V1UserOperationPermissions]
+    Per-(user, page, operation) grant.
+    Key cols: PermissionID (PK), Username, PageGroupID, OperationID,
+              CanPerform, GrantedBy/Date, UNIQUE(Username,PageGroupID,OperationID).
+    Objective: control who may perform an action on a page. No row = not allowed
+               (admins bypass).
+
+[PLS].[V1GroupByMaster]
+    A predefined aggregation over a Base query ("Group By Vendor", etc).
+    Key cols: GroupByID (PK), GroupByName, QueryID (FK -> V1QueryMaster),
+              Description, IsActive, DisplayOrder, CreatedBy/Date.
+    Objective: metadata-only grouping; many configs share one Base view, no
+               extra SQL views.
+
+[PLS].[V1GroupByField]
+    The grouping-key columns for a Group By config.
+    Key cols: GroupByFieldID (PK), GroupByID, FieldName (must exist in
+              V1QueryFields for the query), SortOrder, UNIQUE(GroupByID,FieldName).
+    Objective: define what identifies one group (e.g. VendorNumber + VendorName).
+
+[PLS].[V1GroupByAggregate]
+    The calculated columns for a Group By config.
+    Key cols: AggregateID (PK), GroupByID, FieldName, Operation
+              (CHECK IN 'SUM','COUNT','AVG','MIN','MAX'), DisplayName, SortOrder.
+    Objective: define the aggregate columns; Operation is a server-side enum,
+               never user SQL.
+
+[PLS].[V1UserPagePermissions]
+    Per-(user, page) view grant.
+    Key cols: PermissionID (PK), Username, PageGroupID, CanView, GrantedBy/Date.
+    Objective: control which sidebar pages/groups a user can open. Drives
+               GetUserAllowedPages.
+
+ERPManagement25.[System].[UserMaster]   (external — not created by this project)
+    The application's user accounts. Touched ONLY by Pls.APIPlusUserOperationV1
+    -- the router SP never reads/writes it directly, see V1User below.
+    Key cols: UserID (PK, sequence-assigned via System.GetSystemSequenceNo
+              ServiceID=2, NOT identity), Username, Name, GroupID, IsAdmin,
+              IsNotActive, hash (pass phrase encrypted), plus many other NOT
+              NULL columns with table-level DEFAULTs (Email, Telephone, Site,
+              CreatedBy/Date, ...) that SaveSystemUser's insert relies on.
+    Objective: authentication + the IsAdmin flag that bypasses row filters.
+
+ERPManagement25.[System].[GroupMaster]   (external — not created by this project)
+    User groups. GroupID is NOT an identity column -- new rows get
+    MAX(GroupID)+1 (SaveUserGroup), there's no dedicated sequence for it.
+    Key cols: GroupID (PK), GroupName, CreatedBy/Date, LastMintBy/Date.
+    Objective: the group a user belongs to (UserMaster.GroupID FK).
+
+[PLS].[V1User]   (view, per-project body -- see code-standards skill)
+    Standardized identity view the ROUTER SP reads instead of touching
+    UserMaster directly. Wraps UserMaster (+ GroupMaster for GroupName).
+    Fixed contract: Username, Name, IsAdmin, IsNotActive, GroupName.
+    Objective: let the router SP resolve IsAdmin/GroupName without knowing
+               that project's real Users table shape.
+
+[PLS].[V1UserGroups]   (view, per-project body)
+    Standardized group-list view. Wraps GroupMaster directly (no new table).
+    Fixed contract: GroupID, GroupName.
+    Objective: feed GetUserGroups / SaveSystemUser's GroupID validation.
+
+-- Generated objects (created by the SP, not hand-authored) -----------------
+
+[PLS].[QV<Name>]   Base-query views. Convention: schema PLS, name starts QV.
+                   Registered in V1QueryMaster as a Base query.
+
+[PLS].[QF<Name>]   Filter-source views. Built by SaveQueryFilter from
+                   V1QueryFilter.SourceSQL. Feed GetFilterOptions.
+
+[PLS].[V1QD<name>] Detail-query views. Built by SaveQueryMaster from a Detail
+                   query's SELECT; the engine runs SELECT * FROM it.
+
+--------------------------------------------------------------------------------
+ SECTION 2 — STORED-PROCEDURE OPERATIONS (Pls.APIPlusUserOperationV1)
+--------------------------------------------------------------------------------
+User-identity operations only. Deployed via db.sh (not the SSMS-only rule).
+Touches ERPManagement25.[System].[UserMaster] / [GroupMaster] directly.
+
+Login
+    Objective: verify username/password (NO master-password bypass here --
+    unlike PlusV1's Login, this project's never had one; keep it that way),
+    return the user row { Username, Name, IsAdmin }.
+    LineData: { Username, Password }.  Reads: System.UserMaster.
+
+GetSystemUsers
+    Objective: list all accounts, with GroupName joined in.
+    Reads: PLS.V1User (+ GroupID/GroupName via UserMaster/GroupMaster join).
+
+SaveSystemUser
+    Objective: upsert an account. New rows get UserID via
+    System.GetSystemSequenceNo (ServiceID=2) -- NOT identity. Blank password
+    on edit keeps the hash.
+    LineData: { Username, Name, Password?, IsAdmin, IsNotActive, GroupID? }.
+
+ResetPassword
+    Objective: reset a user's password to their own (lowercased) Username.
+    LineData: { Username }.
+
+DeactivateUser
+    Objective: soft delete/restore -- flips IsNotActive. NEVER a physical
+    DELETE, so V1UserPagePermissions/etc. survive a reactivation.
+    LineData: { Username, IsNotActive? } (default 1 = deactivate).
+
+GetUserGroups
+    Objective: the group list for the picker in SaveSystemUser's UI.
+    Reads: PLS.V1UserGroups.
+
+SaveUserGroup
+    Objective: upsert one group. New GroupID = MAX(GroupID)+1 (not identity).
+    LineData: { GroupID?, GroupName }.
+
+DeleteUserGroup
+    Objective: delete a group, blocked while any user still belongs to it.
+    LineData: { GroupID }.
+
+--------------------------------------------------------------------------------
+ SECTION 3 — STORED-PROCEDURE OPERATIONS (Pls.APIPlusOperationV1)
+--------------------------------------------------------------------------------
+Generic engine + metadata only. Never touches UserMaster/GroupMaster directly
+-- reads PLS.V1User / PLS.V1UserGroups wherever it needs IsAdmin or a group.
+
+--- Navigation (pages & groups) ---
+
+GetPagesAndGroups
+    Objective: return the whole nav tree for admin screens.
+    Reads: V1PagesAndGroups.
+
+SavePageOrGroup
+    Objective: upsert one page or group.
+    LineData: { PageGroupID?, ParentGroupID, SortOrder, Label, Icon,
+                Description, IsGroup }.  Writes: V1PagesAndGroups.
+
+DeletePageOrGroup
+    Objective: delete a page/group (blocked if it still has children); also
+    clears its V1UserPagePermissions.
+    LineData: { PageGroupID }.
+
+GetUserAllowedPages
+    Objective: the PageGroupIDs the caller may see (admins = all; others =
+    granted pages plus their ancestor groups).
+    Reads: V1UserPagePermissions, V1PagesAndGroups, PLS.V1User.
+
+--- Page view permissions ---
+
+GetUserPagePermissions    Objective: every (user, page) grant + page label.
+                          Reads V1UserPagePermissions + V1PagesAndGroups.
+SaveUserPagePermission    Objective: grant/update one page for one user.
+                          LineData: { Username, PageGroupID, CanView }.
+DeleteUserPagePermission  Objective: remove one grant. LineData: { PermissionID }.
+
+--- Query Master ---
+
+GetQueryMaster            Objective: all queries + the page each is mapped to.
+                          Reads V1QueryMaster + V1PageQueries.
+SaveQueryMaster           Objective: upsert one query. For QueryType='Detail'
+                          it builds [PLS].[V1QD<name>] from the SELECT and
+                          stores QuerySQL as "SELECT * FROM that view".
+                          LineData: { QueryID?, QueryName, Operation,
+                          Description, QuerySQL, QueryFilter, QueryOrderBy,
+                          QueryType, ApiUrl }.
+DeleteQueryMaster         Objective: delete a query + its V1PageQueries /
+                          V1PageOperations links; drops its V1QD view.
+                          LineData: { QueryID }.
+SaveQueryPageRelation     Objective: link / unlink a query to a page.
+                          LineData: { QueryID, PageGroupID, IsLinked }.
+                          Writes V1PageQueries.
+GetPageQueries            Objective: the queries registered to a page (Base
+                          first) so a bespoke page can discover its Detail
+                          queries. LineData: { PageGroupID }.
+
+--- Query fields (column config) ---
+
+GetQueryFields            Objective: the column config for one query. Backs the
+                          grid + field-name autocomplete. LineData: { QueryID }.
+DiscoverQueryFields       Objective: inspect a query's result set and upsert any
+                          newly-seen columns into V1QueryFields (hand edits
+                          kept). LineData: { QueryID }.
+SaveQueryFields           Objective: replace the column config with the client's
+                          list. LineData: { QueryID, Fields:[{FieldName,
+                          DataType, Label, Format, Width, SortOrder, Hidden,
+                          ColorRules}] }.
+
+--- Per-user row filters on a query ---
+
+GetUserQueryPermissions   Objective: per-user row filters (optionally for one
+                          user). LineData: { Username? }.
+SaveUserQueryPermission   Objective: upsert one (user, query) row filter; blank
+                          SQLFilter clears it. LineData: { Username, QueryID,
+                          SQLFilter }.
+ValidateQueryCondition    Objective: bind-check a row-filter expression against
+                          the query's own result set (column names resolve).
+                          LineData: { QueryID, Condition }.
+
+--- Filter Master (named filter sources / QF views) ---
+
+GetQueryFilter            Objective: all V1QueryFilter rows.
+SaveQueryFilter           Objective: upsert a filter source and (re)build
+                          [PLS].[QF<Name>] from SourceSQL; returns ViewName.
+                          LineData: { QueryFilterID?, FilterName, Description,
+                          ValueField, LabelField, DisplayFields, OrderBy,
+                          SourceSQL }.
+DeleteQueryFilter         Objective: drop the QF view + delete the row.
+                          LineData: { QueryFilterID }.
+GetFilterOptions          Objective: the option rows for one filter link (or
+                          filter), read from its QF view, with the caller's
+                          V1UserFilterPermissions AND-ed in. Returns
+                          { value, label, sub }. LineData: { LinkID } or
+                          { QueryFilterID }.
+
+--- Filter links (panel widgets on a page) ---
+
+GetQueryFilterLinks       Objective: the filter widgets attached to a query /
+                          page. LineData: { QueryID?, PageGroupID? }.
+SaveQueryFilterLink       Objective: upsert one link (Page + Query + Filter +
+                          FilterType + QueryField<->FilterField map).
+                          LineData: { LinkID?, QueryID, PageGroupID,
+                          QueryFilterID, FilterType, QueryField, FilterField,
+                          UsePanel, FixedFrom?, FixedTo?, LabelOverride?,
+                          SortOrder? }.
+DeleteQueryFilterLink     Objective: remove one link. LineData: { LinkID }.
+
+--- Per-user row filters on a QF filter ---
+
+GetUserFilterPermissions  Objective: per-user filter row filters. LineData:
+                          { Username? }.
+SaveUserFilterPermission  Objective: upsert one (user, filter) row filter;
+                          blank clears. LineData: { Username, QueryFilterID,
+                          SQLFilter }.
+ValidateFilterCondition   Objective: bind-check a condition against a QF view.
+                          LineData: { QueryFilterID, Condition }.
+
+--- Operations (permissioned actions) ---
+
+GetOperationMaster        Objective: all V1OperationMaster rows.
+SaveOperationMaster       Objective: upsert one operation (OperationKey unique).
+                          LineData: { OperationID?, OperationKey, Label, Icon,
+                          Description, BackendOperation, Config, IsActive }.
+DeleteOperationMaster     Objective: delete an operation + cascade its
+                          V1PageOperations / V1UserOperationPermissions.
+                          LineData: { OperationID }.
+GetPageOperations         Objective: page<->operation links + op key/label +
+                          linked query name. LineData: { PageGroupID? }.
+SavePageOperationRelation Objective: link / unlink one operation to a page,
+                          with the page's QueryID + config override.
+                          LineData: { PageOperationID?, PageGroupID,
+                          OperationID, QueryID?, ConfigOverride?, SortOrder?,
+                          IsLinked }.
+GetUserOperationPermissions  Objective: per-(user, page, operation) grants.
+                          LineData: { Username? }.
+SaveUserOperationPermission  Objective: upsert one grant; CanPerform=0 removes
+                          it. LineData: { Username, PageGroupID, OperationID,
+                          CanPerform }.
+GetUserAllowedOperations  Objective: every (page, operation) the caller may run,
+                          with BackendOperation / Config / ConfigOverride /
+                          QueryID for the frontend to invoke. Admins get all.
+                          LineData: { PageGroupID? }.
+
+--- Group By ---
+
+GetGroupByMaster          Objective: Group By configs + their fields (List1) +
+                          aggregates (List2). LineData: { QueryID? }.
+SaveGroupByMaster         Objective: upsert one config and replace its Fields +
+                          Aggregates. Validates every field against
+                          V1QueryFields; Operation must be SUM/COUNT/AVG/MIN/MAX.
+                          LineData: { GroupByID?, GroupByName, QueryID,
+                          Description, IsActive, DisplayOrder,
+                          Fields:["Col",...],
+                          Aggregates:[{FieldName, Operation, DisplayName}] }.
+DeleteGroupByMaster       Objective: delete a config + cascade its fields /
+                          aggregates. LineData: { GroupByID }.
+GetPageGroupBys           Objective: the active Group By configs for a page's
+                          Base query (feeds the Group By selector).
+                          LineData: { PageGroupID }.
+
+--- The Generic Operation (data retrieval) ---
+
+GetGridData
+    Objective: THE single data entry point for every page. Resolves the query
+    for the page (Base by default, or LineData.QueryID for a Detail — must be
+    linked), then layers on:
+      * the admin QueryFilter,
+      * the caller's V1UserQueryPermissions row filter (admins bypass),
+      * the panel filter-link predicates (from LineData.Filters),
+      * if LineData.GroupByIDs is present: wraps the filtered query and
+        GROUP BYs by the merged config(s),
+      * QueryOrderBy.
+    Returns the result set. State = -1 when no query is registered.
+    LineData: { PageGroupID, QueryID?, Filters?:[{LinkID, From, To, Values}],
+                GroupByIDs?:[int] }.
+
+View
+    Objective: fetch the detail rows for ONE record (row double-click / drawer).
+    Runs a Detail query keyed by KeyField = KeyValue, plus that query's
+    QueryFilter and the caller's row filter. No panel filters.
+    LineData: { PageGroupID, QueryID, KeyField, KeyValue }.
+
+--- CRUD-engine placeholders (present, thin) ---
+
+GetCrudPages
+    Objective: the PageGroupIDs bound to the legacy Simple-CRUD engine
+    (returns none if PLS.CrudTableMaster is absent).
+
+--- Infrastructure ---
+
+ExecuteScript
+    Objective: run an arbitrary SQL batch (@SqlStatement). Used only by the
+    live-db tooling (.claude/skills/live-db/db.sh) for schema work — NOT a
+    normal application operation.
+
+================================================================================
+ GOLDEN RULE
+================================================================================
+No page retrieves application data from an unmanaged query. Every dataset flows:
+
+    SQL View -> Query Master -> Page Mapping -> permission validation
+             -> Generic Operation (GetGridData) -> frontend
+
+The frontend never builds SQL, defines views, writes GROUP BY, bypasses Query
+Master, or enforces authorization itself.
+================================================================================

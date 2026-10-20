@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Avatar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: {{px}}; height: {{px}}; border-radius: 50%; overflow: hidden; flex-shrink: 0; background: {{bg}}; color: #ffffff; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-weight: 700; font-size: {{fs}}; line-height: 1; display: flex; align-items: center; justify-content: center">
+  <sc-if value="{{hasPhoto}}" hint-placeholder-val="{{true}}">
+    <svg viewBox="0 0 64 64" width="{{size}}" height="{{size}}" role="img" aria-label="{{alt}}">
+      <rect width="64" height="64" fill="{{ph.bg}}"></rect>
+      <path d="M15 32c0-13 7.5-21 17-21s17 8 17 21v22H15z" fill="{{ph.hair}}" opacity="{{ph.longOpacity}}"></path>
+      <path d="M7 64c0-12.5 10.5-19.5 25-19.5S57 51.5 57 64z" fill="{{ph.shirt}}"></path>
+      <rect x="27" y="36" width="10" height="11" rx="3" fill="{{ph.skin}}"></rect>
+      <ellipse cx="32" cy="28" rx="11" ry="12.5" fill="{{ph.skin}}"></ellipse>
+      <path d="M20.6 27.5c-1.2-9.5 5-15.8 11.4-15.8s12.6 6.3 11.4 15.8c-2-5.4-6-8-11.4-8s-9.4 2.6-11.4 8z" fill="{{ph.hair}}"></path>
+    </svg>
+  </sc-if>
+  <sc-if value="{{noPhoto}}" hint-placeholder-val="{{false}}">
+    <span>{{initials}}</span>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"p":{"editor":null},"size":{"editor":"int","default":64,"min":16,"max":160},"$preview":{"width":64,"height":64}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props.p || { name: 'Mona Adel', initials: 'MA', color: '#7c3aed',
+      photo: { bg: '#ede9fe', skin: '#e0ac69', hair: '#3b2417', shirt: '#7c3aed', long: true } };
+    const size = Number(this.props.size) || 64;
+    const ph = p.photo || {};
+    return {
+      size, px: size + 'px', fs: Math.round(size * 0.36) + 'px',
+      bg: p.photo ? ph.bg : p.color,
+      hasPhoto: !!p.photo, noPhoto: !p.photo,
+      initials: p.initials, alt: 'Photo of ' + p.name,
+      ph: { ...ph, longOpacity: ph.long ? 1 : 0 }
+    };
+  }
+}
+</script>
+</body>
+</html>

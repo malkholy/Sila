@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — Home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#c2410c}a:hover{color:#9a3412}
+button{font-family:inherit}
+input{font-family:inherit}
+</style>
+</helmet>
+<div style="position: relative; height: 100vh; min-height: 640px; display: flex; flex-wrap: wrap; overflow-y: auto; background: #f1f5f9; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <!-- Rail -->
+  <nav aria-label="Main" style="flex: 0 0 84px; background: #1a2332; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 0">
+    <div style="width: 44px; height: 44px; border-radius: 13px; background: #c2410c; color: #ffffff; font-weight: 800; font-size: 18px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px">S</div>
+    <a href="Home.dc.html" aria-current="page" style="width: 68px; min-height: 60px; border-radius: 12px; background: #c2410c; color: #ffffff; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700; position: relative">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path><path d="M10 20v-6h4v6"></path></svg>
+      Home
+      <span style="position: absolute; top: 6px; right: 10px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ffffff; color: #c2410c; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{totalUnread}}</span>
+    </a>
+    <a href="Main.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg>
+      Chats
+    </a>
+    <a href="Groups.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0"></path><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"></path><path d="M18 14.5a6.5 6.5 0 0 1 3.5 5.5"></path></svg>
+      Groups
+    </a>
+    <a href="Channels.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+      Channels
+    </a>
+    <div style="flex: 1"></div>
+    <button aria-label="Settings" style="width: 44px; height: 44px; border-radius: 12px; border: none; background: transparent; color: #cbd5e1; display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>
+    </button>
+    <dc-import name="Avatar" p="{{me}}" size="40" hint-size="40px,40px"></dc-import>
+  </nav>
+
+  <!-- LEFT: everything -->
+  <section aria-label="All conversations" style="flex: 1 1 380px; max-width: 100%; min-width: 0; background: #ffffff; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; min-height: 0">
+    <div style="padding: 20px 20px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800">Home</h1>
+      <div style="display: flex; gap: 8px">
+        <a href="NewTicket.dc.html" style="height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid #e2e8f0; color: #0f172a; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; text-decoration: none">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+          Ticket
+        </a>
+        <button style="height: 44px; padding: 0 14px; border-radius: 12px; border: none; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          New chat
+        </button>
+      </div>
+    </div>
+    <div style="padding: 0 20px 10px">
+      <label for="home-search" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search everything</label>
+      <div style="display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 12px; background: #f1f5f9; color: #64748b">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input id="home-search" placeholder="Search people, groups, tickets" style="flex: 1; min-width: 0; border: none; background: transparent; outline: none; font-size: 14px; color: #0f172a">
+      </div>
+    </div>
+    <div role="tablist" aria-label="Show" style="display: flex; gap: 6px; padding: 0 20px 12px; flex-wrap: wrap">
+      <sc-for list="{{filters}}" as="f" hint-placeholder-count="4">
+        <button role="tab" aria-selected="{{f.selected}}" onClick="{{f.pick}}" style="height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid {{f.border}}; background: {{f.bg}}; color: {{f.fg}}; font-weight: 700; font-size: 12px; cursor: pointer">{{f.label}}<sc-if value="{{f.hasUnread}}"> · {{f.unread}}</sc-if></button>
+      </sc-for>
+    </div>
+    <div style="flex: 1; overflow-y: auto; padding: 0 10px 12px; display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{items}}" as="c" hint-placeholder-count="6">
+        <button onClick="{{c.pick}}" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border-radius: 12px; border: none; background: {{c.bg}}; text-align: left; cursor: pointer; color: #0f172a">
+          <sc-if value="{{c.isDirect}}" hint-placeholder-val="{{true}}">
+            <span style="position: relative; flex: 0 0 46px; width: 46px; height: 46px">
+              <dc-import name="Avatar" p="{{c.person}}" size="46" hint-size="46px,46px"></dc-import>
+              <sc-if value="{{c.online}}"><span style="position: absolute; right: 0; bottom: 0; width: 12px; height: 12px; border-radius: 6px; background: #16a34a; border: 2px solid #ffffff"></span></sc-if>
+            </span>
+          </sc-if>
+          <sc-if value="{{c.isGroup}}" hint-placeholder-val="{{false}}">
+            <span style="flex: 0 0 46px; width: 46px; height: 46px; border-radius: 13px; background: {{c.color}}; color: #ffffff; font-weight: 700; display: flex; align-items: center; justify-content: center">{{c.initials}}</span>
+          </sc-if>
+          <sc-if value="{{c.isTicket}}" hint-placeholder-val="{{false}}">
+            <span style="flex: 0 0 46px; width: 46px; height: 46px; border-radius: 13px; background: #fff7ed; border: 1.5px solid #fdba74; color: #9a3412; display: flex; align-items: center; justify-content: center">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+            </span>
+          </sc-if>
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="display: flex; justify-content: space-between; gap: 8px; align-items: baseline">
+              <span style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{c.title}}</span>
+              <span style="font-size: 12px; color: #64748b; flex-shrink: 0">{{c.time}}</span>
+            </span>
+            <sc-if value="{{c.isDirect}}" hint-placeholder-val="{{true}}">
+              <span style="font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{c.jobTitle}}</span>
+            </sc-if>
+            <sc-if value="{{c.isTicket}}" hint-placeholder-val="{{false}}">
+              <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; min-width: 0">
+                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis"># {{c.channel}} · #{{c.ticketId}}</span>
+                <span style="flex-shrink: 0; padding: 0 7px; border-radius: 999px; background: {{c.sBg}}; color: {{c.sFg}}; font-size: 11px; font-weight: 700">{{c.sLabel}}</span>
+              </span>
+            </sc-if>
+            <span style="display: flex; justify-content: space-between; gap: 8px; align-items: center">
+              <span style="font-size: 13px; color: {{c.previewColor}}; font-weight: {{c.previewWeight}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{c.preview}}</span>
+              <sc-if value="{{c.hasUnread}}"><span style="min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0">{{c.unread}}</span></sc-if>
+            </span>
+          </span>
+        </button>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- RIGHT: the selected conversation -->
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; background: #f8fafc; min-height: 0">
+    <header style="flex-shrink: 0; min-height: 72px; padding: 12px 24px; background: #ffffff; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px">
+      <sc-if value="{{cur.isDirect}}" hint-placeholder-val="{{true}}">
+        <dc-import name="Avatar" p="{{cur.person}}" size="44" hint-size="44px,44px"></dc-import>
+      </sc-if>
+      <sc-if value="{{cur.isGroup}}" hint-placeholder-val="{{false}}">
+        <span style="flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; background: {{cur.color}}; color: #ffffff; font-weight: 700; display: flex; align-items: center; justify-content: center">{{cur.initials}}</span>
+      </sc-if>
+      <sc-if value="{{cur.isTicket}}" hint-placeholder-val="{{false}}">
+        <span style="flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; background: #fff7ed; border: 1.5px solid #fdba74; color: #9a3412; display: flex; align-items: center; justify-content: center">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+        </span>
+      </sc-if>
+      <div style="flex: 1 1 220px; min-width: 0">
+        <sc-if value="{{cur.isTicket}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: #475569; font-weight: 600">
+            # {{cur.channel}} · #{{cur.ticketId}}
+            <span style="padding: 1px 9px; border-radius: 999px; background: {{cur.sBg}}; color: {{cur.sFg}}; font-size: 11px; font-weight: 700">{{cur.sLabel}}</span>
+          </div>
+        </sc-if>
+        <h2 style="margin: 0; font-size: 16px; font-weight: 800">{{cur.title}}</h2>
+        <sc-if value="{{cur.notTicket}}" hint-placeholder-val="{{true}}">
+          <div style="font-size: 12px; color: #64748b">{{cur.sub}}</div>
+        </sc-if>
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap">
+        <sc-for list="{{actions}}" as="a" hint-placeholder-count="0">
+          <sc-if value="{{a.primary}}" hint-placeholder-val="{{true}}">
+            <button onClick="{{a.run}}" style="height: 40px; padding: 0 16px; border-radius: 10px; border: none; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; cursor: pointer">{{a.label}}</button>
+          </sc-if>
+          <sc-if value="{{a.secondary}}" hint-placeholder-val="{{false}}">
+            <button onClick="{{a.run}}" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; cursor: pointer">{{a.label}}</button>
+          </sc-if>
+        </sc-for>
+        <sc-if value="{{cur.isTicket}}" hint-placeholder-val="{{false}}">
+          <a href="Channels.dc.html" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #cbd5e1; color: #0f172a; font-weight: 700; font-size: 13px; display: flex; align-items: center; text-decoration: none">Open in channel</a>
+        </sc-if>
+        <button onClick="{{toggleInfo}}" aria-label="Details" aria-pressed="{{infoPressed}}" style="width: 40px; height: 40px; border-radius: 10px; border: 1px solid {{infoBorder}}; background: {{infoBg}}; color: {{infoFg}}; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v5M12 8h.01"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <div style="flex: 1; overflow-y: auto; padding: 22px 24px; display: flex; flex-direction: column; gap: 12px">
+      <sc-for list="{{msgs}}" as="m" hint-placeholder-count="4">
+        <dc-import name="ChatMessage" m="{{m}}" hint-size="100%,64px"></dc-import>
+      </sc-for>
+    </div>
+
+    <sc-if value="{{hasBar}}" hint-placeholder-val="{{false}}">
+      <div style="flex-shrink: 0; padding: 8px 12px 8px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px">
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 4px 10px; border-inline-start: 3px solid #c2410c">
+          <span style="font-size: 12px; font-weight: 800; color: #9a3412">{{barTitle}}</span>
+          <span style="font-size: 12px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{barText}}</span>
+        </span>
+        <button onClick="{{cancelBar}}" aria-label="{{cancelLabel}}" style="width: 44px; height: 44px; border-radius: 22px; border: none; background: transparent; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+        </button>
+      </div>
+    </sc-if>
+    <sc-if value="{{adminOn}}" hint-placeholder-val="{{false}}">
+      <div role="status" style="flex-shrink: 0; padding: 8px 24px; background: #fffbeb; border-top: 1px solid #fde68a; color: #92400e; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+        Only ticket admins will see this message. It won't start the ticket.
+      </div>
+    </sc-if>
+    <sc-if value="{{canChat}}" hint-placeholder-val="{{true}}">
+      <form onSubmit="{{send}}" style="flex-shrink: 0; padding: 14px 24px 18px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px">
+        <button type="button" aria-label="Attach file" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L10.2 17.7a1.7 1.7 0 0 1-2.4-2.4L15.5 7.6"></path></svg>
+        </button>
+        <sc-if value="{{canAdminNote}}" hint-placeholder-val="{{false}}">
+          <button type="button" onClick="{{toggleAdmin}}" aria-pressed="{{adminPressed}}" style="height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid {{adminBtnBorder}}; background: {{adminBtnBg}}; color: {{adminBtnFg}}; font-weight: 700; font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; flex-shrink: 0">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+            Admins only
+          </button>
+        </sc-if>
+        <label for="home-composer" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Message</label>
+        <input id="home-composer" value="{{draft}}" onChange="{{onDraft}}" placeholder="{{composerHint}}" autocomplete="off" style="flex: 1; min-width: 0; height: 44px; padding: 0 16px; border-radius: 12px; border: 1.5px solid {{inputBorder}}; background: {{inputBg}}; font-size: 14px; color: #0f172a; outline-color: #c2410c">
+        <button type="submit" aria-label="Send" style="width: 44px; height: 44px; border-radius: 12px; border: none; background: #c2410c; color: #ffffff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12 20 4l-6 16-3-7z"></path></svg>
+        </button>
+      </form>
+    </sc-if>
+    <sc-if value="{{cannotChat}}" hint-placeholder-val="{{false}}">
+      <div style="flex-shrink: 0; padding: 16px 24px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px; color: #475569; font-size: 13px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+        {{lockedText}}
+      </div>
+    </sc-if>
+  </main>
+
+  <!-- Details panel (contact / group / ticket info + media, links and docs) -->
+  <sc-if value="{{showInfo}}" hint-placeholder-val="{{true}}">
+    <aside aria-label="Details" style="flex: 1 1 300px; max-width: 100%; min-width: 0; background: #ffffff; border-left: 1px solid #e2e8f0; overflow-y: auto; padding: 24px 18px; display: flex; flex-direction: column; gap: 16px">
+      <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center">
+        <sc-if value="{{cur.isDirect}}" hint-placeholder-val="{{true}}">
+          <dc-import name="Avatar" p="{{cur.person}}" size="96" hint-size="96px,96px"></dc-import>
+          <h2 style="margin: 6px 0 0; font-size: 18px; font-weight: 800">{{cur.title}}</h2>
+          <div style="font-size: 13px; color: #475569">{{cur.jobTitle}}</div>
+          <div style="font-size: 12px; color: #64748b">{{cur.presence}}</div>
+        </sc-if>
+        <sc-if value="{{cur.isGroup}}" hint-placeholder-val="{{false}}">
+          <span style="width: 88px; height: 88px; border-radius: 24px; background: {{cur.color}}; color: #ffffff; font-weight: 800; font-size: 28px; display: flex; align-items: center; justify-content: center">{{cur.initials}}</span>
+          <h2 style="margin: 6px 0 0; font-size: 18px; font-weight: 800">{{cur.title}}</h2>
+          <div style="font-size: 13px; color: #475569">Group · {{cur.members}} members</div>
+        </sc-if>
+        <sc-if value="{{cur.isTicket}}" hint-placeholder-val="{{false}}">
+          <span style="width: 88px; height: 88px; border-radius: 24px; background: #fff7ed; border: 1.5px solid #fdba74; color: #9a3412; display: flex; align-items: center; justify-content: center">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+          </span>
+          <div style="margin-top: 6px; font-size: 12px; font-weight: 700; color: #475569">Ticket #{{cur.ticketId}} · # {{cur.channel}}</div>
+          <h2 style="margin: 0; font-size: 17px; font-weight: 800">{{cur.title}}</h2>
+          <span style="padding: 2px 10px; border-radius: 999px; background: {{cur.sBg}}; color: {{cur.sFg}}; font-size: 12px; font-weight: 700">{{cur.sLabel}}</span>
+        </sc-if>
+      </div>
+      <div style="height: 1px; background: #e2e8f0"></div>
+      <dc-import name="MediaPanel" set="{{cur.id}}" hint-size="100%,130px"></dc-import>
+      <div style="height: 1px; background: #e2e8f0"></div>
+      <label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 4px; font-weight: 600; font-size: 13px; cursor: pointer">
+        Mute notifications
+        <input type="checkbox" style="width: 18px; height: 18px; accent-color: #c2410c">
+      </label>
+    </aside>
+  </sc-if>
+
+  <!-- DELETE CONFIRM (in-app, not window.confirm) -->
+  <sc-if value="{{confirmOpen}}" hint-placeholder-val="{{false}}">
+    <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(15,23,42,.45); z-index: 200"></div>
+    <div role="alertdialog" aria-modal="true" aria-labelledby="hdel-title" aria-describedby="hdel-desc" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 210; width: min(400px, calc(100% - 32px)); box-sizing: border-box; padding: 22px; border-radius: 16px; background: #ffffff; box-shadow: 0 20px 48px rgba(15,23,42,.28); display: flex; flex-direction: column; gap: 10px">
+      <h2 id="hdel-title" style="margin: 0; font-size: 17px; font-weight: 800">Delete this message?</h2>
+      <p id="hdel-desc" style="margin: 0; font-size: 13px; color: #475569">Everyone in the ticket will see “This message was deleted”. This can't be undone.</p>
+      <blockquote style="margin: 4px 0 0; padding: 8px 12px; border-radius: 10px; background: #f8fafc; border-inline-start: 3px solid #cbd5e1; font-size: 13px; color: #334155">{{confirmText}}</blockquote>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px">
+        <button onClick="{{cancelDelete}}" style="height: 44px; padding: 0 16px; border-radius: 12px; border: 1px solid #cbd5e1; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 14px; cursor: pointer">Cancel</button>
+        <button onClick="{{confirmDelete}}" style="height: 44px; padding: 0 18px; border-radius: 12px; border: none; background: #b91c1c; color: #ffffff; font-weight: 700; font-size: 14px; cursor: pointer">Delete</button>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{hasToast}}" hint-placeholder-val="{{false}}">
+    <div role="status" style="position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 300; padding: 10px 16px; border-radius: 12px; background: #0f172a; color: #ffffff; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(15,23,42,.3)">{{toast}}</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"viewAsAdmin":{"editor":"boolean","default":true},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      filter: 'all', sel: 't2507460', draft: '', showInfo: true, adminOnly: false,
+      ui: { reply: null, edit: null }, confirm: null, toast: '',
+      items: [
+        { id: 't2507460', kind: 'ticket', title: 'Supplier payment — Al Nour Trading', ticketId: '2507460', channel: 'Cash Payable', state: 1, order: 10, time: '10:48', unread: 0, msgs: [
+          { sys: 'Mona Adel opened the ticket', at: '09:05' },
+          { from: 'mona', t: 'Please pay Al Nour Trading, invoice 4471, due Thursday.', at: '09:05' },
+          { sys: 'Omar Nabil started the ticket', at: '09:20' },
+          { me: true, t: 'The invoice copy is in the attachments.', at: '10:02' },
+          { from: 'omar', t: 'Balance is fine. Waiting for approval.', at: '10:40', reply: { from: 'You', text: 'The invoice copy is in the attachments.' } },
+          { from: 'mona', t: 'Internal: the supplier has an open dispute — check their statement before paying.', at: '10:45', admin: true },
+          { from: 'mona', t: 'Approved — go ahead.', at: '10:48' } ] },
+        { id: 'd-mona', kind: 'direct', title: 'Mona Adel', person: 'mona', online: true, order: 9, time: '10:42', unread: 2, msgs: [
+          { d: 'Today' },
+          { me: true, t: 'Good morning! Did the new prices go live?', at: '10:31' },
+          { from: 'mona', t: 'Yes, from today. Here is the updated list.', at: '10:40', file: 'Price list — October.xlsx', ext: 'XLSX' },
+          { from: 'mona', t: 'Two items changed after the meeting, they are highlighted.', at: '10:42' } ] },
+        { id: 'g-sales', kind: 'group', title: 'Sales Team', initials: 'ST', color: '#c2410c', members: 24, order: 8, time: '10:05', unread: 4, msgs: [
+          { d: 'Today' },
+          { from: 'mona', t: 'Morning team. Please update your visit plans before noon.', at: '09:12' },
+          { me: true, t: 'Done, my plan is in the shared sheet.', at: '09:30' },
+          { from: 'karim', t: 'Targets for this week are up', at: '10:05' } ] },
+        { id: 'd-omar', kind: 'direct', title: 'Omar Nabil', person: 'omar', online: true, order: 7, time: '09:58', unread: 1, msgs: [
+          { d: 'Today' },
+          { from: 'omar', t: 'The bank transfer for the supplier is ready.', at: '09:55' },
+          { from: 'omar', t: 'Can you approve the transfer?', at: '09:58' } ] },
+        { id: 'g-finance', kind: 'group', title: 'Finance', initials: 'FI', color: '#1d4ed8', members: 9, order: 6, time: '09:40', unread: 1, msgs: [
+          { d: 'Today' }, { from: 'omar', t: 'Bank statement uploaded', at: '09:40' } ] },
+        { id: 't2507458', kind: 'ticket', title: 'Petty cash top-up, Alexandria branch', ticketId: '2507458', channel: 'Cash Payable', state: 0, order: 5, time: '09:31', unread: 1, msgs: [
+          { sys: 'Karim Hassan opened the ticket', at: '09:31' },
+          { from: 'karim', t: 'The branch petty cash is running low. Requesting a top-up.', at: '09:31' } ] },
+        { id: 'd-karim', kind: 'direct', title: 'Karim Hassan', person: 'karim', online: false, order: 4, time: '09:15', unread: 0, msgs: [
+          { d: 'Today' }, { me: true, t: 'Order 1187 is missing two cartons.', at: '09:02' }, { from: 'karim', t: 'OK, I will check the warehouse', at: '09:15' } ] },
+        { id: 't2507455', kind: 'ticket', title: 'Refund for returned order 1187', ticketId: '2507455', channel: 'Cash Payable', state: 5, order: 3, time: 'Yesterday', unread: 0, msgs: [
+          { sys: 'Yasmin Fathy opened the ticket', at: '11:20' },
+          { from: 'yasmin', t: 'Customer returned order 1187. Please refund.', at: '11:20' },
+          { sys: 'Omar Nabil put the ticket on hold', at: '12:11' } ] },
+        { id: 'g-warehouse', kind: 'group', title: 'Warehouse Ops', initials: 'WO', color: '#0f766e', members: 14, order: 2, time: 'Yesterday', unread: 0, msgs: [
+          { d: 'Yesterday' }, { from: 'karim', t: 'Two trucks tomorrow morning.', at: '15:10' }, { me: true, t: 'Loading starts at 2 pm', at: '15:22' } ] },
+        { id: 'd-yasmin', kind: 'direct', title: 'Yasmin Fathy', person: 'yasmin', online: false, order: 1, time: 'Yesterday', unread: 0, msgs: [
+          { d: 'Yesterday' }, { me: true, t: 'I shared the meeting notes in the Sales group.', at: '16:20' }, { from: 'yasmin', t: 'Thanks!', at: '16:24' } ] }
+      ]
+    };
+  }
+  now() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  editMessage(id, idx, fn) {
+    this.setState({ items: this.state.items.map(i => i.id !== id ? i : { ...i, msgs: i.msgs.map((m, k) => k === idx ? fn(m) : m) }) });
+  }
+  copy(text) {
+    try { navigator.clipboard.writeText(text); } catch (e) { /* clipboard blocked: still show the notice in the mockup */ }
+    this.flash('Message copied');
+  }
+  flash(text) {
+    clearTimeout(this.toastTimer);
+    this.setState({ toast: text });
+    this.toastTimer = setTimeout(() => this.setState({ toast: '' }), 1800);
+  }
+  componentWillUnmount() { clearTimeout(this.toastTimer); }
+  update(id, fn) {
+    const top = Math.max(...this.state.items.map(i => i.order)) + 1;
+    this.setState({ items: this.state.items.map(i => i.id !== id ? i : { ...fn(i), order: top, time: this.now() }) });
+  }
+  renderVals() {
+    // photo = UserMaster.AttachmentID -> AttachmentHistory.FileURL; title = UserJobMaster.JobName · UserDepartmentMaster.DepartmentName
+    const P = {
+      mona: { name: 'Mona Adel', initials: 'MA', color: '#7c3aed', title: 'Sales Manager · Sales', photo: { bg: '#ede9fe', skin: '#e0ac69', hair: '#3b2417', shirt: '#7c3aed', long: true } },
+      omar: { name: 'Omar Nabil', initials: 'ON', color: '#1d4ed8', title: 'Treasury Supervisor · Finance', photo: { bg: '#dbeafe', skin: '#c68642', hair: '#1f1f1f', shirt: '#1d4ed8', long: false } },
+      karim: { name: 'Karim Hassan', initials: 'KH', color: '#0f766e', title: 'Warehouse Lead · Operations', photo: null },
+      yasmin: { name: 'Yasmin Fathy', initials: 'YF', color: '#be123c', title: 'Sales Representative · Sales', photo: { bg: '#ffe4e6', skin: '#f1c27d', hair: '#5a3825', shirt: '#be123c', long: true } },
+      sara: { name: 'Sara Mostafa', initials: 'SM', color: '#b45309', title: 'Senior Accountant · Finance', photo: { bg: '#fef3c7', skin: '#8d5524', hair: '#111827', shirt: '#b45309', long: true } }
+    };
+    const ME = { name: 'You', initials: 'ME', color: '#0f766e', title: 'Finance Manager · Finance', photo: { bg: '#ccfbf1', skin: '#d29a6a', hair: '#2b1b12', shirt: '#0f766e', long: false } };
+    const S = {
+      0: { label: 'New', bg: '#eff6ff', fg: '#1d4ed8' },
+      1: { label: 'In progress', bg: '#f0fdf4', fg: '#15803d' },
+      5: { label: 'On hold', bg: '#fffbeb', fg: '#92400e' },
+      10: { label: 'Ended', bg: '#f1f5f9', fg: '#475569' },
+      50: { label: 'Closed', bg: '#e2e8f0', fg: '#334155' }
+    };
+    const st = this.state;
+    const KINDS = [
+      { id: 'all', label: 'All' }, { id: 'direct', label: 'Chats' }, { id: 'group', label: 'Groups' }, { id: 'ticket', label: 'Tickets' }
+    ];
+    const filters = KINDS.map(k => {
+      const on = k.id === st.filter;
+      const unread = st.items.filter(i => k.id === 'all' || i.kind === k.id).reduce((n, i) => n + i.unread, 0);
+      return { ...k, unread, hasUnread: unread > 0, selected: on ? 'true' : 'false',
+        bg: on ? '#0f172a' : '#ffffff', fg: on ? '#ffffff' : '#334155', border: on ? '#0f172a' : '#cbd5e1',
+        pick: () => this.setState({ filter: k.id }) };
+    });
+    const decorate = (i) => {
+      const p = i.person ? P[i.person] : null;
+      const s = i.kind === 'ticket' ? S[i.state] : null;
+      return { ...i, isDirect: i.kind === 'direct', isGroup: i.kind === 'group', isTicket: i.kind === 'ticket', notTicket: i.kind !== 'ticket',
+        initials: p ? p.initials : i.initials, color: p ? p.color : i.color, person: p, jobTitle: p ? p.title : '',
+        presence: i.online ? 'Online' : 'Last seen today at 09:20',
+        sLabel: s ? s.label : '', sBg: s ? s.bg : '', sFg: s ? s.fg : '',
+        sub: i.kind === 'direct' ? p.title + ' · ' + (i.online ? 'Online' : 'Last seen today at 09:20') : i.kind === 'group' ? i.members + ' members' : '' };
+    };
+    const items = st.items
+      .filter(i => st.filter === 'all' || i.kind === st.filter)
+      .sort((a, b) => b.order - a.order)
+      .map(i => {
+        const last = i.msgs[i.msgs.length - 1];
+        let preview = last.sys || last.t || '';
+        if (!last.sys && last.me) preview = 'You: ' + preview;
+        else if (!last.sys && i.kind !== 'direct' && last.from) preview = P[last.from].name.split(' ')[0] + ': ' + preview;
+        const on = i.id === st.sel;
+        return { ...decorate(i), preview, hasUnread: i.unread > 0,
+          previewColor: i.unread > 0 ? '#0f172a' : '#64748b', previewWeight: i.unread > 0 ? 600 : 400,
+          bg: on ? '#fff7ed' : 'transparent',
+          pick: () => this.setState({ sel: i.id, draft: '', adminOnly: false, ui: { reply: null, edit: null }, items: st.items.map(x => x.id === i.id ? { ...x, unread: 0 } : x) }) };
+      });
+    const raw = st.items.find(i => i.id === st.sel) || st.items[0];
+    const cur = decorate(raw);
+    const showSender = raw.kind !== 'direct';
+    // Admin-only ticket messages (TicketChatHistory.IsAdmin = 1) are shown to ticket admins only.
+    const isAdmin = this.props.viewAsAdmin ?? true;
+    // Message options (Reply / Copy / Edit / Delete) on ticket chats only.
+    const isTicketChat = raw.kind === 'ticket';
+    const open = !isTicketChat || raw.state === 0 || raw.state === 1;
+    const ui = st.ui;
+    const senderOf = (m) => m.me ? 'You' : P[m.from].name;
+    const msgs = raw.msgs.map((m, i) => ({ m, i })).filter(({ m }) => !m.admin || isAdmin).map(({ m, i }) => {
+      if (m.d) return { kind: 'divider', text: m.d };
+      if (m.sys) return { kind: 'system', text: m.sys, time: m.at };
+      const p = m.me ? null : P[m.from];
+      return {
+        kind: m.me ? 'mine' : 'theirs', text: m.t, time: m.at, admin: !!m.admin, edited: !!m.edited, deleted: !!m.deleted,
+        reply: m.reply || null, showSender: showSender && !m.me, person: p, from: p ? p.name : 'You', jobTitle: p ? p.title : '', color: p ? p.color : '',
+        file: m.file || '', fileExt: m.ext || '',
+        menu: isTicketChat, canReply: open, canEdit: open, canDelete: open,
+        onReply: () => this.setState({ ui: { reply: i, edit: null } }),
+        onCopy: () => this.copy(m.t),
+        onEdit: () => this.setState({ draft: m.t, ui: { reply: null, edit: i } }),
+        onDelete: () => this.setState({ confirm: { id: raw.id, idx: i } })
+      };
+    });
+    const replyMsg = ui.reply != null ? raw.msgs[ui.reply] : null;
+    const editMsg = ui.edit != null ? raw.msgs[ui.edit] : null;
+    const canAdminNote = raw.kind === 'ticket' && isAdmin;
+    const adminOn = canAdminNote && st.adminOnly;
+    const actions = [];
+    const id = raw.id;
+    const act = (label, primary, state, sys) => ({ label, primary, secondary: !primary,
+      run: () => this.update(id, t => ({ ...t, state, msgs: t.msgs.concat([{ sys, at: this.now() }]) })) });
+    let canChat = true, lockedText = '';
+    if (raw.kind === 'ticket') {
+      const s = raw.state;
+      if (s === 0) { actions.push(act('Start', true, 1, 'You started the ticket')); actions.push(act('End', false, 10, 'You ended the ticket')); }
+      if (s === 1) { actions.push(act('Hold', false, 5, 'You put the ticket on hold')); actions.push(act('End ticket', true, 10, 'You ended the ticket')); }
+      if (s === 5) actions.push(act('Reopen', true, 1, 'You reopened the ticket'));
+      if (s === 10) { actions.push(act('Reopen', false, 1, 'You reopened the ticket')); actions.push(act('Close ticket', true, 50, 'You closed the ticket')); }
+      canChat = s === 0 || s === 1;
+      lockedText = { 5: 'This ticket is on hold. Reopen it to send messages.', 10: 'This ticket has ended. Reopen it to send messages, or close it.', 50: 'This ticket is closed and read-only.' }[s] || '';
+    }
+    const hint = editMsg ? 'Edit your message…' : adminOn ? 'Note for ticket admins only…' : raw.kind === 'ticket' ? (raw.state === 0 ? 'Reply — your first reply as an admin starts the ticket' : 'Reply to the ticket…')
+      : raw.kind === 'group' ? 'Message ' + raw.title + ' — type @ to mention' : 'Message ' + raw.title.split(' ')[0] + '…';
+    const cf = st.confirm;
+    const cfMsg = cf ? ((st.items.find(x => x.id === cf.id) || { msgs: [] }).msgs[cf.idx] || null) : null;
+    return {
+      me: ME,
+      hasBar: isTicketChat && open && !!(replyMsg || editMsg),
+      barTitle: editMsg ? 'Editing message' : replyMsg ? 'Replying to ' + senderOf(replyMsg) : '',
+      barText: editMsg ? editMsg.t : replyMsg ? replyMsg.t : '',
+      cancelLabel: editMsg ? 'Cancel editing' : 'Cancel reply',
+      cancelBar: () => this.setState({ draft: editMsg ? '' : st.draft, ui: { reply: null, edit: null } }),
+      confirmOpen: !!cfMsg, confirmText: cfMsg ? cfMsg.t : '',
+      cancelDelete: () => this.setState({ confirm: null }),
+      confirmDelete: () => {
+        this.editMessage(cf.id, cf.idx, x => ({ ...x, deleted: true }));
+        this.setState({ confirm: null });
+        this.flash('Message deleted');
+      },
+      toast: st.toast, hasToast: !!st.toast,
+      canAdminNote, adminOn, adminPressed: adminOn ? 'true' : 'false',
+      toggleAdmin: () => this.setState({ adminOnly: !st.adminOnly }),
+      adminBtnBg: adminOn ? '#fef3c7' : '#ffffff', adminBtnFg: adminOn ? '#92400e' : '#475569', adminBtnBorder: adminOn ? '#d97706' : '#e2e8f0',
+      inputBorder: adminOn ? '#d97706' : '#e2e8f0', inputBg: adminOn ? '#fffbeb' : '#f8fafc',
+      showInfo: st.showInfo, toggleInfo: () => this.setState({ showInfo: !st.showInfo }),
+      infoPressed: st.showInfo ? 'true' : 'false', infoBg: st.showInfo ? '#fff7ed' : '#ffffff',
+      infoFg: st.showInfo ? '#9a3412' : '#475569', infoBorder: st.showInfo ? '#fdba74' : '#e2e8f0',
+      filters, items, cur, msgs, actions, canChat, cannotChat: !canChat, lockedText,
+      totalUnread: st.items.reduce((n, i) => n + i.unread, 0),
+      composerHint: hint, draft: st.draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      send: (e) => {
+        e.preventDefault();
+        const text = st.draft.trim();
+        if (!text || !canChat) return;
+        const at = this.now();
+        const reset = { draft: '', adminOnly: false, ui: { reply: null, edit: null } };
+        if (editMsg) {
+          const idx = ui.edit;
+          this.setState(reset);
+          this.editMessage(id, idx, x => ({ ...x, t: text, edited: true }));
+          return;
+        }
+        // like the SP: an admin-only message never starts a New ticket; the toggle resets after each send
+        const admin = adminOn;
+        const reply = replyMsg ? { from: senderOf(replyMsg), text: replyMsg.t } : null;
+        this.setState(reset);
+        this.update(id, t => {
+          const starts = t.kind === 'ticket' && t.state === 0 && !admin;
+          const msg = { me: true, t: text, at, admin: starts ? false : admin, reply };
+          const add = starts ? [{ sys: 'You started the ticket', at }, msg] : [msg];
+          return { ...t, state: starts ? 1 : t.state, msgs: t.msgs.concat(add) };
+        });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

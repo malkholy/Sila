@@ -1,0 +1,11 @@
+{
+  "enabledPlugins": {
+    "frontend-design@anthropic-plugin-directory": true,
+    "playwright@anthropic-plugin-directory": true,
+    "axe-accessibility@anthropic-plugin-directory": true,
+    "design@anthropic-plugin-directory": true,
+    "playground@anthropic-plugin-directory": true,
+    "superdesign@anthropic-plugin-directory": true,
+    "figma@anthropic-plugin-directory": true
+  }
+}

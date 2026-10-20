@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — New ticket</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#c2410c}a:hover{color:#9a3412}
+button,input,select,textarea{font-family:inherit}
+</style>
+</helmet>
+<div role="dialog" aria-labelledby="nt-title" style="width: 640px; height: 780px; box-sizing: border-box; background: #ffffff; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5; display: flex; flex-direction: column">
+  <header style="padding: 24px 28px 16px; display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #e2e8f0">
+    <div style="flex: 1">
+      <h1 id="nt-title" style="margin: 0; font-size: 20px; font-weight: 800">New ticket</h1>
+      <p style="margin: 2px 0 0; color: #64748b; font-size: 13px">The ticket starts as New. An admin or team leader starts it.</p>
+    </div>
+    <a href="Channels.dc.html" aria-label="Close" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #e2e8f0; color: #475569; display: flex; align-items: center; justify-content: center; text-decoration: none">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </a>
+  </header>
+
+  <form style="flex: 1; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 16px">
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px">
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <label for="nt-channel" style="font-size: 12px; font-weight: 700; color: #475569">Channel</label>
+        <select id="nt-channel" style="height: 44px; padding: 0 12px; border-radius: 10px; border: 1.5px solid #cbd5e1; background: #ffffff; font-size: 14px; color: #0f172a">
+          <option># Cash Payable</option>
+          <option># Cash Receive</option>
+          <option># Treasury</option>
+          <option># Customer Orders</option>
+        </select>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px">
+        <label for="nt-attach" style="font-size: 12px; font-weight: 700; color: #475569">Attachment</label>
+        <button id="nt-attach" type="button" style="height: 44px; border-radius: 10px; border: 1.5px dashed #cbd5e1; background: #f8fafc; color: #334155; font-weight: 600; font-size: 13px; cursor: pointer">+ Add file</button>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <label for="nt-subject" style="font-size: 12px; font-weight: 700; color: #475569">Subject</label>
+      <input id="nt-subject" value="Supplier payment — Al Nour Trading" style="height: 44px; padding: 0 14px; border-radius: 10px; border: 1.5px solid #c2410c; font-size: 14px; color: #0f172a">
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <label for="nt-text" style="font-size: 12px; font-weight: 700; color: #475569">First message</label>
+      <textarea id="nt-text" rows="4" style="padding: 12px 14px; border-radius: 10px; border: 1.5px solid #cbd5e1; font-size: 14px; color: #0f172a; resize: vertical">Please pay Al Nour Trading, invoice 4471, due Thursday.</textarea>
+    </div>
+
+    <fieldset style="margin: 0; padding: 0; border: none; display: flex; flex-direction: column; gap: 8px">
+      <legend style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px">Members and roles</legend>
+      <label for="nt-people" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Add people</label>
+      <div style="display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 10px; background: #f1f5f9; color: #64748b">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input id="nt-people" placeholder="Add people by name" style="flex: 1; min-width: 0; border: none; background: transparent; outline: none; font-size: 14px; color: #0f172a">
+      </div>
+      <div style="border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden">
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr) 72px 96px 48px 44px; align-items: center; gap: 8px; padding: 8px 12px; background: #f8fafc; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569">
+          <span>Person</span><span style="text-align: center">Admin</span><span style="text-align: center">Team leader</span><span style="text-align: center">CC</span><span></span>
+        </div>
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="4">
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) 72px 96px 48px 44px; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid #e2e8f0">
+            <span style="display: flex; align-items: center; gap: 10px; min-width: 0">
+              <dc-import name="Avatar" p="{{r}}" size="34" hint-size="34px,34px"></dc-import>
+              <span style="display: flex; flex-direction: column; min-width: 0"><span style="font-weight: 600; font-size: 13px">{{r.name}}</span><span style="font-size: 12px; color: #64748b">{{r.note}}</span></span>
+            </span>
+            <span style="display: flex; justify-content: center"><input type="checkbox" aria-label="{{r.name}} is admin" checked="{{r.admin}}" style="width: 18px; height: 18px; accent-color: #c2410c"></span>
+            <span style="display: flex; justify-content: center"><input type="checkbox" aria-label="{{r.name}} is team leader" checked="{{r.lead}}" style="width: 18px; height: 18px; accent-color: #c2410c"></span>
+            <span style="display: flex; justify-content: center"><input type="checkbox" aria-label="{{r.name}} is CC" checked="{{r.cc}}" style="width: 18px; height: 18px; accent-color: #c2410c"></span>
+            <sc-if value="{{r.removable}}">
+              <button type="button" aria-label="Remove {{r.name}}" style="width: 36px; height: 36px; border-radius: 10px; border: none; background: transparent; color: #64748b; cursor: pointer; display: flex; align-items: center; justify-content: center">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+              </button>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </fieldset>
+  </form>
+
+  <footer style="padding: 16px 28px 22px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 10px">
+    <a href="Channels.dc.html" style="height: 44px; padding: 0 18px; border-radius: 12px; border: 1px solid #cbd5e1; color: #0f172a; font-weight: 700; font-size: 14px; display: flex; align-items: center; text-decoration: none">Cancel</a>
+    <a href="Channels.dc.html" style="height: 44px; padding: 0 20px; border-radius: 12px; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 14px; display: flex; align-items: center; text-decoration: none">Create ticket</a>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":640,"height":780}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      rows: [
+        { name: 'You', initials: 'ME', color: '#0f766e', note: 'Finance Manager · Finance (creator)', photo: { bg: '#ccfbf1', skin: '#d29a6a', hair: '#2b1b12', shirt: '#0f766e', long: false }, admin: true, lead: false, cc: false, removable: false },
+        { name: 'Omar Nabil', initials: 'ON', color: '#1d4ed8', note: 'Treasury Supervisor · Finance', photo: { bg: '#dbeafe', skin: '#c68642', hair: '#1f1f1f', shirt: '#1d4ed8', long: false }, admin: false, lead: true, cc: false, removable: true },
+        { name: 'Mona Adel', initials: 'MA', color: '#7c3aed', note: 'Sales Manager · Sales', photo: { bg: '#ede9fe', skin: '#e0ac69', hair: '#3b2417', shirt: '#7c3aed', long: true }, admin: true, lead: false, cc: false, removable: true },
+        { name: 'Sara Mostafa', initials: 'SM', color: '#b45309', note: 'Senior Accountant · Finance', photo: { bg: '#fef3c7', skin: '#8d5524', hair: '#111827', shirt: '#b45309', long: true }, admin: false, lead: false, cc: true, removable: true }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

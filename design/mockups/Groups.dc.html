@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — Groups</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#c2410c}a:hover{color:#9a3412}
+button{font-family:inherit}
+input{font-family:inherit}
+</style>
+</helmet>
+<div style="height: 100vh; min-height: 640px; display: flex; flex-wrap: wrap; overflow-y: auto; background: #f1f5f9; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <!-- Rail -->
+  <nav aria-label="Main" style="flex: 0 0 84px; background: #1a2332; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 0">
+    <div style="width: 44px; height: 44px; border-radius: 13px; background: #c2410c; color: #ffffff; font-weight: 800; font-size: 18px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px">S</div>
+    <a href="Home.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path><path d="M10 20v-6h4v6"></path></svg>
+      Home
+    </a>
+    <a href="Main.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600; position: relative">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg>
+      Chats
+      <span style="position: absolute; top: 6px; right: 10px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #c2410c; color: #ffffff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">3</span>
+    </a>
+    <a href="Groups.dc.html" aria-current="page" style="width: 68px; min-height: 60px; border-radius: 12px; background: #c2410c; color: #ffffff; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700; position: relative">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0"></path><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"></path><path d="M18 14.5a6.5 6.5 0 0 1 3.5 5.5"></path></svg>
+      Groups
+      <span style="position: absolute; top: 6px; right: 10px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ffffff; color: #c2410c; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">5</span>
+    </a>
+    <a href="Channels.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600; position: relative">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+      Channels
+      <span style="position: absolute; top: 6px; right: 6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #c2410c; color: #ffffff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">12</span>
+    </a>
+    <div style="flex: 1"></div>
+    <button aria-label="Settings" style="width: 44px; height: 44px; border-radius: 12px; border: none; background: transparent; color: #cbd5e1; display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"></path><circle cx="16" cy="6" r="2"></circle><circle cx="10" cy="12" r="2"></circle><circle cx="18" cy="18" r="2"></circle></svg>
+    </button>
+    <dc-import name="Avatar" p="{{me}}" size="40" hint-size="40px,40px"></dc-import>
+  </nav>
+
+  <!-- Group list -->
+  <section aria-label="Groups" style="flex: 1 1 300px; max-width: 100%; min-width: 0; background: #ffffff; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; min-height: 0">
+    <div style="padding: 20px 20px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800">Groups</h1>
+      <button style="height: 44px; padding: 0 14px; border-radius: 12px; border: none; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; cursor: pointer">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        New group
+      </button>
+    </div>
+    <div style="padding: 0 20px 12px">
+      <label for="group-search" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search groups</label>
+      <div style="display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 12px; background: #f1f5f9; color: #64748b">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input id="group-search" placeholder="Search groups" style="flex: 1; min-width: 0; border: none; background: transparent; outline: none; font-size: 14px; color: #0f172a">
+      </div>
+    </div>
+    <div style="flex: 1; overflow-y: auto; padding: 0 10px 12px; display: flex; flex-direction: column; gap: 2px">
+      <sc-for list="{{groups}}" as="g" hint-placeholder-count="5">
+        <sc-if value="{{g.active}}" hint-placeholder-val="{{false}}">
+          <button onClick="{{g.pick}}" aria-current="true" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border-radius: 12px; border: none; background: #fff7ed; text-align: left; cursor: pointer; color: #0f172a">
+            <span style="flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; background: {{g.color}}; color: #ffffff; font-weight: 700; display: flex; align-items: center; justify-content: center">{{g.initials}}</span>
+            <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="display: flex; justify-content: space-between; gap: 8px"><span style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{g.name}}</span><span style="font-size: 12px; color: #64748b; flex-shrink: 0">{{g.time}}</span></span>
+              <span style="font-size: 13px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{g.last}}</span>
+            </span>
+          </button>
+        </sc-if>
+        <sc-if value="{{g.inactive}}" hint-placeholder-val="{{true}}">
+          <button onClick="{{g.pick}}" style="display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border-radius: 12px; border: none; background: transparent; text-align: left; cursor: pointer; color: #0f172a">
+            <span style="flex: 0 0 44px; width: 44px; height: 44px; border-radius: 12px; background: {{g.color}}; color: #ffffff; font-weight: 700; display: flex; align-items: center; justify-content: center">{{g.initials}}</span>
+            <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+              <span style="display: flex; justify-content: space-between; gap: 8px"><span style="font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{g.name}}</span><span style="font-size: 12px; color: #64748b; flex-shrink: 0">{{g.time}}</span></span>
+              <span style="display: flex; justify-content: space-between; gap: 8px; align-items: center">
+                <span style="font-size: 13px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{g.last}}</span>
+                <sc-if value="{{g.hasUnread}}"><span style="min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0">{{g.unread}}</span></sc-if>
+              </span>
+            </span>
+          </button>
+        </sc-if>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- Group conversation -->
+  <main style="flex: 999 1 480px; min-width: 0; display: flex; flex-direction: column; background: #f8fafc; min-height: 0">
+    <header style="height: 72px; flex-shrink: 0; padding: 0 24px; background: #ffffff; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 12px">
+      <span style="width: 44px; height: 44px; border-radius: 12px; background: {{cur.color}}; color: #ffffff; font-weight: 700; display: flex; align-items: center; justify-content: center">{{cur.initials}}</span>
+      <div style="flex: 1; min-width: 0">
+        <h2 style="margin: 0; font-size: 16px; font-weight: 800">{{cur.name}}</h2>
+        <div style="font-size: 12px; color: #64748b">{{cur.memberLine}}</div>
+      </div>
+      <button aria-label="Search in group" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      </button>
+    </header>
+
+    <div style="flex: 1; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 12px">
+      <sc-for list="{{msgs}}" as="m" hint-placeholder-count="4">
+        <sc-if value="{{m.isDivider}}" hint-placeholder-val="{{false}}">
+          <div style="align-self: center; padding: 4px 12px; border-radius: 999px; background: #e2e8f0; color: #475569; font-size: 12px; font-weight: 600">{{m.text}}</div>
+        </sc-if>
+        <sc-if value="{{m.isSystem}}" hint-placeholder-val="{{false}}">
+          <div style="align-self: center; font-size: 12px; color: #475569">{{m.text}}</div>
+        </sc-if>
+        <sc-if value="{{m.isTheirs}}" hint-placeholder-val="{{true}}">
+          <div style="align-self: flex-start; max-width: min(560px, 85%); display: flex; gap: 10px; align-items: flex-end">
+            <dc-import name="Avatar" p="{{m.person}}" size="32" hint-size="32px,32px"></dc-import>
+            <div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: 16px 16px 16px 4px; background: #ffffff; border: 1px solid #e2e8f0">
+              <span style="font-size: 12px; font-weight: 700; color: {{m.color}}">{{m.from}} <span style="font-weight: 500; color: #64748b">· {{m.jobTitle}}</span></span>
+              <sc-if value="{{m.reply}}">
+                <span style="display: block; padding: 6px 10px; border-radius: 8px; background: #f1f5f9; border-inline-start: 3px solid #94a3b8; font-size: 12px; color: #475569">{{m.reply}}</span>
+              </sc-if>
+              <span>{{m.text}}</span>
+              <span style="align-self: flex-end; font-size: 11px; color: #64748b">{{m.time}}</span>
+            </div>
+          </div>
+        </sc-if>
+        <sc-if value="{{m.isMine}}" hint-placeholder-val="{{false}}">
+          <div style="align-self: flex-end; max-width: min(520px, 80%); display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: 16px 4px 16px 16px; background: #ffedd5; color: #0f172a">
+            <span>{{m.text}}</span>
+            <span style="align-self: flex-end; font-size: 11px; color: #7c2d12">{{m.time}} · Seen by {{m.seen}}</span>
+          </div>
+        </sc-if>
+      </sc-for>
+    </div>
+
+    <form onSubmit="{{send}}" style="flex-shrink: 0; padding: 14px 24px 18px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px">
+      <button type="button" aria-label="Attach file" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5 12.5 20a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L10.2 17.7a1.7 1.7 0 0 1-2.4-2.4L15.5 7.6"></path></svg>
+      </button>
+      <label for="g-composer" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Message to group</label>
+      <input id="g-composer" value="{{draft}}" onChange="{{onDraft}}" placeholder="Message the group — type @ to mention" autocomplete="off" style="flex: 1; min-width: 0; height: 44px; padding: 0 16px; border-radius: 12px; border: 1.5px solid #e2e8f0; background: #f8fafc; font-size: 14px; color: #0f172a; outline-color: #c2410c">
+      <button type="submit" aria-label="Send" style="width: 44px; height: 44px; border-radius: 12px; border: none; background: #c2410c; color: #ffffff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12 20 4l-6 16-3-7z"></path></svg>
+      </button>
+    </form>
+  </main>
+
+  <!-- Group details -->
+  <aside aria-label="Group details" style="flex: 1 1 280px; max-width: 100%; min-width: 0; background: #ffffff; border-left: 1px solid #e2e8f0; overflow-y: auto; padding: 24px 20px; display: flex; flex-direction: column; gap: 20px">
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center">
+      <span style="width: 72px; height: 72px; border-radius: 20px; background: {{cur.color}}; color: #ffffff; font-weight: 800; font-size: 24px; display: flex; align-items: center; justify-content: center">{{cur.initials}}</span>
+      <h2 style="margin: 0; font-size: 17px; font-weight: 800">{{cur.name}}</h2>
+      <p style="margin: 0; font-size: 13px; color: #64748b">{{cur.desc}}</p>
+    </div>
+    <label style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; padding: 0 14px; border-radius: 12px; background: #f8fafc; border: 1px solid #e2e8f0; font-weight: 600; font-size: 13px; cursor: pointer">
+      Mute notifications
+      <input type="checkbox" style="width: 18px; height: 18px; accent-color: #c2410c">
+    </label>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <div style="display: flex; align-items: center; justify-content: space-between">
+        <h3 style="margin: 0; font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #475569">Members · {{cur.count}}</h3>
+        <button style="height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #c2410c; font-weight: 700; font-size: 12px; cursor: pointer">+ Add</button>
+      </div>
+      <sc-for list="{{members}}" as="p" hint-placeholder-count="5">
+        <div style="display: flex; align-items: center; gap: 10px; min-height: 44px">
+          <dc-import name="Avatar" p="{{p}}" size="36" hint-size="36px,36px"></dc-import>
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+            <span style="font-weight: 600; font-size: 13px">{{p.name}}</span>
+            <span style="font-size: 12px; color: #64748b">{{p.role}}</span>
+          </span>
+          <sc-if value="{{p.admin}}"><span style="padding: 2px 8px; border-radius: 999px; background: #fff7ed; color: #9a3412; font-size: 11px; font-weight: 700">Admin</span></sc-if>
+        </div>
+      </sc-for>
+    </div>
+    <dc-import name="MediaPanel" set="g-{{cur.id}}" hint-size="100%,130px"></dc-import>
+    <button style="min-height: 44px; border-radius: 12px; border: 1px solid #fecaca; background: #ffffff; color: #b91c1c; font-weight: 700; font-size: 13px; cursor: pointer">Leave group</button>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { sel: 'sales', draft: '', sent: {}, read: { sales: true } };
+  }
+  renderVals() {
+    // photo = UserMaster.AttachmentID -> AttachmentHistory.FileURL; title = UserJobMaster.JobName · UserDepartmentMaster.DepartmentName
+    const P = {
+      mona: { name: 'Mona Adel', initials: 'MA', color: '#7c3aed', title: 'Sales Manager · Sales', photo: { bg: '#ede9fe', skin: '#e0ac69', hair: '#3b2417', shirt: '#7c3aed', long: true } },
+      omar: { name: 'Omar Nabil', initials: 'ON', color: '#1d4ed8', title: 'Treasury Supervisor · Finance', photo: { bg: '#dbeafe', skin: '#c68642', hair: '#1f1f1f', shirt: '#1d4ed8', long: false } },
+      karim: { name: 'Karim Hassan', initials: 'KH', color: '#0f766e', title: 'Warehouse Lead · Operations', photo: null },
+      yasmin: { name: 'Yasmin Fathy', initials: 'YF', color: '#be123c', title: 'Sales Representative · Sales', photo: { bg: '#ffe4e6', skin: '#f1c27d', hair: '#5a3825', shirt: '#be123c', long: true } },
+      sara: { name: 'Sara Mostafa', initials: 'SM', color: '#b45309', title: 'Senior Accountant · Finance', photo: { bg: '#fef3c7', skin: '#8d5524', hair: '#111827', shirt: '#b45309', long: true } }
+    };
+    const ME = { name: 'You', initials: 'ME', color: '#0f766e', title: 'Finance Manager · Finance', photo: { bg: '#ccfbf1', skin: '#d29a6a', hair: '#2b1b12', shirt: '#0f766e', long: false } };
+    const groups = [
+      { id: 'sales', name: 'Sales Team', initials: 'ST', color: '#c2410c', count: 24, desc: 'Daily sales updates, targets and customer follow-ups.', last: 'Karim: Targets for this week are up', time: '10:05', unread: 4,
+        members: [['mona', 'Sales manager', true], ['karim', 'Sales rep', false], ['yasmin', 'Sales rep', false], ['sara', 'Accountant', false]] },
+      { id: 'finance', name: 'Finance', initials: 'FI', color: '#1d4ed8', count: 9, desc: 'Payments, collections and month-end close.', last: 'Omar: Bank statement uploaded', time: '09:40', unread: 1,
+        members: [['omar', 'Treasury', true], ['sara', 'Accountant', false]] },
+      { id: 'warehouse', name: 'Warehouse Ops', initials: 'WO', color: '#0f766e', count: 14, desc: 'Stock, receiving and loading schedules.', last: 'You: Loading starts at 2 pm', time: 'Yesterday', unread: 0,
+        members: [['karim', 'Warehouse lead', true]] },
+      { id: 'mgmt', name: 'Management', initials: 'MG', color: '#7c3aed', count: 6, desc: 'Leadership announcements.', last: 'Mona: Agenda for Thursday', time: 'Mon', unread: 0,
+        members: [['mona', 'Director', true], ['omar', 'Finance manager', false]] }
+    ];
+    const history = {
+      sales: [
+        { d: 'Today' },
+        { sys: 'Mona Adel added Sara Mostafa' },
+        { from: 'mona', t: 'Morning team. Please update your visit plans before noon.', at: '09:12' },
+        { me: true, t: 'Done, my plan is in the shared sheet.', at: '09:30', seen: 6 },
+        { from: 'karim', t: 'Targets for this week are up', reply: 'Mona: Please update your visit plans', at: '10:05' }
+      ],
+      finance: [ { d: 'Today' }, { from: 'omar', t: 'Bank statement uploaded', at: '09:40' } ],
+      warehouse: [ { d: 'Yesterday' }, { from: 'karim', t: 'Two trucks tomorrow morning.', at: '15:10' }, { me: true, t: 'Loading starts at 2 pm', at: '15:22', seen: 9 } ],
+      mgmt: [ { d: 'Monday' }, { from: 'mona', t: 'Agenda for Thursday is in the files.', at: '13:00' } ]
+    };
+    const sel = this.state.sel;
+    const g = groups.find(x => x.id === sel);
+    const list = groups.map(x => {
+      const unread = this.state.read[x.id] ? 0 : x.unread;
+      return { ...x, unread, hasUnread: unread > 0, active: x.id === sel, inactive: x.id !== sel,
+        pick: () => this.setState({ sel: x.id, read: { ...this.state.read, [x.id]: true } }) };
+    });
+    const msgs = history[sel].concat(this.state.sent[sel] || []).map(m => {
+      if (m.d) return { isDivider: true, text: m.d };
+      if (m.sys) return { isSystem: true, text: m.sys };
+      if (m.me) return { isMine: true, text: m.t, time: m.at, seen: m.seen || 0 };
+      const p = P[m.from];
+      return { isTheirs: true, from: p.name, person: p, jobTitle: p.title, color: p.color, text: m.t, time: m.at, reply: m.reply || '' };
+    });
+    const members = [{ ...ME, role: ME.title, admin: false }]
+      .concat(g.members.map(([id, role, admin]) => ({ ...P[id], role: P[id].title, admin })));
+    return {
+      me: ME,
+      groups: list, msgs, members, draft: this.state.draft,
+      cur: { ...g, memberLine: g.count + ' members · ' + Math.min(g.count, 7) + ' online' },
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      send: (e) => {
+        e.preventDefault();
+        const text = this.state.draft.trim();
+        if (!text) return;
+        const now = new Date();
+        const at = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+        const l = (this.state.sent[sel] || []).concat([{ me: true, t: text, at, seen: 0 }]);
+        this.setState({ draft: '', sent: { ...this.state.sent, [sel]: l } });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

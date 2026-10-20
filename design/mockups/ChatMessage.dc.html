@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat message</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 100%; box-sizing: border-box; display: flex; flex-direction: column; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5; color: #0f172a">
+
+  <sc-if value="{{isDivider}}" hint-placeholder-val="{{false}}">
+    <div style="align-self: center; padding: 4px 12px; border-radius: 999px; background: #e2e8f0; color: #475569; font-size: 12px; font-weight: 600">{{text}}</div>
+  </sc-if>
+  <sc-if value="{{isSystem}}" hint-placeholder-val="{{false}}">
+    <div style="align-self: center; max-width: 90%; padding: 4px 12px; border-radius: 999px; background: #e2e8f0; color: #334155; font-size: 12px; font-weight: 600; text-align: center">{{text}} · {{time}}</div>
+  </sc-if>
+
+  <sc-if value="{{isBubble}}" hint-placeholder-val="{{true}}">
+    <div style="display: flex; gap: 4px; align-items: flex-end; flex-direction: {{rowDir}}; align-self: {{side}}; max-width: min(600px, 92%)">
+      <sc-if value="{{showAvatar}}">
+        <span style="margin-right: 6px; flex-shrink: 0"><dc-import name="Avatar" p="{{person}}" size="32" hint-size="32px,32px"></dc-import></span>
+      </sc-if>
+
+      <div style="min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: {{radius}}; background: {{bg}}; border: 1.5px {{borderStyle}} {{borderColor}}">
+        <sc-if value="{{showSender}}">
+          <span style="font-size: 12px; font-weight: 700; color: {{color}}">{{from}} <span style="font-weight: 500; color: #64748b">· {{jobTitle}}</span></span>
+        </sc-if>
+        <sc-if value="{{admin}}">
+          <span style="display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #92400e"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>Admins only</span>
+        </sc-if>
+        <sc-if value="{{hasReply}}">
+          <span style="display: flex; flex-direction: column; padding: 6px 10px; border-radius: 8px; background: {{quoteBg}}; border-inline-start: 3px solid #c2410c; font-size: 12px">
+            <span style="font-weight: 700; color: #9a3412">{{replyFrom}}</span>
+            <span style="color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px">{{replyText}}</span>
+          </span>
+        </sc-if>
+        <sc-if value="{{hasFile}}">
+          <span style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; background: #f1f5f9">
+            <span style="width: 36px; height: 36px; border-radius: 8px; background: #15803d; color: #ffffff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{fileExt}}</span>
+            <span style="font-weight: 600; font-size: 13px">{{file}}</span>
+          </span>
+        </sc-if>
+        <sc-if value="{{notDeleted}}" hint-placeholder-val="{{true}}">
+          <span style="white-space: pre-line; overflow-wrap: anywhere">{{text}}</span>
+        </sc-if>
+        <sc-if value="{{deleted}}" hint-placeholder-val="{{false}}">
+          <span style="display: flex; align-items: center; gap: 6px; font-style: italic; color: #64748b">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m5.6 5.6 12.8 12.8"></path></svg>
+            {{deletedText}}
+          </span>
+        </sc-if>
+        <span style="align-self: flex-end; font-size: 11px; color: {{timeColor}}">{{timeLine}}</span>
+      </div>
+
+      <sc-if value="{{hasMenu}}" hint-placeholder-val="{{true}}">
+        <div style="position: relative; flex-shrink: 0">
+          <button onClick="{{toggle}}" aria-label="Message options" aria-haspopup="menu" aria-expanded="{{expanded}}" style="width: 44px; height: 44px; border-radius: 22px; border: none; background: {{toolBg}}; color: #64748b; display: flex; align-items: center; justify-content: center; cursor: pointer">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="19" cy="12" r="1.8"></circle></svg>
+          </button>
+          <sc-if value="{{open}}" hint-placeholder-val="{{false}}">
+            <div role="menu" aria-label="Message options" onKeyDown="{{onMenuKey}}" style="position: absolute; bottom: 48px; left: {{menuLeft}}; right: {{menuRight}}; z-index: 40; min-width: 168px; padding: 6px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 8px 28px rgba(15,23,42,.16); display: flex; flex-direction: column">
+              <sc-for list="{{items}}" as="o" hint-placeholder-count="4">
+                <button role="menuitem" onClick="{{o.run}}" style="display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 10px; border: none; border-radius: 8px; background: transparent; color: {{o.fg}}; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer">
+                  <sc-if value="{{o.isReply}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 5 3 12l7 7"></path><path d="M3 12h11a7 7 0 0 1 7 7"></path></svg></sc-if>
+                  <sc-if value="{{o.isCopy}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"></rect><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"></path></svg></sc-if>
+                  <sc-if value="{{o.isEdit}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"></path><path d="m13.5 6.5 4 4"></path></svg></sc-if>
+                  <sc-if value="{{o.isDelete}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"></path></svg></sc-if>
+                  {{o.label}}
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"m":{"editor":null},"$preview":{"width":560,"height":220}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { open: false };
+  }
+  renderVals() {
+    // m: { kind: 'divider'|'system'|'theirs'|'mine', text, time, from, jobTitle, color, person, showSender,
+    //      admin, edited, deleted, reply: {from,text}|null, file, fileExt,
+    //      canReply, canEdit, canDelete, onReply, onCopy, onEdit, onDelete }
+    const m = this.props.m || {
+      kind: 'mine', text: 'The invoice copy is in the attachments.', time: '10:02', edited: true,
+      reply: { from: 'Omar Nabil', text: 'Checking the balance in the main treasury.' }, canReply: true, canEdit: true, canDelete: true
+    };
+    const mine = m.kind === 'mine';
+    const bubble = m.kind === 'theirs' || mine;
+    const close = (fn) => () => { this.setState({ open: false }); if (fn) fn(); };
+    const items = [];
+    if (!m.deleted) {
+      if (m.canReply) items.push({ label: 'Reply', isReply: true, fg: '#0f172a', run: close(m.onReply) });
+      items.push({ label: 'Copy', isCopy: true, fg: '#0f172a', run: close(m.onCopy) });
+      if (mine && m.canEdit) items.push({ label: 'Edit', isEdit: true, fg: '#0f172a', run: close(m.onEdit) });
+      if (mine && m.canDelete) items.push({ label: 'Delete', isDelete: true, fg: '#b91c1c', run: close(m.onDelete) });
+    }
+    const tone = m.admin
+      ? { bg: '#fffbeb', borderStyle: 'dashed', borderColor: '#d97706' }
+      : mine ? { bg: '#ffedd5', borderStyle: 'solid', borderColor: '#ffedd5' } : { bg: '#ffffff', borderStyle: 'solid', borderColor: '#e2e8f0' };
+    return {
+      isDivider: m.kind === 'divider', isSystem: m.kind === 'system', isBubble: bubble,
+      text: m.text, time: m.time,
+      rowDir: mine ? 'row-reverse' : 'row', side: mine ? 'flex-end' : 'flex-start',
+      radius: mine ? '16px 4px 16px 16px' : '16px 16px 16px 4px',
+      ...tone, admin: !!m.admin,
+      showAvatar: !mine && !!m.showSender, showSender: !mine && !!m.showSender,
+      person: m.person, from: m.from, jobTitle: m.jobTitle, color: m.color,
+      hasReply: !!m.reply, replyFrom: m.reply ? m.reply.from : '', replyText: m.reply ? m.reply.text : '',
+      quoteBg: mine ? 'rgba(255,255,255,.6)' : '#f1f5f9',
+      hasFile: !!m.file, file: m.file || '', fileExt: m.fileExt || '',
+      deleted: !!m.deleted, notDeleted: !m.deleted,
+      deletedText: mine ? 'You deleted this message' : 'This message was deleted',
+      timeLine: m.time + (m.edited && !m.deleted ? ' · Edited' : ''),
+      timeColor: mine && !m.admin ? '#7c2d12' : '#64748b',
+      hasMenu: bubble && m.menu !== false && items.length > 0, items,
+      open: this.state.open, expanded: this.state.open ? 'true' : 'false',
+      toolBg: this.state.open ? '#e2e8f0' : 'transparent',
+      menuLeft: mine ? 'auto' : '0', menuRight: mine ? '0' : 'auto',
+      toggle: () => this.setState({ open: !this.state.open }),
+      onMenuKey: (e) => { if (e.key === 'Escape') this.setState({ open: false }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

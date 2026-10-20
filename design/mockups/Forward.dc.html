@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — Forward ticket</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#c2410c}a:hover{color:#9a3412}
+button,input{font-family:inherit}
+</style>
+</helmet>
+<div role="dialog" aria-labelledby="fw-title" style="width: 560px; height: 560px; box-sizing: border-box; background: #ffffff; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5; display: flex; flex-direction: column">
+  <header style="padding: 24px 28px 16px; display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid #e2e8f0">
+    <div style="flex: 1">
+      <h1 id="fw-title" style="margin: 0; font-size: 20px; font-weight: 800">Forward ticket #2507458</h1>
+      <p style="margin: 2px 0 0; color: #64748b; font-size: 13px">Petty cash top-up, Alexandria branch</p>
+    </div>
+    <a href="Channels.dc.html" aria-label="Close" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #e2e8f0; color: #475569; display: flex; align-items: center; justify-content: center; text-decoration: none">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+    </a>
+  </header>
+
+  <form style="flex: 1; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: 16px">
+    <div style="padding: 12px 14px; border-radius: 12px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e3a8a; font-size: 13px">
+      Only channels in the <strong>Finance</strong> category can receive this ticket. It waits there until someone accepts it; you can cancel until then.
+    </div>
+    <fieldset style="margin: 0; padding: 0; border: none; display: flex; flex-direction: column; gap: 8px">
+      <legend style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px">Forward to</legend>
+      <label style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #c2410c; background: #fff7ed; cursor: pointer">
+        <input type="radio" name="fw-to" checked style="width: 18px; height: 18px; accent-color: #c2410c">
+        <span style="flex: 1; font-weight: 700"># Cash Receive</span>
+        <span style="font-size: 12px; color: #64748b">8 members</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #e2e8f0; cursor: pointer">
+        <input type="radio" name="fw-to" style="width: 18px; height: 18px; accent-color: #c2410c">
+        <span style="flex: 1; font-weight: 700"># Treasury</span>
+        <span style="font-size: 12px; color: #64748b">5 members</span>
+      </label>
+    </fieldset>
+    <fieldset style="margin: 0; padding: 0; border: none; display: flex; flex-direction: column; gap: 4px">
+      <legend style="font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 6px">Invite to the forwarded ticket</legend>
+      <label style="display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer">
+        <input type="checkbox" checked style="width: 18px; height: 18px; accent-color: #c2410c">
+        <dc-import name="Avatar" p="{{sara}}" size="34" hint-size="34px,34px"></dc-import>
+        <span style="flex: 1; display: flex; flex-direction: column"><span style="font-weight: 600; font-size: 13px">Sara Mostafa</span><span style="font-size: 12px; color: #64748b">Senior Accountant · Finance</span></span>
+        <span style="font-size: 12px; color: #64748b">Team leader, Cash Receive</span>
+      </label>
+      <label style="display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer">
+        <input type="checkbox" style="width: 18px; height: 18px; accent-color: #c2410c">
+        <dc-import name="Avatar" p="{{karim}}" size="34" hint-size="34px,34px"></dc-import>
+        <span style="flex: 1; display: flex; flex-direction: column"><span style="font-weight: 600; font-size: 13px">Karim Hassan</span><span style="font-size: 12px; color: #64748b">Warehouse Lead · Operations</span></span>
+        <span style="font-size: 12px; color: #64748b">Member</span>
+      </label>
+    </fieldset>
+  </form>
+
+  <footer style="padding: 16px 28px 22px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 10px">
+    <a href="Channels.dc.html" style="height: 44px; padding: 0 18px; border-radius: 12px; border: 1px solid #cbd5e1; color: #0f172a; font-weight: 700; font-size: 14px; display: flex; align-items: center; text-decoration: none">Cancel</a>
+    <a href="Channels.dc.html" style="height: 44px; padding: 0 20px; border-radius: 12px; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 14px; display: flex; align-items: center; text-decoration: none">Forward ticket</a>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":560,"height":560}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      sara: { name: 'Sara Mostafa', initials: 'SM', color: '#b45309', photo: { bg: '#fef3c7', skin: '#8d5524', hair: '#111827', shirt: '#b45309', long: true } },
+      karim: { name: 'Karim Hassan', initials: 'KH', color: '#0f766e', photo: null }
+    };
+  }
+}
+</script>
+</body>
+</html>
