@@ -4,6 +4,8 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using Plus.Api.Auth;
+using Plus.Api.Live;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Plus.Api.Tests;
@@ -181,5 +183,51 @@ public sealed class LiveTests
         for (var i = 0; i < 6; i++) await Send(socket, """{"type":"noise"}""");
         Assert.Null(await Next(socket));
         Assert.Equal(WebSocketCloseStatus.PolicyViolation, socket.CloseStatus);
+    }
+
+    private static LiveChange Change(long seq, string user = "ERP_USER", string type = "O", int session = 7, int group = 0) =>
+        new(user, seq, (int)seq + 1000, type, session, group, 0, 0, 0);
+
+    [Fact]
+    public async Task Changed_rows_reach_only_their_owner_with_ids_only()
+    {
+        using var factory = new GatewayFactory(true);
+        using var client = factory.CreateClient();
+        using var socket = await Connect(factory, await Ticket(client, (await Login(client)).AccessToken));
+        await Next(socket);   // hello
+        var pump = factory.Services.GetRequiredService<LiveChangePump>();
+        factory.Changes.Rows.Add(Change(10));
+        await pump.Tick(500, CancellationToken.None);   // first pass only takes the mark: history is not replayed
+        factory.Changes.Rows.Add(Change(11, "SOMEONE_ELSE"));
+        factory.Changes.Rows.Add(Change(12, type: "G", session: 0, group: 3));
+        await pump.Tick(500, CancellationToken.None);
+        var frame = (await Next(socket))!.Value;
+        Assert.Equal("changed", frame.GetProperty("type").GetString());
+        Assert.Equal(12, frame.GetProperty("seq").GetInt64());
+        var item = Assert.Single(frame.GetProperty("items").EnumerateArray());
+        Assert.Equal("group", item.GetProperty("kind").GetString());
+        Assert.Equal(3, item.GetProperty("id").GetInt32());
+        Assert.Equal(["id", "kind", "seq", "silaId"], item.EnumerateObject().Select(p => p.Name).Order());
+    }
+
+    [Fact]
+    public async Task A_late_commit_is_sent_once()
+    {
+        using var factory = new GatewayFactory(true);
+        using var client = factory.CreateClient();
+        using var socket = await Connect(factory, await Ticket(client, (await Login(client)).AccessToken));
+        await Next(socket);   // hello
+        var pump = factory.Services.GetRequiredService<LiveChangePump>();
+        await pump.Tick(500, CancellationToken.None);
+        factory.Changes.Rows.Add(Change(21));
+        await pump.Tick(500, CancellationToken.None);
+        Assert.Equal(21, (await Next(socket))!.Value.GetProperty("seq").GetInt64());
+        factory.Changes.Rows.Add(Change(20, session: 8));   // committed after 21 was read
+        await pump.Tick(500, CancellationToken.None);
+        var late = (await Next(socket))!.Value;
+        Assert.Equal(8, Assert.Single(late.GetProperty("items").EnumerateArray()).GetProperty("id").GetInt32());
+        await pump.Tick(500, CancellationToken.None);   // nothing new: no frame
+        await Send(socket, """{"type":"ping"}""");
+        Assert.Equal("pong", (await Next(socket))!.Value.GetProperty("type").GetString());
     }
 }

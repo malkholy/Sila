@@ -58,7 +58,7 @@ public static class ParameterBinder
             object result = item.Type switch
             {
                 SqlDbType.NVarChar or SqlDbType.NChar or SqlDbType.VarChar or SqlDbType.Char =>
-                    value.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+                    value.ValueKind is JsonValueKind.Object or JsonValueKind.Array or JsonValueKind.Number
                         ? value.GetRawText() : value.GetString()!,
                 SqlDbType.Int => value.GetInt32(),
                 SqlDbType.BigInt => value.GetInt64(),

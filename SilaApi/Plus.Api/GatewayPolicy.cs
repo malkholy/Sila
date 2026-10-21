@@ -53,10 +53,14 @@ public sealed partial class GatewayPolicy(IOptionsMonitor<GatewayOptions> option
         // SQL mode never falls back to configuration, including on missing/disabled rows.
         if (allowed is null || !allowed.Enabled || (zone == "external" && !allowed.AllowExternal))
             throw new GatewayException(403, "Database or operation access denied.");
+        // Strings and numbers too: the mobile app's procedures take a bare id in
+        // LineData for some operations (GRP 'add admin', CHA 'Forward Ticket').
+        // Always bound as a parameter value, never SQL text.
         if (request.LineData.ValueKind is not (System.Text.Json.JsonValueKind.Undefined
             or System.Text.Json.JsonValueKind.Null or System.Text.Json.JsonValueKind.Object
-            or System.Text.Json.JsonValueKind.Array))
-            throw new GatewayException(400, "lineData must be an object, array or null.");
+            or System.Text.Json.JsonValueKind.Array or System.Text.Json.JsonValueKind.String
+            or System.Text.Json.JsonValueKind.Number))
+            throw new GatewayException(400, "lineData must be an object, array, string, number or null.");
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in request.ExtraParams?.Keys.AsEnumerable() ?? [])
         {

@@ -20,6 +20,7 @@ namespace Plus.Api.Live;
 //   {type:"hello", user, online:[...], serverTime}
 //   {type:"presence", user, online:true|false}
 //   {type:"pong"}
+//   {type:"changed", seq, items:[{kind, id, silaId, seq}]}   (LiveChangePump)
 // Client -> server: {type:"ping"}; anything else is ignored for now.
 // Close codes: 4401 session ended (sign in again), 1008 policy (too many
 // frames / bad origin), 1009 frame too large, 1001 server going away.

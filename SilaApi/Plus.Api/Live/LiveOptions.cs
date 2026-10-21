@@ -14,4 +14,8 @@ public sealed class LiveOptions
     public int MaxMessageBytes { get; set; } = 4096;
     // Client frames allowed per 10 seconds before the socket is closed.
     public int MaxMessagesPer10Seconds { get; set; } = 20;
+    // How often SilaHistory is read for "changed" events while sockets are open; 0 = off.
+    public int ChangePollSeconds { get; set; } = 2;
+    // How many SynSequence values back each read starts (late commits).
+    public int ChangeOverlap { get; set; } = 500;
 }

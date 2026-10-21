@@ -195,10 +195,14 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 builder.Services.AddOptions<LiveOptions>().BindConfiguration("Live")
     .Validate(x => x.MaxConnectionsPerUser is >= 1 and <= 100 && x.TicketSeconds is >= 5 and <= 300
         && x.RevalidateSeconds is >= 1 and <= 3600 && x.KeepAliveSeconds is >= 5 and <= 300
-        && x.MaxMessageBytes is >= 256 and <= 65536 && x.MaxMessagesPer10Seconds is >= 1 and <= 1000,
+        && x.MaxMessageBytes is >= 256 and <= 65536 && x.MaxMessagesPer10Seconds is >= 1 and <= 1000
+        && x.ChangePollSeconds is >= 0 and <= 300 && x.ChangeOverlap is >= 0 and <= 100000,
         "Invalid live channel limits.")
     .ValidateOnStart();
 builder.Services.AddSingleton<LiveHub>();
+builder.Services.AddSingleton<ILiveChangeSource, SqlLiveChangeSource>();
+builder.Services.AddSingleton<LiveChangePump>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<LiveChangePump>());
 var app = builder.Build();
 var gateway = app.Services.GetRequiredService<IOptions<GatewayOptions>>().Value;
 // Resolve authentication options at startup so invalid production settings fail immediately.

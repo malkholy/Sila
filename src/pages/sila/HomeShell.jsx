@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Home, MessageCircle, Users, Hash, Settings, Search, Plus, Ticket, LogOut, Wifi, WifiOff, RefreshCw, Mail, CheckSquare,
 } from 'lucide-react';
-import { useLive, retryLiveNow } from '../../shared/live.js';
+import { useLive, retryLiveNow, onLive } from '../../shared/live.js';
 import { loadLeftSide, mergeLeftSide, formatWhen } from '../../shared/leftSide.js';
 import Avatar from './Avatar.jsx';
 import ChatPane from './ChatPane.jsx';
@@ -138,7 +138,7 @@ export default function HomeShell({ user, onSignOut }) {
   // 10 minutes old (a delta can't see deleted rows or Hide / UnHide). In
   // between, syncLeft asks only for rows whose SynSequence moved (MaxSeq).
   const FULL_EVERY_MS = 10 * 60_000;
-  const sync = useRef({ maxSeq: 0, fullAt: 0, busy: false });
+  const sync = useRef({ maxSeq: 0, fullAt: 0, busy: false, again: false });
   const reload = useCallback(() => {
     const seq = ++loadSeq.current;
     setLeft(s => ({ ...s, status: s.items.length ? 'refreshing' : 'loading', error: '' }));
@@ -154,7 +154,8 @@ export default function HomeShell({ user, onSignOut }) {
 
   const syncLeft = useCallback(() => {
     const st = sync.current;
-    if (st.busy || !st.fullAt) return;
+    if (!st.fullAt) return;
+    if (st.busy) { st.again = true; return; }   // a change arrived mid-sync: run once more after
     if (Date.now() - st.fullAt > FULL_EVERY_MS) { reload(); return; }
     st.busy = true;
     const seq = loadSeq.current;
@@ -165,10 +166,21 @@ export default function HomeShell({ user, onSignOut }) {
         if (delta.length) setLeft(s => (s.status === 'ready' || s.status === 'refreshing' ? { ...s, items: mergeLeftSide(s.items, delta) } : s));
       })
       .catch(() => { /* next tick retries */ })
-      .finally(() => { sync.current.busy = false; });
+      .finally(() => {
+        sync.current.busy = false;
+        if (sync.current.again) { sync.current.again = false; syncLeftRef.current(); }
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reload]);
-  // until live events exist: changed conversations every 60 s and on return to the tab
+  const syncLeftRef = useRef(syncLeft);
+  syncLeftRef.current = syncLeft;
+  // live: a "changed" event (SilaApi watches SynSequence) or a (re)connect -> delta now
+  useEffect(() => {
+    const offChanged = onLive('changed', () => syncLeft());
+    const offHello = onLive('hello', () => syncLeft());
+    return () => { offChanged(); offHello(); };
+  }, [syncLeft]);
+  // fallback when the socket is down: changed conversations every 60 s and on return to the tab
   useEffect(() => {
     const tick = () => { if (document.visibilityState === 'visible') syncLeft(); };
     const timer = setInterval(tick, 60_000);

@@ -1,0 +1,235 @@
+{
+  "info": {
+    "name": "SilaApi - Mobile",
+    "description": "Sign-in and calls for the mobile app through SilaApi (https://sila.glcpaints.com:7400).\n\n1. Set the collection variables `username` and `password` (Variables tab). Never save a real password in a shared copy of this collection.\n2. Run **Login**: its test script saves `accessToken` and `refreshToken` into the collection variables.\n3. The other requests send `Authorization: Bearer {{accessToken}}`. The access token lasts about 5 minutes; run **Refresh** to get a new one.\n\nThe user is never sent: SilaApi takes it from the token. Do not send `User`, `IP` or `SqlStatement`; other procedure parameters go in `extraParams`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://sila.glcpaints.com:7400"
+    },
+    {
+      "key": "database",
+      "value": "SILA101"
+    },
+    {
+      "key": "username",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "maxSeq",
+      "value": "0"
+    }
+  ],
+  "item": [
+    {
+      "name": "Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('signed in', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('accessToken', body.accessToken || '');",
+              "pm.collectionVariables.set('refreshToken', body.refreshToken || '');",
+              "if (body.mustChangePassword) console.warn('This account must change its password before calling /api/v2/exec.');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v2/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "auth",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"database\": \"{{database}}\",\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "description": "Response 200:\n```json\n{\n  \"accessToken\": \"eyJ...\",\n  \"refreshToken\": \"...\",\n  \"tokenType\": \"Bearer\",\n  \"expiresAt\": \"2026-10-22T10:05:00Z\",\n  \"sessionExpiresAt\": \"...\",\n  \"database\": \"SILA101\",\n  \"username\": \"mhd\",\n  \"displayName\": \"...\",\n  \"mustChangePassword\": false\n}\n```\n401 = wrong username or password; 429 = more than 10 attempts a minute from this IP. Unknown body fields are rejected (400)."
+      }
+    },
+    {
+      "name": "Refresh",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('refreshed', () => pm.response.to.have.status(200));",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('accessToken', body.accessToken || '');",
+              "pm.collectionVariables.set('refreshToken', body.refreshToken || '');"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v2/auth/refresh",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "auth",
+            "refresh"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"database\": \"{{database}}\",\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+        },
+        "description": "Returns a new access token AND a new refresh token; the old refresh token stops working. Store both."
+      }
+    },
+    {
+      "name": "Left side (APIGeneralOperation)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v2/exec",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "exec"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"database\": \"{{database}}\",\n  \"proc\": \"dbo.APIGeneralOperation\",\n  \"operation\": \"Left side\",\n  \"extraParams\": {\n    \"MaxSeq\": {{maxSeq}},\n    \"PlatForm\": \"android\",\n    \"AndroidVersion\": \"1\",\n    \"FireBaseToken\": \"\"\n  }\n}"
+        },
+        "description": "First call with maxSeq 0 = the full list; the test script then saves the highest SynSequence into {{maxSeq}}, so the next call returns only the conversations that changed (set maxSeq back to 0 for a full list again).\n\nResult sets: data.List0 = ApplicationTableVersion, data.List1 = SoftwareVersionHistory, data.List2 = the conversations (V_SilaHistory_1 + ForceFullSync), data.List3 = notifications. A refusal comes back as HTTP 422 {ok:false, state, message} with no data: state 3 = 'Kindly update your App' (AndroidVersion / IOSVersion below SoftwareVersionHistory), 9 = user not active.\n\nNote: if UserSyncMaster.ForceFullSync is set, the procedure ignores MaxSeq once and returns everything (ForceFullSync = 1 on the rows)."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (!body.ok) { console.warn('Refused: state ' + body.state + ' - ' + body.message + (body.state === 3 ? ' (raise AndroidVersion / IOSVersion)' : '')); return; }",
+              "pm.test('ok', () => pm.response.to.have.status(200));",
+              "// Every APIGeneralOperation call returns ApplicationTableVersion (List0) and",
+              "// SoftwareVersionHistory (List1) first; 'Left side' rows are List2, notifications List3.",
+              "const rows = (body.data && body.data.List2) || [];",
+              "const top = rows.reduce((m, r) => Math.max(m, Number(r.SynSequence) || 0), Number(pm.collectionVariables.get('maxSeq')) || 0);",
+              "pm.collectionVariables.set('maxSeq', String(top));",
+              "console.log(rows.length + ' conversation row(s); maxSeq now ' + top);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Live ticket (for the WebSocket)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v2/live/ticket",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "live",
+            "ticket"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"database\": \"{{database}}\"\n}"
+        },
+        "description": "Returns {ticket, expiresAt}. One use, valid 30 s. Open the socket with a Postman WebSocket request: wss://sila.glcpaints.com:7400/api/v2/live?ticket=<ticket>. Frames: hello, presence, changed {seq, items:[{kind, id, silaId, seq}]}; send {\"type\":\"ping\"} to get pong."
+      }
+    },
+    {
+      "name": "Logout",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/v2/auth/logout",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "v2",
+            "auth",
+            "logout"
+          ]
+        },
+        "description": "Ends the session (204) and closes its sockets. To also drop the Firebase token, call APIGeneralOperation 'Logout' with PlatForm first."
+      }
+    }
+  ]
+}

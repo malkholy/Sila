@@ -72,10 +72,6 @@ WHEN NOT MATCHED THEN
 GO
 
 -- dbo.APIGeneralOperation is the mobile app's router: the web must not call it
--- (it would consume the mobile ForceFullSync flag). An earlier draft of this
--- script allowed its 'Left side'; if that row was deployed, disable it.
-UPDATE [PLS].[V1ApiOperationPermission]
-SET Enabled = 0, Notes = N'Disabled: mobile router; the web uses dbo.APISilaWebOperation',
-    ModifiedBy = N'claude', ModifiedAt = SYSUTCDATETIME()
-WHERE ProcedureName = N'dbo.APIGeneralOperation' AND OperationName = N'Left side' AND Enabled = 1;
-GO
+-- (it would consume the mobile ForceFullSync flag); the web uses
+-- dbo.APISilaWebOperation. Its rows, for the mobile app through SilaApi, are
+-- in SQLScript/MobileApiOperationPermissions.sql.

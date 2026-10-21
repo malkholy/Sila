@@ -87,6 +87,8 @@ public sealed class LiveHub(ILogger<LiveHub> logger)
     public string[] Online(string database) => connections.Values.Where(c => c.Database == database)
         .Select(c => c.Username).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray();
 
+    public string[] Databases() => connections.Values.Select(c => c.Database).Distinct(StringComparer.Ordinal).ToArray();
+
     public Task Broadcast(string database, object message, Guid? except = null) =>
         SendAll(connections.Values.Where(c => c.Database == database && c.Id != except), message);
 

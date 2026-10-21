@@ -19,6 +19,7 @@ using Xunit;
 using ExecutionContext = Plus.Api.ExecutionContext;
 using Plus.Api.Auth;
 using Plus.Api.Attachments;
+using Plus.Api.Live;
 
 namespace Plus.Api.Tests;
 
@@ -37,6 +38,7 @@ public sealed class GatewayFactory(bool localLogin = false, bool sqlPermissions 
     public FakeAttachmentStore AttachmentStore { get; } = new();
     public FakeLegacyFiles LegacyFiles { get; } = new(AttachmentTests.Pdf);
     public FakeScanner Scanner { get; } = new();
+    public FakeChangeSource Changes { get; } = new();
     public string StorageDir { get; } = Path.Combine(Path.GetTempPath(), $"plus-att-{Guid.NewGuid():N}");
     public string QuarantineDir { get; } = Path.Combine(Path.GetTempPath(), $"plus-quar-{Guid.NewGuid():N}");
     private readonly string keyPath = Path.Combine(Path.GetTempPath(), $"plus-api-test-{Guid.NewGuid()}.pem");
@@ -81,7 +83,8 @@ public sealed class GatewayFactory(bool localLogin = false, bool sqlPermissions 
             ["Live:MaxConnectionsPerUser"] = "3",
             ["Live:RevalidateSeconds"] = "1",
             ["Live:MaxMessageBytes"] = "256",
-            ["Live:MaxMessagesPer10Seconds"] = "5"
+            ["Live:MaxMessagesPer10Seconds"] = "5",
+            ["Live:ChangePollSeconds"] = "0"   // tests drive LiveChangePump.Tick themselves
         }));
         builder.ConfigureServices(services =>
         {
@@ -103,6 +106,8 @@ public sealed class GatewayFactory(bool localLogin = false, bool sqlPermissions 
             services.AddSingleton<ILegacyFileSource>(LegacyFiles);
             services.RemoveAll<IVirusScanner>();
             services.AddSingleton<IVirusScanner>(Scanner);
+            services.RemoveAll<ILiveChangeSource>();
+            services.AddSingleton<ILiveChangeSource>(Changes);
         });
     }
 
@@ -130,6 +135,15 @@ public sealed class GatewayFactory(bool localLogin = false, bool sqlPermissions 
             if (Directory.Exists(QuarantineDir)) Directory.Delete(QuarantineDir, true);
         }
     }
+}
+
+public sealed class FakeChangeSource : ILiveChangeSource
+{
+    public List<LiveChange> Rows { get; } = [];
+    public Task<long> CurrentAsync(string database, CancellationToken cancellationToken) =>
+        Task.FromResult(Rows.Count == 0 ? 0 : Rows.Max(r => r.Seq));
+    public Task<IReadOnlyList<LiveChange>> ReadAsync(string database, long from, int max, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<LiveChange>>(Rows.Where(r => r.Seq > from).OrderBy(r => r.Seq).Take(max).ToList());
 }
 
 public sealed class FakeExecutor : IProcedureExecutor
@@ -305,6 +319,10 @@ public sealed class GatewayTests
         Assert.Equal("[{\"Amount\":10}]", explicitNull.Parameters["@LineMember"].Value);
         Assert.Equal(-1, explicitNull.Parameters["@LineMember"].Size);
         Assert.Equal(ParameterDirection.Output, explicitNull.Parameters["@State"].Direction);
+        // a bare id (legacy GRP / CHA operations) arrives as its text
+        using var bareId = new SqlCommand();
+        ParameterBinder.Bind(bareId, metadata, new("MEGA25", "Pls.TestOperation", "View", JsonSerializer.SerializeToElement(15)), context);
+        Assert.Equal("15", bareId.Parameters["@LineData"].Value);
     }
 
     [Theory]

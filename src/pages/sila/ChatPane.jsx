@@ -7,6 +7,7 @@ import Avatar from './Avatar.jsx';
 import { chatApi, formatSize, newLocalId, PAGE_SIZE } from '../../shared/chat.js';
 import { cacheKey, getCached, putCached, newestId, applyDelta } from '../../shared/chatCache.js';
 import GroupInfoPanel from './GroupInfoPanel.jsx';
+import { onLive } from '../../shared/live.js';
 
 // The right side for a one-to-one chat or a group (design/mockups/Home.dc.html):
 // header, messages (newest page first, "Load older" pages back), read state,
@@ -301,6 +302,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const stateRef = useRef(state);
   stateRef.current = state;
   const syncing = useRef(false);
+  const syncAgain = useRef(false);
 
   // full load of the newest page; keepShown: refresh behind what is on screen
   const fullLoad = useCallback((keepShown = false) => {
@@ -320,7 +322,8 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   // rows newer than the newest one held (new messages, edit / delete copies)
   const syncNew = useCallback((messages) => {
     const after = newestId(messages || stateRef.current.messages);
-    if (!after || syncing.current) return;
+    if (!after) return;
+    if (syncing.current) { syncAgain.current = true; return; }   // a change arrived mid-sync: run once more after
     syncing.current = true;
     const seq = loadSeq.current;
     api.load(0, after)
@@ -333,8 +336,13 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
           : { ...s, header: page.header || s.header, messages: applyDelta(s.messages, page.messages) }));
       })
       .catch(() => { /* next tick retries */ })
-      .finally(() => { syncing.current = false; });
+      .finally(() => {
+        syncing.current = false;
+        if (syncAgain.current) { syncAgain.current = false; syncNewRef.current(); }
+      });
   }, [api, fullLoad]);
+  const syncNewRef = useRef(syncNew);
+  syncNewRef.current = syncNew;
 
   const load = useCallback(() => {
     const cached = getCached(key);
@@ -359,7 +367,16 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
     if (state.status === 'ready') putCached(key, { header: state.header, messages: state.messages, hasMore: state.hasMore });
   }, [key, state]);
 
-  // until live events exist: pick up new messages every 30 s and on return to the tab
+  // live: this conversation's SilaHistory row moved (new message, edit, delete) -> delta now
+  useEffect(() => {
+    if (state.status !== 'ready') return undefined;
+    const id = item.kind === 'group' ? item.raw?.GroupID : item.raw?.SessionID;
+    return onLive('changed', frame => {
+      if ((frame.items || []).some(c => c.kind === item.kind && c.id === id)) syncNew();
+    });
+  }, [state.status, syncNew, item]);
+
+  // fallback when the socket is down: pick up new messages every 30 s and on return to the tab
   useEffect(() => {
     if (state.status !== 'ready') return undefined;
     const tick = () => { if (document.visibilityState === 'visible') syncNew(); };
