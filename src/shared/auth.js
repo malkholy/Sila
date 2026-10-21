@@ -129,8 +129,12 @@ export async function authPost(path, body) {
 }
 
 // /api/v2/exec: { ok, state, message, data: { List0, ... } }
-export function apiExec(proc, operation, lineData = null) {
-  return authPost('/api/v2/exec', { database: DATABASE, proc, operation, lineData });
+// extraParams: named SP parameters beyond Operation/User/LineData; each must be
+// listed in the operation's AllowedParametersJson (PLS.V1ApiOperationPermission).
+export function apiExec(proc, operation, lineData = null, extraParams = null) {
+  return authPost('/api/v2/exec', {
+    database: DATABASE, proc, operation, lineData, ...(extraParams ? { extraParams } : {}),
+  });
 }
 
 // Ends the session on the server too (that also closes its live sockets).

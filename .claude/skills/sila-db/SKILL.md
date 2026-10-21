@@ -1,6 +1,6 @@
 ---
 name: sila-db
-description: Read the Sila live SQL Server database (`SILA101`, the ticket/chat DB behind the :9201 gateway) through [CHA].[APISilaOperationV1] — list objects, read SP/view source, columns, parameters, preview rows, or run a read-only query. Use whenever the task needs to "check the DB", "look at the SP", "what's in table X", or discover ticket operations. Every run needs explicit user approval. Read-only; changes are deployed by the user in SSMS.
+description: Read (db.sh) or deploy scripts to (deploy.sh) the Sila live SQL Server database (`SILA101`, the ticket/chat DB behind the :9201 gateway) through [CHA].[APISilaOperationV1] — list objects, read SP/view source, columns, parameters, preview rows, or run a read-only query. Use whenever the task needs to "check the DB", "look at the SP", "what's in table X", or discover ticket operations. Every run needs explicit user approval. Read-only; changes are deployed by the user in SSMS.
 ---
 
 # Sila live DB (read-only)
@@ -37,6 +37,33 @@ it signs in with a Sila account from `~/.config/sila/api.json`
 the session in `~/.config/sila/api-session.json` (mode 600), and calls
 `/api/v2/exec` with proc `CHA.APISilaOperationV1`. The ApiKey is still needed.
 Overrides: `SILA_API_ENDPOINT`, `SILA_API_DATABASE`.
+
+## Deploying scripts (deploy.sh)
+
+`deploy.sh` is the only write path, and it is separate from `db.sh` (which
+stays read-only). It sends a script to `[CHA].[APISilaDeployV1]`
+(`SQLScript/APISilaDeployV1.sql`) through the Sila API, one `GO` batch per
+call, and stops at the first failure:
+
+```bash
+.claude/skills/sila-db/deploy.sh ping                                  # which DB, may it create objects
+.claude/skills/sila-db/deploy.sh SQLScript/APISilaWebOperation.sql    # deploy a script
+```
+
+- **Every deploy needs the user's explicit yes in chat**, with the file named —
+  same rule as reads, stricter in spirit: it changes the live DB.
+- Each batch runs in its own transaction and is logged in `dbo.SilaDeployLog`
+  (who, when, script, hash, result). A failed batch is rolled back; earlier
+  batches stay applied, so scripts must stay idempotent.
+- Refused server-side (run these in SSMS): `USE`, logins/users/roles/`GRANT`/
+  `DENY`/`REVOKE`, `DROP`/`TRUNCATE TABLE`, database-level changes,
+  backup/restore, server config, external data access, and any batch that
+  mentions the deploy / key / reader objects (so the permission-seed batches
+  for `APISilaOperationV1` / `APISilaDeployV1` stay SSMS-only).
+- Deploy key: `Scope = 'deploy'`, bound to one Sila user, minted with
+  `SQLScript/SilaDeployKeyNew.sql`; kept in `$SILA_DEPLOY_KEY` or
+  `~/.config/sila/deploy.key`. Signs in with the same account as `db.sh --v2`.
+- After a deploy, verify with a read (`db.sh params` / `db.sh query`).
 
 ## Key and overrides
 

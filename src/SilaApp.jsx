@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { restore, logout } from './shared/auth.js';
 import { connectLive, disconnectLive } from './shared/live.js';
+import { clearChatCache } from './shared/chatCache.js';
 import LoginPage from './pages/sila/LoginPage.jsx';
 import HomeShell from './pages/sila/HomeShell.jsx';
 
@@ -27,13 +28,14 @@ export default function SilaApp() {
 
   // The session ended elsewhere (logout on another tab, password change, expiry).
   useEffect(() => {
-    const ended = () => { disconnectLive(); setUser(null); setPhase('signed-out'); };
+    const ended = () => { disconnectLive(); clearChatCache(); setUser(null); setPhase('signed-out'); };
     window.addEventListener('sila:signed-out', ended);
     return () => window.removeEventListener('sila:signed-out', ended);
   }, []);
 
   const signOut = useCallback(async () => {
     disconnectLive();
+    clearChatCache();
     setUser(null);
     setPhase('signed-out');
     await logout();
