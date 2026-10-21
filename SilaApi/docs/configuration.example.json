@@ -1,0 +1,39 @@
+{
+  "Authentication": {
+    "Issuer": "https://identity.example.invalid",
+    "Audience": "plus-api-v2",
+    "Authority": "https://identity.example.invalid"
+  },
+  "Gateway": {
+    "InternalNetworks": ["10.0.0.0/8"],
+    "KnownProxies": [],
+    "CorsOrigins": ["http://localhost:5173"],
+    "Databases": {
+      "MEGA25": {
+        "DisplayName": "ERP Mega",
+        "ConnectionStringName": "MEGA25",
+        "Enabled": false,
+        "AllowExternal": false,
+        "Users": [
+          {
+            "Issuer": "https://identity.example.invalid",
+            "Subject": "stable-subject-id-from-identity-adapter",
+            "Username": "local-erp-username",
+            "Enabled": false
+          }
+        ],
+        "Procedures": {
+          "Pls.APIPlusOperationV1": {
+            "Operations": {
+              "GetGridData": {
+                "Enabled": false,
+                "AllowExternal": false,
+                "AllowedParameters": []
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

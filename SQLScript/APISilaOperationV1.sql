@@ -6,7 +6,7 @@ SET QUOTED_IDENTIFIER ON
 GO
 -- =========================================================================
 -- [CHA].[APISilaOperationV1] -- main router SP for the Sila web API (the
--- :9101 gateway, same transport as [CHA].[APITicketOperation]).
+-- :9201 gateway, same transport as [CHA].[APITicketOperation]).
 --
 -- First operations: read-only live-DB inspection, so schema/SP discovery
 -- happens through the API instead of SSMS screenshots:
@@ -32,7 +32,7 @@ GO
 --
 -- Parameters mirror the ticket gateway's body keys exactly (operation, User,
 -- TicketID, ChannelID, LineData, ..., DeskTopVerion -- typo included) so the
--- :9101 gateway binds them the same way it does for APITicketOperation.
+-- :9201 gateway binds them the same way it does for APITicketOperation.
 -- Every parameter has a default; NULLs are tolerated. Types stay within what
 -- the legacy gateway's dbo.GetProcedureParameter binds (INT / NVARCHAR /
 -- VARCHAR) -- it returns NULL for BIGINT and several others

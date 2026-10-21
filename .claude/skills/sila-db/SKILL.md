@@ -1,13 +1,13 @@
 ---
 name: sila-db
-description: Read the Sila live SQL Server database (`SILA101`, the ticket/chat DB behind the :9101 gateway) through [CHA].[APISilaOperationV1] — list objects, read SP/view source, columns, parameters, preview rows, or run a read-only query. Use whenever the task needs to "check the DB", "look at the SP", "what's in table X", or discover ticket operations. Every run needs explicit user approval. Read-only; changes are deployed by the user in SSMS.
+description: Read the Sila live SQL Server database (`SILA101`, the ticket/chat DB behind the :9201 gateway) through [CHA].[APISilaOperationV1] — list objects, read SP/view source, columns, parameters, preview rows, or run a read-only query. Use whenever the task needs to "check the DB", "look at the SP", "what's in table X", or discover ticket operations. Every run needs explicit user approval. Read-only; changes are deployed by the user in SSMS.
 ---
 
 # Sila live DB (read-only)
 
 All reads go through `db.sh`, which calls `[CHA].[APISilaOperationV1]`
 (source: `SQLScript/APISilaOperationV1.sql`) on
-`https://sila.silasystem.com:9101/General/GeneralAPI` with the same body shape
+`https://sila.glcpaints.com:9201/GeneralAPI` with the same body shape
 as `[CHA].[APITicketOperation]`.
 
 ## MANDATORY approval rule
@@ -29,6 +29,14 @@ read, ask for a yes, then run. Re-ask if it changes.
 ```
 
 `--raw` first skips pretty-printing. `def` prints the source as plain text.
+
+`--v2` first (e.g. `db.sh --v2 ping`) goes through the new Sila API
+(`SilaApi/`, `https://sila.glcpaints.com:7400`) instead of the legacy gateway:
+it signs in with a Sila account from `~/.config/sila/api.json`
+(`{"username","password"}`) or `$SILA_API_USER` / `$SILA_API_PASSWORD`, caches
+the session in `~/.config/sila/api-session.json` (mode 600), and calls
+`/api/v2/exec` with proc `CHA.APISilaOperationV1`. The ApiKey is still needed.
+Overrides: `SILA_API_ENDPOINT`, `SILA_API_DATABASE`.
 
 ## Key and overrides
 

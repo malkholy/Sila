@@ -27,3 +27,6 @@ api/Plus.Api/App_Data/
 # Scratch directory
 scratch/
 TempProject/
+SilaApi/Plus.Api/appsettings.Sql.local.json
+SilaApi/Plus.Api/App_Data/
+SilaApi/IIS Publish/

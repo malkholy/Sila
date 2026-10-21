@@ -52,7 +52,7 @@ See `query-engine` → "KPI framework".
 | **query-engine** | designing or reasoning about queries, pages, permissions, filters, operations, Group By, the `GetGridData` / `View` contract. Includes `reference/tables-and-sps.txt` — every table + SP operation and its objective. |
 | **add-page** | adding a page, Base/Detail query, filter, operation, or Group By config — the step-by-step workflow + the column-suggestion ruleset. |
 | **code-standards** | writing SQL or React in this repo — naming (`QV`/`QF`/`V1QD`), the router-SP deploy rule, idempotent DDL, "no arbitrary SQL from the client", React/theme/shared-component conventions, git rules. |
-| **sila-db** | reading the Sila live DB (`SILA101`, behind :9101) via `[CHA].[APISilaOperationV1]`. Read-only; every run needs explicit approval. |
+| **sila-db** | reading the Sila live DB (`SILA101`, behind :9201) via `[CHA].[APISilaOperationV1]`. Read-only; every run needs explicit approval. |
 | **order-board** | giving a page the *Order Board* design (the Customer Order (ProV1) page design: Table + grouped views in a top filter panel, checklist filters, entity + party drawers, print / Preview) -- "use Order Board", "same design as Customer Order". |
 
 ## Non-negotiables (summary — see the skills for why)
