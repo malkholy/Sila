@@ -99,7 +99,7 @@ def curl(url, payload, headers=()):
     return int(code or 0), body
 
 def v2_session():
-    import time, datetime
+    import re, time, datetime
     cfg = os.path.expanduser("~/.config/sila")
     cache = os.path.join(cfg, "api-session.json")
     base, db = os.environ["V2_ENDPOINT"].rstrip("/"), os.environ["V2_DATABASE"]
@@ -109,7 +109,9 @@ def v2_session():
         with os.fdopen(fd, "w") as f: json.dump(tok, f)
         return tok
     def fresh(tok):
-        exp = datetime.datetime.fromisoformat(tok["expiresAt"].replace("Z", "+00:00"))
+        # .NET sends 7 fractional digits; Python < 3.11 fromisoformat accepts at most 6
+        stamp = re.sub(r"(\.\d{6})\d+", r"\1", tok["expiresAt"].replace("Z", "+00:00"))
+        exp = datetime.datetime.fromisoformat(stamp)
         return exp.timestamp() - time.time() > 30
     tok = None
     if os.path.exists(cache):
