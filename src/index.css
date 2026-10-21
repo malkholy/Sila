@@ -14,6 +14,10 @@ body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); colo
   --mono: 'JetBrains Mono', monospace;
   --shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.05);
   --shadow-lg: 0 8px 28px rgba(0,0,0,.1);
+  /* Sila shell (design/mockups): rail, accent, secondary text */
+  --rail: #1a2332; --rail-text: #cbd5e1; --rail-hover: rgba(255,255,255,.08);
+  --accent: #c2410c; --accent-strong: #9a3412; --accent-soft: #fff7ed; --accent-line: #fdba74;
+  --on-accent: #ffffff; --text2: #475569; --online: #16a34a;
 }
 .dark {
   --bg: #0d1117; --surface: #161b22; --soft: #1c2333;
@@ -25,6 +29,8 @@ body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); colo
   --red-soft: rgba(220,38,38,.12);
   --amber-soft: rgba(217,119,6,.12);
   --blue-soft: rgba(37,99,235,.12);
+  --accent: #ea580c; --accent-strong: #fdba74; --accent-soft: rgba(234,88,12,.14); --accent-line: #9a3412;
+  --text2: #a5b4c3;
 }
 
 /* LOGIN */

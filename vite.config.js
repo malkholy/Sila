@@ -40,6 +40,19 @@ export default defineConfig({
   plugins: [react(), appVersionBumpPlugin()],
   server: {
     proxy: {
+      // Sila API (SilaApi): login, /exec and the live socket. Listed before
+      // '/api' so it wins. Same-origin in dev, so any localhost port works
+      // without being in the API's CorsOrigins; the Origin header is dropped
+      // because the API only accepts its configured origins on sockets.
+      '/api/v2': {
+        target: 'https://sila.glcpaints.com:7400',
+        changeOrigin: true,
+        ws: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
+          proxy.on('proxyReqWs', (proxyReq) => proxyReq.removeHeader('origin'))
+        }
+      },
       '/api': {
         target: 'https://sila.silasystem.com:7103',
         changeOrigin: true,
