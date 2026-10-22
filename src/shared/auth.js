@@ -38,16 +38,26 @@ function load() {
   } catch { return null; }
 }
 
-async function post(path, body, token) {
+// timeoutMs: give up waiting for the answer (ApiError with timedOut = true).
+// The request may still have been carried out on the server.
+async function post(path, body, token, timeoutMs = 0) {
   let res;
+  const ctrl = timeoutMs ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
   try {
     res = await fetch(API_BASE + path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: ctrl?.signal,
     });
-  } catch {
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw Object.assign(new ApiError('The server did not answer in time.', 0), { timedOut: true });
+    }
     throw new ApiError('Cannot reach the Sila server. Check your connection.', 0);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(data?.message || `Request failed (${res.status})`, res.status);
@@ -118,23 +128,35 @@ export async function getAccessToken() {
 }
 
 // Authenticated POST; one silent refresh + retry on 401.
-export async function authPost(path, body) {
+export async function authPost(path, body, timeoutMs = 0) {
   try {
-    return await post(path, body, await getAccessToken());
+    return await post(path, body, await getAccessToken(), timeoutMs);
   } catch (err) {
     if (err.status !== 401) throw err;
     access = null;
-    return post(path, body, await refresh());
+    return post(path, body, await refresh(), timeoutMs);
   }
 }
 
 // /api/v2/exec: { ok, state, message, data: { List0, ... } }
 // extraParams: named SP parameters beyond Operation/User/LineData; each must be
 // listed in the operation's AllowedParametersJson (PLS.V1ApiOperationPermission).
-export function apiExec(proc, operation, lineData = null, extraParams = null) {
+export function apiExec(proc, operation, lineData = null, extraParams = null, { timeoutMs = 0 } = {}) {
   return authPost('/api/v2/exec', {
     database: DATABASE, proc, operation, lineData, ...(extraParams ? { extraParams } : {}),
-  });
+  }, timeoutMs);
+}
+
+// For sends the SP de-duplicates (same LocalChatID returns the saved message):
+// wait at most timeoutMs, then ask once more -- the second answer is the
+// message the first one saved, never a copy.
+export async function apiExecIdempotent(proc, operation, lineData, timeoutMs = 30_000) {
+  try {
+    return await apiExec(proc, operation, lineData, null, { timeoutMs });
+  } catch (err) {
+    if (!err.timedOut) throw err;
+    return apiExec(proc, operation, lineData, null, { timeoutMs });
+  }
 }
 
 // Ends the session on the server too (that also closes its live sockets).

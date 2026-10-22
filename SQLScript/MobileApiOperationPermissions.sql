@@ -13,9 +13,10 @@
 -- Left out on purpose:
 --   APIGeneralOperation 'Login'           blocked by the gateway: sign in with /api/v2/auth/login
 --   APIGeneralOperation 'Change Password' replaced by /api/v2/auth/change-password
---   APIGeneralOperation 'System Users and Groups' added DISABLED: it returns
---       SELECT * FROM V_UserMaster_1 -- enable once that view is confirmed to
---       hold no password hash or other secrets.
+--   (APIGeneralOperation 'System Users and Groups' was added disabled until
+--   V_UserMaster_1 was checked; its 18 columns, read 2026-10-22, hold no
+--   password hash -- profile, phones, group / department / job, photo -- so
+--   it is enabled. The UPDATE at the end enables an existing disabled row.)
 --
 -- Known gaps these rows do NOT fix (the procedures trust any member / caller):
 --   GRP 'add admin' / 'remove member' / 'Left Group' / 'Lock' / 'UNLock' have
@@ -40,7 +41,7 @@ USING (VALUES
     (N'dbo.APIGeneralOperation', N'Hide',                      1, @General, N'Mobile: hide a conversation (SilaID)'),
     (N'dbo.APIGeneralOperation', N'UnHide',                    1, @General, N'Mobile: unhide a conversation (SilaID)'),
     (N'dbo.APIGeneralOperation', N'Logout',                    1, @General, N'Mobile: drop the caller''s Firebase token for PlatForm'),
-    (N'dbo.APIGeneralOperation', N'System Users and Groups',   0, @General, N'Mobile: all users (V_UserMaster_1) + user groups -- disabled until the view is checked'),
+    (N'dbo.APIGeneralOperation', N'System Users and Groups',   1, @General, N'Mobile: all users (V_UserMaster_1, no hash: checked 2026-10-22) + user groups'),
     -- One.APIOneToOneChatOperation
     (N'One.APIOneToOneChatOperation', N'Get Left-Right Side One-to-one', 1, @One, N'Mobile: one-to-one messages (LastChatID / MinChatID)'),
     (N'One.APIOneToOneChatOperation', N'Load More',   1, @One, N'Mobile: one-to-one older messages'),
@@ -92,4 +93,56 @@ WHEN MATCHED AND t.Enabled = 0 AND t.Notes = N'Disabled: mobile router; the web 
 WHEN NOT MATCHED THEN
     INSERT (ProcedureName, OperationName, Enabled, AllowExternal, AllowedParametersJson, Notes, ModifiedBy)
     VALUES (s.ProcedureName, s.OperationName, s.Enabled, 1, s.AllowedParametersJson, s.Notes, N'claude');
+GO
+
+-- 'System Users and Groups': V_UserMaster_1 checked 2026-10-22 (no password hash) -> enabled.
+UPDATE [PLS].[V1ApiOperationPermission]
+SET Enabled = 1,
+    Notes = N'Mobile: all users (V_UserMaster_1, no hash: checked 2026-10-22) + user groups',
+    ModifiedBy = N'claude', ModifiedAt = SYSUTCDATETIME()
+WHERE ProcedureName = N'dbo.APIGeneralOperation' AND OperationName = N'System Users and Groups' AND Enabled = 0;
+GO
+
+-- -------------------------------------------------------------------------
+-- The app's own spellings. The procedures compare @Operation case-insensitively,
+-- but this table (and so the gateway) matches the exact spelling: the mobile
+-- app sends these names (as in GLC Sila / Sila-Web api-endpoints.ts), so each
+-- gets its own row with the same parameters as the row it mirrors. 2026-10-22.
+-- -------------------------------------------------------------------------
+INSERT INTO [PLS].[V1ApiOperationPermission]
+    (ProcedureName, OperationName, Enabled, AllowExternal, AllowedParametersJson, Notes, ModifiedBy)
+SELECT p.ProcedureName, v.AppSpelling, p.Enabled, p.AllowExternal, p.AllowedParametersJson,
+       N'App spelling of ''' + p.OperationName + N''' (same operation)', N'claude'
+FROM (VALUES
+    (N'dbo.APIGeneralOperation',   N'Left side',     N'Left Side'),
+    (N'GRP.APIGroupChatOperation', N'UNLock',        N'Unlock'),
+    (N'GRP.APIGroupChatOperation', N'add members',   N'add Members'),
+    (N'GRP.APIGroupChatOperation', N'remove member', N'Remove Member'),
+    (N'CHA.APITicketOperation',    N'Reopen Ticket', N'reopen Ticket')
+) AS v (ProcedureName, OperationName, AppSpelling)
+JOIN [PLS].[V1ApiOperationPermission] p ON p.ProcedureName = v.ProcedureName AND p.OperationName = v.OperationName
+WHERE NOT EXISTS (SELECT 1 FROM [PLS].[V1ApiOperationPermission] x
+                  WHERE x.ProcedureName = v.ProcedureName AND x.OperationName = v.AppSpelling);
+GO
+
+-- -------------------------------------------------------------------------
+-- dbo.APIAttachmentOperation (2026-10-22): the mobile app's file steps --
+-- 'Get ID' (reserve an AttachmentID; List0 = one unnamed column, "" in JSON),
+-- 'Upload' (save the file's row + post the message; RecordType O/G/T/M/K/UP/GP),
+-- 'Forward Attachment' (re-post an attachment into conversations by SilaID).
+-- Known gaps (the procedure, not these rows): Upload does not check that the
+-- caller belongs to the chat / group / ticket, GP sets any group's photo, and
+-- Forward Attachment trusts the SilaIDs and the AttachmentID it is given.
+-- -------------------------------------------------------------------------
+DECLARE @Attachment NVARCHAR(MAX) = N'["RecordType","AttachmentID","LastChatID","FireBaseToken","AppVersionWeb","AppVersionAndroid","AppVersionIos","AppVersionDesktop","PlatForm"]';
+MERGE [PLS].[V1ApiOperationPermission] AS t
+USING (VALUES
+    (N'dbo.APIAttachmentOperation', N'Get ID',             N'Mobile: reserve an AttachmentID (dbo.Attachment sequence)'),
+    (N'dbo.APIAttachmentOperation', N'Upload',             N'Mobile: save a file row (AttachmentHistory) and post it (RecordType O/G/T/M/K/UP/GP)'),
+    (N'dbo.APIAttachmentOperation', N'Forward Attachment', N'Mobile: re-post an attachment into conversations (LineData = [{SilaID}])')
+) AS s (ProcedureName, OperationName, Notes)
+ON t.ProcedureName = s.ProcedureName AND t.OperationName = s.OperationName
+WHEN NOT MATCHED THEN
+    INSERT (ProcedureName, OperationName, Enabled, AllowExternal, AllowedParametersJson, Notes, ModifiedBy)
+    VALUES (s.ProcedureName, s.OperationName, 1, 1, @Attachment, s.Notes, N'claude');
 GO

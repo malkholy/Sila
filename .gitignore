@@ -30,3 +30,6 @@ TempProject/
 SilaApi/Plus.Api/appsettings.Sql.local.json
 SilaApi/Plus.Api/App_Data/
 SilaApi/IIS Publish/
+
+# web app IIS package (build output)
+IIS Publish/

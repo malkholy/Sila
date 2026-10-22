@@ -40,6 +40,18 @@ export default defineConfig({
   plugins: [react(), appVersionBumpPlugin()],
   server: {
     proxy: {
+      // Sila Files API (SilaApi, "Files" role on :7500): uploads and downloads.
+      // Listed first: more specific than '/api/v2'.
+      '/api/v2/attachments': {
+        target: 'https://sila.glcpaints.com:7500',
+        changeOrigin: true,
+        // a hung connection fails instead of blocking the dev server for good
+        // (uploads: 5 min for large files)
+        timeout: 300_000, proxyTimeout: 300_000,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
+        }
+      },
       // Sila API (SilaApi): login, /exec and the live socket. Listed before
       // '/api' so it wins. Same-origin in dev, so any localhost port works
       // without being in the API's CorsOrigins; the Origin header is dropped
@@ -48,6 +60,8 @@ export default defineConfig({
         target: 'https://sila.glcpaints.com:7400',
         changeOrigin: true,
         ws: true,
+        // a hung connection fails after 60 s instead of blocking the dev server
+        timeout: 60_000, proxyTimeout: 60_000,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
           proxy.on('proxyReqWs', (proxyReq) => proxyReq.removeHeader('origin'))

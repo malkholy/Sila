@@ -21,5 +21,14 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
     <!-- Patched transitive dependency of Microsoft.Data.SqlClient (CVE-2026-84008). -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <!-- Image previews for the Files API (Attachments/ImagePreview.cs). MIT licence. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
+  <!-- no debug symbols of native libraries in the IIS package (SkiaSharp's is 84 MB) -->
+  <Target Name="DropNativeSymbols" AfterTargets="Publish">
+    <ItemGroup>
+      <_NativePdbs Include="$(PublishDir)libSkiaSharp.pdb;$(PublishDir)runtimes/**/*.pdb" />
+    </ItemGroup>
+    <Delete Files="@(_NativePdbs)" />
+  </Target>
 </Project>

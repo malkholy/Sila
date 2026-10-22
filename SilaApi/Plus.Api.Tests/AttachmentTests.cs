@@ -274,6 +274,67 @@ public sealed class AttachmentTests
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/api/v2/attachments/7/download?database=MEGA25")).StatusCode);
     }
 
+    private static byte[] Png(int width, int height)
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(width, height);
+        using (var canvas = new SkiaSharp.SKCanvas(bitmap))
+        {
+            canvas.Clear(SkiaSharp.SKColors.SteelBlue);
+        }
+        // photo-like noise, so the PNG is as heavy as a real picture (stripes compress to nothing)
+        var random = new Random(7);
+        for (var y = 0; y < height; y += 2)
+            for (var x = 0; x < width; x += 2)
+                bitmap.SetPixel(x, y, new SkiaSharp.SKColor((byte)random.Next(256), (byte)random.Next(256), (byte)random.Next(256)));
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+        return image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100).ToArray();
+    }
+
+    [Fact]
+    public async Task Preview_serves_a_small_jpeg_of_a_large_image_and_the_original_otherwise()
+    {
+        using var factory = new GatewayFactory();
+        var day = Path.Combine(factory.StorageDir, "MEGA25", "20260928");
+        Directory.CreateDirectory(day);
+        var big = Png(2400, 1600);
+        await File.WriteAllBytesAsync(Path.Combine(day, "410800-20260928090000-0.png"), big);
+        factory.AttachmentStore.Results["Get"] = new(0, "",
+            [Row("410800-20260928090000-0.png", "https://files.example/api/v2/files/MEGA25/410800-20260928090000-0.png")]);
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", factory.Token());
+
+        var response = await client.GetAsync($"/api/v2/attachments/7/download?{Record}&preview=true");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("image/jpeg", response.Content.Headers.ContentType!.MediaType);
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        using (var decoded = SkiaSharp.SKBitmap.Decode(bytes))
+        {
+            Assert.Equal(ImagePreview.MaxSide, Math.Max(decoded.Width, decoded.Height));
+            Assert.Equal(320, decoded.Height);   // aspect kept: 2400x1600 -> 480x320
+        }
+        Assert.True(bytes.Length < big.Length / 4);
+        Assert.True(File.Exists(Path.Combine(day, "410800-20260928090000-0.png.preview.jpg")));   // kept for next time
+        Assert.Equal(big, await File.ReadAllBytesAsync(Path.Combine(day, "410800-20260928090000-0.png")));   // original untouched
+
+        // without preview=true: the original, unchanged
+        var original = await client.GetAsync($"/api/v2/attachments/7/download?{Record}");
+        Assert.Equal("image/png", original.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(big, await original.Content.ReadAsByteArrayAsync());
+
+        // a small image is served as it is, a PDF has no preview: both get the original
+        var small = Png(200, 100);
+        await File.WriteAllBytesAsync(Path.Combine(day, "410801-20260928090000-0.png"), small);
+        factory.AttachmentStore.Results["Get"] = new(0, "",
+            [Row("410801-20260928090000-0.png", "https://files.example/api/v2/files/MEGA25/410801-20260928090000-0.png")]);
+        Assert.Equal(small, await (await client.GetAsync($"/api/v2/attachments/7/download?{Record}&preview=true")).Content.ReadAsByteArrayAsync());
+        await File.WriteAllBytesAsync(Path.Combine(day, "410802-20260928090000-0.pdf"), Pdf);
+        factory.AttachmentStore.Results["Get"] = new(0, "",
+            [Row("410802-20260928090000-0.pdf", "https://files.example/api/v2/files/MEGA25/410802-20260928090000-0.pdf")]);
+        var pdf = await client.GetAsync($"/api/v2/attachments/7/download?{Record}&preview=true");
+        Assert.Equal("application/pdf", pdf.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(Pdf, await pdf.Content.ReadAsByteArrayAsync());
+    }
+
     [Fact]
     public async Task List_marks_old_system_files_with_their_own_link()
     {

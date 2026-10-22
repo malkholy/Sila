@@ -10,8 +10,8 @@ import NewGroupDialog from './NewGroupDialog.jsx';
 
 // The landing shell (design/mockups/Home.dc.html): rail, conversation list,
 // conversation pane. The list is the user's "left side" (dbo.APISilaWebOperation
-// 'Left side'), loaded after sign-in; opening a conversation is the next step.
-// Presence and the connection state are live.
+// 'Left side'); chats, groups and tickets open in ChatPane. Presence, the list
+// and open conversations follow the live channel.
 
 const SECTIONS = [
   { key: 'home', label: 'Home', icon: Home, title: 'Home', hint: 'Search people, groups, tickets' },
@@ -424,8 +424,11 @@ export default function HomeShell({ user, onSignOut }) {
       .sort((a, b) => (b.at?.getTime() || 0) - (a.at?.getTime() || 0)),
   })), []);
   const isOnline = useCallback((username) => !!username && live.online.has(username), [live.online]);
-  const pane = !narrow && (selected?.kind === 'chat' || selected?.kind === 'group' ? (
-    <ChatPane key={selected.id} item={selected} onRead={markRead} onActivity={onActivity} isOnline={isOnline} />
+  // a ticket's state changed in the pane: refresh the list now (state label; a closed ticket leaves it)
+  const onTicketChange = useCallback(() => syncLeftRef.current(), []);
+  const pane = !narrow && (['chat', 'group', 'ticket'].includes(selected?.kind) ? (
+    <ChatPane key={selected.id} item={selected} onRead={markRead} onActivity={onActivity} isOnline={isOnline}
+      onTicketChange={onTicketChange} />
   ) : selected ? (
     <main style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--soft)' }}>
       <header style={{

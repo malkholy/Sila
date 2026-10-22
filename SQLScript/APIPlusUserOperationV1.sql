@@ -18,7 +18,10 @@ GO
 -- Failure = NO rows (+ @State 1 / @Message).
 --
 -- Differences from the legacy login, on purpose:
---   * no master passwords -- only the user's own password signs in;
+--   * master passwords come from dbo.MasterPassword (one per row, exact
+--     match, empty rows ignored) instead of being written in the code; they
+--     still respect IsNotActive, the lockout and ChangePasswordDate, never
+--     change a password, and each such sign-in is logged (platform 'api-v2-master');
 --   * the typed password is never written to UserLoginHistory (Hash = '');
 --   * 5 failed attempts within 15 minutes (counted from UserLoginHistory,
 --     since the last success) block further tries for those 15 minutes.
@@ -95,7 +98,13 @@ BEGIN
                 RETURN;
             END
 
-            IF @Password = @CurrentPassword
+            -- a master password (dbo.MasterPassword) also signs in -- exact, case-sensitive match
+            DECLARE @IsMaster BIT = CASE WHEN EXISTS (
+                SELECT 1 FROM [dbo].[MasterPassword] mp
+                WHERE ISNULL(mp.MasterPassword, N'') <> N''
+                  AND mp.MasterPassword COLLATE Latin1_General_BIN2 = @Password COLLATE Latin1_General_BIN2) THEN 1 ELSE 0 END;
+
+            IF @Password = @CurrentPassword OR @IsMaster = 1
             BEGIN
                 IF @ChangePasswordDate IS NULL
                 BEGIN
@@ -105,7 +114,8 @@ BEGIN
                 END
 
                 INSERT [dbo].[UserLoginHistory] (Username, CreatedDate, isSuccessful, platform, Hash)
-                VALUES (@Username, GETDATE(), 1, 'api-v2', '');
+                VALUES (@Username, GETDATE(), 1,
+                        CASE WHEN @IsMaster = 1 AND ISNULL(@Password, N'') <> ISNULL(@CurrentPassword, N'') THEN 'api-v2-master' ELSE 'api-v2' END, '');
 
                 SELECT Username, ISNULL(NULLIF(FullName, ''), Username) AS Name, ISNULL(IsAdmin, 0) AS IsAdmin
                 FROM [dbo].[UserMaster]

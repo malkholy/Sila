@@ -9,7 +9,7 @@ const MAX_MESSAGES = 200;
 const cache = new Map();   // key -> { header, messages, hasMore }, oldest-opened first
 
 export const cacheKey = (item) =>
-  `${item.kind}:${item.kind === 'group' ? item.raw?.GroupID : item.raw?.SessionID}`;
+  `${item.kind}:${item.kind === 'group' ? item.raw?.GroupID : item.kind === 'ticket' ? item.raw?.TicketID : item.raw?.SessionID}`;
 
 export function getCached(key) {
   const entry = cache.get(key);

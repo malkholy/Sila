@@ -154,8 +154,11 @@ public static partial class AttachmentEndpoints
                     File.Move(quarantined, final, overwrite: false);   // never replaces an existing file
                     moved = true;
                     var link = PublicLink(http, settings, dbKey, storedName);
+                    // FileSize: bytes (Sila stores "104 KB" in AttachmentHistory; PlusV1's SP ignores it)
                     Check(await store.ExecuteAsync(db, "SetExist", user,
-                        new { ID = id, FileURL = link, FileDisplay = link + "?inline=true" }, ct));
+                        new { ID = id, FileURL = link, FileDisplay = link + "?inline=true", FileSize = file.Length }, ct));
+                    // the chat preview, made now so the first viewer doesn't wait (best effort)
+                    if (ImagePreview.Supports(rule.Extension)) _ = Task.Run(() => ImagePreview.Ensure(final));
                 }
                 catch
                 {
@@ -178,9 +181,11 @@ public static partial class AttachmentEndpoints
             }
         }).WithMetadata(new RequestSizeLimitAttribute(maxRequestBytes));
 
-        // GET /api/v2/attachments/{id}/download?database=&entityType=&entityKey=&inline=true
+        // GET /api/v2/attachments/{id}/download?database=&entityType=&entityKey=&inline=true&preview=true
+        // preview=true: an image's small JPEG preview (ImagePreview), made on first request; the
+        // original when no preview applies. Same record + permission check as the original.
         group.MapGet("/{id:int}/download", async (int id, string? database, string? entityType, string? entityKey,
-            bool? inline, HttpContext http, GatewayPolicy policy, IAttachmentStore store,
+            bool? inline, bool? preview, HttpContext http, GatewayPolicy policy, IAttachmentStore store,
             ILegacyFileSource legacy, IOptionsMonitor<AttachmentOptions> options, CancellationToken ct) =>
         {
             var settings = Settings(options);
@@ -190,7 +195,12 @@ public static partial class AttachmentEndpoints
             Check(result);
             var row = result.Rows.FirstOrDefault() ?? throw new GatewayException(404, "Attachment not found.");
             var displayName = SafeFileName(row.GetValueOrDefault("FileOrginalName") as string ?? $"attachment-{id}");
-            if (IsOurs(row)) return Serve(http, settings, dbKey, row, displayName, inline == true);
+            if (IsOurs(row))
+            {
+                if (preview == true && await PreviewAsync(settings, dbKey, row) is { } small)
+                    return Send(http, File.OpenRead(small), PreviewRule, Path.GetFileNameWithoutExtension(displayName) + "-preview.jpg", inline: true);
+                return Serve(http, settings, dbKey, row, displayName, inline == true);
+            }
 
             // Old-system file: stream it from its FileManager link.
             var upstream = await legacy.OpenAsync(row.GetValueOrDefault("FileURL") as string, ct)
@@ -386,6 +396,18 @@ public static partial class AttachmentEndpoints
             return Results.Stream(content, contentType);
         }
         return Results.Stream(content, contentType, displayName);
+    }
+
+    private static readonly FileTypeRule PreviewRule = FileTypePolicy.ForExtension(".jpg")!;
+
+    // The stored image's preview path (made off the request thread), or null: serve the original.
+    private static async Task<string?> PreviewAsync(AttachmentOptions settings, string dbKey, Dictionary<string, object?> row)
+    {
+        var storedName = row.GetValueOrDefault("FileName") as string ?? "";
+        if (!StoredName().IsMatch(storedName) || !ImagePreview.Supports(Path.GetExtension(storedName))
+            || row.GetValueOrDefault("CreatedDate") is not DateTime created) return null;
+        var full = InsideRoot(settings.StorageRoot, RelativePath(dbKey, created, storedName));
+        return await Task.Run(() => ImagePreview.Ensure(full));
     }
 
     // Resolve a stored relative path and refuse anything that escapes the root.

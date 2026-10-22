@@ -40,7 +40,9 @@ GO
 --                    recounts SilaHistory.UnreadMessage, which bumps SynSequence),
 --                    and marks ALL those messages seen -- the trigger only marks one
 --                    per delete statement. List0 = { Cleared }.
---   Send chat        LineData { SessionID | ToUserID, Text, LocalChatID, ReplayMsgID? }
+--   Send chat        LineData { SessionID | ToUserID, Text, LocalChatID, ReplayMsgID?, Html? }
+--                    Html (also on Edit chat / Send group chat / Edit group chat): formatted
+--                    text, stored in TextStyle (Text stays plain); messages return TextStyle.
 --                    (SessionID of the caller's conversation, or ToUserID to start one).
 --   Edit chat        LineData { ChatID, Text, LocalChatID }   own messages only.
 --   Delete chat      LineData { ChatID, LocalChatID }         own messages only.
@@ -56,6 +58,10 @@ GO
 --                    active users, not the caller; Search also matches the user group name.
 --   User groups      user groups with their active user counts (picker filter).
 --   Create group     LineData { Name, Members: [ { UserID, IsAdmin } ] }  caller = creator + admin.
+--   Send chat file   LineData { SessionID, AttachmentID, LocalChatID, ReplayMsgID? }
+--   Send group chat file  LineData { GroupID, AttachmentID, LocalChatID, ReplayMsgID? }
+--                    post a file the caller uploaded to that chat / group through the
+--                    Files API (:7500, PLS.V1FileUpload): stored, not posted yet.
 --   Mark group read  LineData { GroupID }
 --   Send group chat  LineData { GroupID, Text, LocalChatID, ReplayMsgID? }
 --   Edit group chat / Delete group chat  LineData { ChatID, Text?, LocalChatID }
@@ -88,6 +94,16 @@ BEGIN
             SET @Message = N'User is not active.';
             RETURN;
         END
+
+        -- Formatted text (the composer's rich mode): LineData.Html is stored in
+        -- TextStyle -- the column the mobile app's editor already fills with HTML --
+        -- while Text keeps the plain text for previews, search and notifications.
+        -- The web app sanitizes it before sending and again when showing it.
+        DECLARE @WHtml NVARCHAR(MAX);
+        SELECT @WHtml = NULLIF(LTRIM(RTRIM(Html)), N'') FROM OPENJSON(@LineData) WITH (Html NVARCHAR(MAX) '$.Html');
+        IF @Operation LIKE N'Delete%' SET @WHtml = NULL;
+        IF LEN(@WHtml) > 30000
+        BEGIN SET @State = 1; SET @Message = N'The formatted message is too long.'; RETURN; END
 
         -- -----------------------------------------------------------------
         -- Left side
@@ -186,7 +202,7 @@ BEGIN
             -- (BeforeChatID) is by SortID.
             SELECT TOP (@Top)
                    CASE WHEN m.OrginalChatID > 0 THEN m.OrginalChatID ELSE m.ChatID END AS SortID,
-                   m.ChatID, m.FromUserID, m.ToUserID, m.Text, m.ReplayMsgID,
+                   m.ChatID, m.FromUserID, m.ToUserID, m.Text, m.TextStyle, m.ReplayMsgID,
                    m.IsDeleted, m.IsEdited, m.OrginalChatID, m.CreatedDate, m.LastMaintDate,
                    m.IsSeen, m.SeenDate, m.LocalChatID,
                    m.AttachmentID, m.FileName, m.FileOrginalName, m.FileExtension, m.FileSize, m.FileURL,
@@ -291,10 +307,50 @@ BEGIN
                 VALUES
                     (@RetChatID, @SSession, @UserID, @User, @SToUser, @SToName, @SText, ISNULL(@SReply, 0),
                      @User, GETDATE(), @User, GETDATE(),
-                     REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@SText, N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;'),
-                             NCHAR(13) + NCHAR(10), N'<br>'), NCHAR(10), N'<br>'),
+                     ISNULL(@WHtml, REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@SText, N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;'),
+                             NCHAR(13) + NCHAR(10), N'<br>'), NCHAR(10), N'<br>')),
                      @SLocal, 0);
                 COMMIT TRANSACTION;
+            END
+        END
+
+        -- -----------------------------------------------------------------
+        -- Send chat file: post a file uploaded through the Files API
+        -- LineData { SessionID, AttachmentID, LocalChatID, ReplayMsgID? }
+        -- -----------------------------------------------------------------
+        IF @Operation = N'Send chat file'
+        BEGIN
+            DECLARE @FSession INT, @FAtt INT, @FLocal INT, @FReply INT, @FTo INT, @FToName NVARCHAR(250);
+            SELECT @FSession = SessionID, @FAtt = AttachmentID, @FLocal = LocalChatID, @FReply = ReplayMsgID
+            FROM OPENJSON(@LineData) WITH (SessionID INT '$.SessionID', AttachmentID INT '$.AttachmentID',
+                 LocalChatID INT '$.LocalChatID', ReplayMsgID INT '$.ReplayMsgID');
+            SELECT @FTo = CASE WHEN s.UserID1 = @UserID THEN s.UserID2 ELSE s.UserID1 END
+            FROM One.OneChatSession s
+            WHERE s.SessionID = @FSession AND (s.UserID1 = @UserID OR s.UserID2 = @UserID);
+            SELECT @FToName = Username FROM dbo.UserMaster WHERE UserID = @FTo AND IsNotActive = 0;
+            IF @FToName IS NULL BEGIN SET @State = 403; SET @Message = N'Conversation not found.'; RETURN; END
+            IF ISNULL(@FLocal, 0) = 0 BEGIN SET @State = 1; SET @Message = N'LocalChatID is required.'; RETURN; END
+
+            -- a re-sent request returns the saved message
+            SELECT @RetChatID = ChatID FROM One.OneToOneChatHistory
+            WHERE FromUserID = @UserID AND LocalChatID = @FLocal AND SessionID = @FSession;
+            IF @RetChatID IS NULL
+            BEGIN
+            -- a file the caller uploaded through the Files API (:7500) to THIS conversation,
+            -- stored, not deleted, and not posted yet (PLS.V1FileUpload, SQLScript/APIPlusAttachmentOperation.sql)
+                IF NOT EXISTS (SELECT 1 FROM [PLS].[V1FileUpload] f
+                               WHERE f.AttachmentID = @FAtt AND f.EntityType = 'Chat' AND f.EntityKey = @FSession
+                                 AND f.CreatedBy = @User AND f.IsExist = 1 AND f.IsDeleted = 0)
+                   OR EXISTS (SELECT 1 FROM One.OneToOneChatHistory WHERE AttachmentID = @FAtt)
+                BEGIN SET @State = 409; SET @Message = N'That file can''t be sent here. Upload it again.'; RETURN; END
+                IF ISNULL(@FReply, 0) <> 0 AND NOT EXISTS (SELECT 1 FROM One.OneToOneChatHistory WHERE ChatID = @FReply AND SessionID = @FSession)
+                    SET @FReply = 0;
+                SET @RetChatID = NEXT VALUE FOR dbo.ChatOneToOne;
+                INSERT INTO One.OneToOneChatHistory
+                    (ChatID, SessionID, FromUserID, FromUserName, ToUserID, ToUserName, Text, ReplayMsgID,
+                     CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, TextStyle, LocalChatID, OrginalChatID, AttachmentID)
+                VALUES (@RetChatID, @FSession, @UserID, @User, @FTo, @FToName, N'', ISNULL(@FReply, 0),
+                        @User, GETDATE(), @User, GETDATE(), N'', @FLocal, 0, @FAtt);
             END
         END
 
@@ -341,8 +397,8 @@ BEGIN
                     (ChatID, SessionID, FromUserID, ToUserID, FromUserName, ToUserName, Text, TextStyle, ReplayMsgID,
                      CreatedDate, AttachmentID, LocalChatID, OrginalChatID, IsEdited, IsDeleted, CreatedBy, LastMaintBy, LastMaintDate)
                 SELECT @RetChatID, SessionID, FromUserID, ToUserID, FromUserName, ToUserName, @EText,
-                       REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@EText, N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;'),
-                               NCHAR(13) + NCHAR(10), N'<br>'), NCHAR(10), N'<br>'),
+                       ISNULL(@WHtml, REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@EText, N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;'),
+                               NCHAR(13) + NCHAR(10), N'<br>'), NCHAR(10), N'<br>')),
                        ReplayMsgID, GETDATE(), CASE WHEN @IsDel = 1 THEN 0 ELSE AttachmentID END,
                        @ELocal, @EChat, 0, @IsDel, @User, @User, GETDATE()
                 FROM One.OneToOneChatHistory WHERE ChatID = @EChat;
@@ -356,7 +412,7 @@ BEGIN
         IF @RetChatID IS NOT NULL
         BEGIN
             SELECT m.SessionID, CASE WHEN m.OrginalChatID > 0 THEN m.OrginalChatID ELSE m.ChatID END AS SortID,
-                   m.ChatID, m.FromUserID, m.ToUserID, m.Text, m.ReplayMsgID,
+                   m.ChatID, m.FromUserID, m.ToUserID, m.Text, m.TextStyle, m.ReplayMsgID,
                    m.IsDeleted, m.IsEdited, m.OrginalChatID, m.CreatedDate, m.LastMaintDate,
                    m.IsSeen, m.SeenDate, m.LocalChatID,
                    m.AttachmentID, m.FileName, m.FileOrginalName, m.FileExtension, m.FileSize, m.FileURL,
@@ -379,7 +435,7 @@ BEGIN
         -- from its admins only; edit / delete your own, non-system messages.
         -- =================================================================
         DECLARE @GroupID INT, @GIsAdmin INT, @GLocked INT, @GRet INT = NULL;
-        IF @Operation IN (N'Group messages', N'Mark group read', N'Send group chat', N'Group members', N'Lock group chat', N'Set group admin')
+        IF @Operation IN (N'Group messages', N'Mark group read', N'Send group chat', N'Send group chat file', N'Group members', N'Lock group chat', N'Set group admin')
         BEGIN
             SET @GroupID = TRY_CAST(JSON_VALUE(@LineData, '$.GroupID') AS INT);
             SELECT @GIsAdmin = ISNULL(gm.IsAdmin, 0) FROM GRP.GroupMembers gm WHERE gm.GroupID = @GroupID AND gm.UserID = @UserID;
@@ -415,7 +471,7 @@ BEGIN
                    CASE WHEN m.OrginalChatID > 0 THEN m.OrginalChatID ELSE m.ChatID END AS SortID,
                    m.ChatID, m.FromUserID, fu.Username AS FromUsername, ISNULL(fu.FullName, m.FromUserName) AS FromName,
                    fj.JobName AS FromJobName, fp.FileURL AS FromPhotoURL,
-                   m.Text, m.ReplayMsgID, ISNULL(m.IsSystem, 0) AS IsSystem,
+                   m.Text, m.TextStyle, m.ReplayMsgID, ISNULL(m.IsSystem, 0) AS IsSystem,
                    m.IsDeleted, m.IsEdited, m.OrginalChatID, m.CreatedDate, m.LastMaintDate, m.LocalChatID,
                    m.AttachmentID, t.FileName, t.FileOrginalName, t.FileExtension, t.FileSize, t.FileURL,
                    r.Text AS ReplyText, r.FromUserID AS ReplyFromUserID, ISNULL(ru.FullName, r.FromUserName) AS ReplyFromName
@@ -604,8 +660,8 @@ BEGIN
                      CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem)
                 VALUES
                     (@GRet, @GroupID, @UserID, @User, @GText,
-                     REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@GText, N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;'),
-                             NCHAR(13) + NCHAR(10), N'<br>'), NCHAR(10), N'<br>'),
+                     ISNULL(@WHtml, REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@GText, N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;'),
+                             NCHAR(13) + NCHAR(10), N'<br>'), NCHAR(10), N'<br>')),
                      ISNULL(@GReply, 0), 0, @User, GETDATE(), @User, GETDATE(), @GLocal, 0, 0, 0, 0);
                 COMMIT TRANSACTION;
             END
@@ -614,6 +670,41 @@ BEGIN
         -- -----------------------------------------------------------------
         -- Edit group chat / Delete group chat
         -- -----------------------------------------------------------------
+        -- -----------------------------------------------------------------
+        -- Send group chat file: post a file uploaded through the Files API
+        -- LineData { GroupID, AttachmentID, LocalChatID, ReplayMsgID? }
+        -- -----------------------------------------------------------------
+        IF @Operation = N'Send group chat file'
+        BEGIN
+            DECLARE @GFAtt INT, @GFLocal BIGINT, @GFReply INT;
+            SELECT @GFAtt = AttachmentID, @GFLocal = LocalChatID, @GFReply = ReplayMsgID
+            FROM OPENJSON(@LineData) WITH (AttachmentID INT '$.AttachmentID', LocalChatID BIGINT '$.LocalChatID', ReplayMsgID INT '$.ReplayMsgID');
+            IF ISNULL(@GFLocal, 0) = 0 BEGIN SET @State = 1; SET @Message = N'LocalChatID is required.'; RETURN; END
+            IF @GLocked = 1 AND @GIsAdmin = 0
+            BEGIN SET @State = 403; SET @Message = N'Only admins can send messages in this group.'; RETURN; END
+
+            SELECT @GRet = ChatID FROM GRP.GroupChatHistory
+            WHERE FromUserID = @UserID AND LocalChatID = @GFLocal AND GroupID = @GroupID;
+            IF @GRet IS NULL
+            BEGIN
+            -- a file the caller uploaded through the Files API (:7500) to THIS conversation,
+            -- stored, not deleted, and not posted yet (PLS.V1FileUpload, SQLScript/APIPlusAttachmentOperation.sql)
+                IF NOT EXISTS (SELECT 1 FROM [PLS].[V1FileUpload] f
+                               WHERE f.AttachmentID = @GFAtt AND f.EntityType = 'Group' AND f.EntityKey = @GroupID
+                                 AND f.CreatedBy = @User AND f.IsExist = 1 AND f.IsDeleted = 0)
+                   OR EXISTS (SELECT 1 FROM GRP.GroupChatHistory WHERE AttachmentID = @GFAtt AND GroupID = @GroupID)
+                BEGIN SET @State = 409; SET @Message = N'That file can''t be sent here. Upload it again.'; RETURN; END
+                IF ISNULL(@GFReply, 0) <> 0 AND NOT EXISTS (SELECT 1 FROM GRP.GroupChatHistory WHERE ChatID = @GFReply AND GroupID = @GroupID)
+                    SET @GFReply = 0;
+                SET @GRet = NEXT VALUE FOR dbo.ChatGroup;
+                INSERT INTO GRP.GroupChatHistory
+                    (ChatID, GroupID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,
+                     CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem)
+                VALUES (@GRet, @GroupID, @UserID, @User, N'', N'', ISNULL(@GFReply, 0), @GFAtt,
+                        @User, GETDATE(), @User, GETDATE(), @GFLocal, 0, 0, 0, 0);
+            END
+        END
+
         IF @Operation IN (N'Edit group chat', N'Delete group chat')
         BEGIN
             DECLARE @GEChat INT, @GEText NVARCHAR(MAX), @GELocal BIGINT, @GEFrom INT, @GEGroup INT, @GEDeleted INT, @GESystem INT;
@@ -657,8 +748,8 @@ BEGIN
                     (ChatID, GroupID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,
                      CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem)
                 SELECT @GRet, GroupID, FromUserID, FromUserName, @GEText,
-                       REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@GEText, N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;'),
-                               NCHAR(13) + NCHAR(10), N'<br>'), NCHAR(10), N'<br>'),
+                       ISNULL(@WHtml, REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(@GEText, N'&', N'&amp;'), N'<', N'&lt;'), N'>', N'&gt;'),
+                               NCHAR(13) + NCHAR(10), N'<br>'), NCHAR(10), N'<br>')),
                        ReplayMsgID, CASE WHEN @GIsDel = 1 THEN 0 ELSE AttachmentID END,
                        @User, GETDATE(), @User, GETDATE(), @GELocal, @GEChat, 0, @GIsDel, 0
                 FROM GRP.GroupChatHistory WHERE ChatID = @GEChat;
@@ -784,7 +875,7 @@ BEGIN
             SELECT m.GroupID, CASE WHEN m.OrginalChatID > 0 THEN m.OrginalChatID ELSE m.ChatID END AS SortID,
                    m.ChatID, m.FromUserID, fu.Username AS FromUsername, ISNULL(fu.FullName, m.FromUserName) AS FromName,
                    fj.JobName AS FromJobName, fp.FileURL AS FromPhotoURL,
-                   m.Text, m.ReplayMsgID, ISNULL(m.IsSystem, 0) AS IsSystem,
+                   m.Text, m.TextStyle, m.ReplayMsgID, ISNULL(m.IsSystem, 0) AS IsSystem,
                    m.IsDeleted, m.IsEdited, m.OrginalChatID, m.CreatedDate, m.LastMaintDate, m.LocalChatID,
                    m.AttachmentID, t.FileName, t.FileOrginalName, t.FileExtension, t.FileSize, t.FileURL,
                    r.Text AS ReplyText, r.FromUserID AS ReplyFromUserID, ISNULL(ru.FullName, r.FromUserName) AS ReplyFromName
@@ -836,7 +927,9 @@ USING (VALUES
     (N'dbo.APISilaWebOperation', N'Mark group read',   N'Groups: clear the caller''s unread rows for a group'),
     (N'dbo.APISilaWebOperation', N'Send group chat',   N'Groups: send a text message (members; locked groups: admins only)'),
     (N'dbo.APISilaWebOperation', N'Edit group chat',   N'Groups: edit the caller''s own message (new row, OrginalChatID)'),
-    (N'dbo.APISilaWebOperation', N'Delete group chat', N'Groups: delete the caller''s own message (placeholder row)')
+    (N'dbo.APISilaWebOperation', N'Delete group chat', N'Groups: delete the caller''s own message (placeholder row)'),
+    (N'dbo.APISilaWebOperation', N'Send chat file',       N'One-to-one: post a file the caller uploaded to this chat (Files API :7500)'),
+    (N'dbo.APISilaWebOperation', N'Send group chat file', N'Groups: post a file the caller uploaded to this group (members; locked: admins)')
 ) AS s (ProcedureName, OperationName, Notes)
 ON t.ProcedureName = s.ProcedureName AND t.OperationName = s.OperationName
 WHEN NOT MATCHED THEN

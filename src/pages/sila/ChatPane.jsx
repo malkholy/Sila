@@ -1,21 +1,40 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Check, CheckCheck, FileText, Ban, Paperclip, Send, Mic, MoreHorizontal, Reply, Copy, Pencil, Trash2, X, Clock, AlertCircle,
-  Users, Lock,
+  Users, Lock, Hash, ShieldAlert, Play, Pause, Flag, RotateCcw, Archive, Type, Download,
 } from 'lucide-react';
+import RichComposer from './RichComposer.jsx';
+import { sanitizeForSend, sanitizeForShow, hasFormatting, toPlainText } from '../../shared/richText.js';
+import { ACCEPT, checkFile, downloadFile, fileBlobUrl, fileEntity, isFilesApiUrl, uploadFile } from '../../shared/files.js';
 import Avatar from './Avatar.jsx';
-import { chatApi, formatSize, newLocalId, PAGE_SIZE } from '../../shared/chat.js';
+import { chatApi, formatSize, newLocalId, PAGE_SIZE, changeTicketState } from '../../shared/chat.js';
 import { cacheKey, getCached, putCached, newestId, applyDelta } from '../../shared/chatCache.js';
 import GroupInfoPanel from './GroupInfoPanel.jsx';
+import TicketInfoPanel from './TicketInfoPanel.jsx';
 import { onLive } from '../../shared/live.js';
 
-// The right side for a one-to-one chat or a group (design/mockups/Home.dc.html):
+// The right side for a one-to-one chat, a group or a ticket (design/mockups/Home.dc.html):
 // header, messages (newest page first, "Load older" pages back), read state,
 // composer, and per-message Reply / Copy / Edit / Delete (own messages only
 // for edit and delete). Groups add sender names / photos, system lines and
 // the locked state (only admins send). Sends are optimistic and idempotent
-// (LocalChatID): a failed send can be retried without saving it twice. New
-// messages from others appear on reload until live updates are wired.
+// (LocalChatID): a failed send can be retried without saving it twice.
+// Tickets (CHA.APISilaWebTicketOperation) add the channel / state header with
+// the actions the SP allows the caller (Start, Hold, End, Reopen, Close),
+// admins-only notes for ticket admins / team leaders, and a closed composer
+// when the ticket's state takes no messages.
+
+// ticket state -> tone [fg, bg] (as the Home list)
+const TICKET_TONE = {
+  0: ['var(--blue)', 'var(--blue-soft)'], 1: ['var(--green)', 'var(--green-soft)'], 5: ['var(--amber)', 'var(--amber-soft)'],
+};
+const TICKET_ACTIONS = [
+  { key: 'start', action: 'Start', label: 'Start', icon: Play, primary: true },
+  { key: 'hold', action: 'Hold', label: 'Hold', icon: Pause },
+  { key: 'reopen', action: 'Reopen', label: 'Reopen', icon: RotateCcw, primary: true },
+  { key: 'end', action: 'End', label: 'End', icon: Flag },
+  { key: 'close', action: 'Close', label: 'Close', icon: Archive, confirm: true },
+];
 
 function dayLabel(d) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -61,12 +80,14 @@ function VoiceNote({ file, mine }) {
   );
 }
 
-function ImageAttachment({ file, mine }) {
+function ImageAttachment({ file, mine, onView }) {
   const [status, setStatus] = useState('loading');   // loading | ok | failed
   if (status === 'failed') return <FileCard file={file} mine={mine} />;
   return (
-    <a href={file.url} target="_blank" rel="noopener noreferrer" aria-label={`Open image ${file.name}`} style={{
-      position: 'relative', display: 'block', width: status === 'ok' ? 'auto' : 220, height: status === 'ok' ? 'auto' : 160,
+    <button type="button" onClick={() => onView?.({ url: file.url, name: file.name, downloadUrl: file.url })}
+      aria-label={`View image ${file.name}`} style={{
+      display: 'block', padding: 0, border: 'none', cursor: 'zoom-in', font: 'inherit',
+      position: 'relative', width: status === 'ok' ? 'auto' : 220, height: status === 'ok' ? 'auto' : 160,
       maxWidth: '100%', borderRadius: 10, overflow: 'hidden', background: 'var(--soft)',
     }}>
       {status === 'loading' && (
@@ -78,19 +99,141 @@ function ImageAttachment({ file, mine }) {
         display: 'block', maxWidth: 280, maxHeight: 280, width: status === 'ok' ? 'auto' : '100%', height: status === 'ok' ? 'auto' : '100%',
         objectFit: 'cover', opacity: status === 'ok' ? 1 : 0,
       }} />
-    </a>
+    </button>
   );
 }
 
-function Attachment({ file, mine }) {
-  if (file.audio) return <VoiceNote file={file} mine={mine} />;
-  if (file.image) return <ImageAttachment file={file} mine={mine} />;
-  return <FileCard file={file} mine={mine} />;
+// A file stored by the Files API (:7500): fetched with the user's token
+function ProtectedImage({ file, mine, entity, onView }) {
+  const [state, setState] = useState({ url: '', failed: false });
+  useEffect(() => {
+    let alive = true;
+    fileBlobUrl({ attachmentId: file.id, ...entity, preview: true })   // the small preview, not the original
+      .then(url => { if (alive) setState({ url, failed: false }); })
+      .catch(() => { if (alive) setState({ url: '', failed: true }); });
+    return () => { alive = false; };
+  }, [file.id, entity.entityType, entity.entityKey]);
+  if (state.failed) return <FileCard file={file} mine={mine} entity={entity} />;
+  return (
+    <button type="button" disabled={!state.url}
+      onClick={() => onView?.({ url: state.url, name: file.name, file: { attachmentId: file.id, ...entity } })}
+      aria-label={`View image ${file.name}`} style={{
+      display: 'block', padding: 0, border: 'none', cursor: 'zoom-in', font: 'inherit',
+      position: 'relative', width: state.url ? 'auto' : 220, height: state.url ? 'auto' : 160,
+      maxWidth: '100%', borderRadius: 10, overflow: 'hidden', background: 'var(--soft)',
+    }}>
+      {!state.url && (
+        <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'var(--muted)' }}>
+          Loading image…
+        </span>
+      )}
+      {state.url && <img src={state.url} alt={file.name} style={{ display: 'block', maxWidth: 280, maxHeight: 280 }} />}
+    </button>
+  );
 }
 
-function FileCard({ file, mine }) {
+// Image viewer inside the app (no new tab): Esc or a click outside closes it.
+function ImageViewer({ image, onClose }) {
+  const closeRef = useRef(null);
+  // a Files API image opens on its preview, then switches to the full-quality original
+  const [full, setFull] = useState({ url: '', failed: false });
+  useEffect(() => {
+    if (!image.file) return undefined;
+    let alive = true;
+    fileBlobUrl(image.file)
+      .then(url => { if (alive) setFull({ url, failed: false }); })
+      .catch(() => { if (alive) setFull({ url: '', failed: true }); });
+    return () => { alive = false; };
+  }, [image.file]);
+  const shownUrl = full.url || image.url;
+  const [saving, setSaving] = useState(false);
+  const download = async (e) => {
+    if (!image.file) return;   // a plain link downloads by itself
+    e.preventDefault();
+    setSaving(true);
+    try { await downloadFile(image.file, image.name); } catch { /* the button stays; try again */ }
+    finally { setSaving(false); }
+  };
+  useEffect(() => {
+    closeRef.current?.focus();
+    const esc = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [onClose]);
+  const bar = { height: 38, padding: '0 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,.3)', background: 'rgba(255,255,255,.1)',
+    color: '#fff', fontWeight: 700, fontSize: 13, fontFamily: 'var(--font)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+    textDecoration: 'none' };
   return (
-    <a href={file.url} target="_blank" rel="noopener noreferrer" style={{
+    <div role="dialog" aria-modal="true" aria-label={`Image ${image.name}`} onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(10,14,22,.88)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', color: '#fff' }}>
+        <span dir="auto" style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {image.name}
+        </span>
+        {image.file && !full.url && !full.failed && (
+          <span role="status" style={{ fontSize: 12, color: 'rgba(255,255,255,.75)' }}>Loading full quality…</span>
+        )}
+        <a href={image.file ? '#' : image.downloadUrl} download={image.name} onClick={download} style={bar}>
+          <Download size={16} /> {saving ? 'Saving…' : 'Download'}
+        </a>
+        <button ref={closeRef} onClick={onClose} aria-label="Close" style={bar}><X size={16} /> Close</button>
+      </div>
+      <div onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+        style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 16px 24px' }}>
+        <img src={shownUrl} alt={image.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 6, boxShadow: '0 10px 40px rgba(0,0,0,.5)' }} />
+      </div>
+    </div>
+  );
+}
+
+function Attachment({ file, mine, entity, onView }) {
+  const ours = isFilesApiUrl(file.url) && file.id && entity;
+  if (file.audio && !ours) return <VoiceNote file={file} mine={mine} />;
+  if (file.image) return ours ? <ProtectedImage file={file} mine={mine} entity={entity} onView={onView} />
+    : <ImageAttachment file={file} mine={mine} onView={onView} />;
+  return <FileCard file={file} mine={mine} entity={ours ? entity : null} />;
+}
+
+// A file being uploaded / posted from this tab
+function UploadCard({ up, mine }) {
+  const pct = Math.round((up.progress || 0) * 100);
+  return (
+    <span style={{
+      display: 'flex', flexDirection: 'column', gap: 6, padding: 10, borderRadius: 10, minWidth: 220,
+      background: mine ? 'rgba(255,255,255,.55)' : 'var(--soft)',
+    }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <Paperclip size={16} style={{ flexShrink: 0, color: 'var(--accent-strong)' }} />
+        <span dir="auto" style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{up.name}</span>
+      </span>
+      {up.stage !== 'failed' && (
+        <span role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`Uploading ${up.name}`}
+          style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+          <span style={{ display: 'block', height: '100%', width: `${up.stage === 'sending' ? 100 : pct}%`, background: 'var(--accent)', transition: 'width .2s' }} />
+        </span>
+      )}
+      <span style={{ fontSize: 11, color: up.stage === 'failed' ? 'var(--red)' : 'var(--muted)' }}>
+        {up.stage === 'uploading' ? `Uploading · ${pct}% · ${formatSize(up.size)}`
+          : up.stage === 'sending' ? 'Checking and sending…' : up.error || 'Not sent'}
+      </span>
+    </span>
+  );
+}
+
+function FileCard({ file, mine, entity = null }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState('');
+  // Files API file: downloaded with the user's token, saved under its own name
+  const onClick = entity ? async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true); setFailed('');
+    try { await downloadFile({ attachmentId: file.id, ...entity }, file.name); }
+    catch (err) { setFailed(err.message || 'Could not open the file.'); }
+    finally { setBusy(false); }
+  } : undefined;
+  return (
+    <a href={entity ? '#' : file.url} onClick={onClick} target={entity ? undefined : '_blank'} rel="noopener noreferrer" style={{
       display: 'flex', alignItems: 'center', gap: 10, padding: 10, borderRadius: 10, textDecoration: 'none',
       background: mine ? 'rgba(255,255,255,.55)' : 'var(--soft)', color: 'var(--text)', minWidth: 0,
     }}>
@@ -100,7 +243,9 @@ function FileCard({ file, mine }) {
       }}>{(file.ext || 'file').slice(0, 4).toUpperCase()}</span>
       <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto">{file.name}</span>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>{formatSize(file.size) || 'Open file'}</span>
+        <span style={{ fontSize: 12, color: failed ? 'var(--red)' : 'var(--muted)' }}>
+          {failed || (busy ? 'Downloading…' : formatSize(file.size) || file.sizeText || 'Open file')}
+        </span>
       </span>
     </a>
   );
@@ -110,6 +255,12 @@ const menuItemStyle = (danger) => ({
   display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 38, padding: '0 10px', border: 'none',
   borderRadius: 8, background: 'transparent', color: danger ? 'var(--red)' : 'var(--text)', fontFamily: 'var(--font)',
   fontSize: 13, fontWeight: 600, textAlign: 'left', cursor: 'pointer',
+});
+
+const actionButton = (primary) => ({
+  height: 36, padding: '0 12px', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+  border: primary ? 'none' : '1px solid var(--border2)', background: primary ? 'var(--accent)' : 'var(--surface)',
+  color: primary ? 'var(--on-accent)' : 'var(--text)', fontWeight: 700, fontSize: 13, fontFamily: 'var(--font)', whiteSpace: 'nowrap',
 });
 
 function MessageMenu({ m, canChange, onReply, onCopy, onEdit, onDelete, onClose }) {
@@ -136,7 +287,7 @@ function MessageMenu({ m, canChange, onReply, onCopy, onEdit, onDelete, onClose 
   );
 }
 
-function Bubble({ m, otherName, menuOpen, onMenu, actions, isGroup, canChange, online }) {
+function Bubble({ m, otherName, menuOpen, onMenu, actions, isGroup, canChange, online, entity, onView }) {
   const mine = m.mine;
   const canAct = !m.deleted && !m.pending;
   if (m.system) {
@@ -159,9 +310,15 @@ function Bubble({ m, otherName, menuOpen, onMenu, actions, isGroup, canChange, o
         <div style={{
           minWidth: 0, maxWidth: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 12px',
           borderRadius: mine ? '16px 4px 16px 16px' : '4px 16px 16px 16px',
-          background: mine ? 'var(--accent-soft)' : 'var(--surface)', border: mine ? '1px solid var(--accent-line)' : '1px solid var(--border)',
+          background: m.adminNote ? 'var(--amber-soft)' : mine ? 'var(--accent-soft)' : 'var(--surface)',
+          border: m.adminNote ? '1px dashed var(--amber)' : mine ? '1px solid var(--accent-line)' : '1px solid var(--border)',
           color: 'var(--text)', opacity: m.pending === 'sending' ? 0.75 : 1,
         }}>
+          {m.adminNote && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 800, color: 'var(--amber)' }}>
+              <ShieldAlert size={12} /> Admins only
+            </span>
+          )}
           {sender && (
             <span dir="auto" style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-strong)' }}>
               {m.from.name}{m.from.jobTitle && <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {m.from.jobTitle}</span>}
@@ -183,8 +340,11 @@ function Bubble({ m, otherName, menuOpen, onMenu, actions, isGroup, canChange, o
             </span>
           ) : (
             <>
-              {m.file && <Attachment file={m.file} mine={mine} />}
-              {m.text && <span dir="auto" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.text}</span>}
+              {m.upload && <UploadCard up={m.upload} mine={mine} />}
+              {m.file && <Attachment file={m.file} mine={mine} entity={entity} onView={onView} />}
+              {m.html ? (
+                <div dir="auto" className="sila-rich-html" dangerouslySetInnerHTML={{ __html: sanitizeForShow(m.html) }} />
+              ) : m.text && <span dir="auto" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.text}</span>}
             </>
           )}
           <span style={{
@@ -264,7 +424,7 @@ function ConfirmDelete({ m, busy, isGroup, onCancel, onConfirm }) {
   );
 }
 
-export default function ChatPane({ item, isOnline = () => false, onRead, onActivity }) {
+export default function ChatPane({ item, isOnline = () => false, onRead, onActivity, onTicketChange }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const api = useMemo(() => chatApi(item), [item.id]);
   const [state, setState] = useState({ status: 'loading', header: null, messages: [], hasMore: false, error: '' });
@@ -277,7 +437,8 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const [confirmDel, setConfirmDel] = useState(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
-  const [showInfo, setShowInfo] = useState(false);   // group details panel
+  // the details panel: open by default for tickets (members, state, who opened it), closed for groups
+  const [showInfo, setShowInfo] = useState(item.kind === 'ticket');
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const keepScroll = useRef(null);   // { height } before prepending an older page
@@ -287,8 +448,22 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const me = header?.me;
   const otherName = header?.title || item.title;
   const isGroup = api.isGroup;
-  // a locked group takes messages (and changes) from its admins only
-  const canWrite = !(isGroup && header?.locked && !header?.isAdmin);
+  const isTicket = api.isTicket;
+  const multi = isGroup || isTicket;   // several people: sender names, no read receipts
+  // a locked group takes messages (and changes) from its admins only; a ticket
+  // takes messages while it is New / In Progress (the SP's CanSend)
+  const ticketClosedForChat = isTicket && !!header && !header.can.send;
+  const canWrite = !(isGroup && header?.locked && !header?.isAdmin) && !ticketClosedForChat;
+  const [adminOnly, setAdminOnly] = useState(false);   // tickets: the next message is an admins-only note
+  const [richOpen, setRichOpen] = useState(false);     // the formatted-text pop-up (T button)
+  const fileInputRef = useRef(null);
+  const [viewing, setViewing] = useState(null);       // { url, name, downloadUrl }: the image viewer
+  const closeViewer = useCallback(() => setViewing(null), []);
+  const entity = useMemo(() => fileEntity(item), [item]);   // this conversation, as the Files API names it
+  const [richEmpty, setRichEmpty] = useState(true);
+  const richRef = useRef(null);
+  const [actionBusy, setActionBusy] = useState(null);  // ticket action key
+  const [confirmAction, setConfirmAction] = useState(null);
 
   const flash = useCallback((text) => {
     setNotice(text);
@@ -362,6 +537,13 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   }, [api, key]);
   useEffect(() => { load(); }, [load]);
 
+  // a send whose answer was lost: its message arrived anyway (live update,
+  // refresh, reopen) -- drop the sending / failed bubble with the same LocalChatID
+  useEffect(() => {
+    const mineIds = new Set(state.messages.filter(m => m.mine && m.localId).map(m => m.localId));
+    if (mineIds.size) setPending(list => (list.some(p => mineIds.has(p.localId)) ? list.filter(p => !mineIds.has(p.localId)) : list));
+  }, [state.messages]);
+
   // keep the cache current (sends, edits, deletes, older pages, deltas)
   useEffect(() => {
     if (state.status === 'ready') putCached(key, { header: state.header, messages: state.messages, hasMore: state.hasMore });
@@ -370,7 +552,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   // live: this conversation's SilaHistory row moved (new message, edit, delete) -> delta now
   useEffect(() => {
     if (state.status !== 'ready') return undefined;
-    const id = item.kind === 'group' ? item.raw?.GroupID : item.raw?.SessionID;
+    const id = item.kind === 'group' ? item.raw?.GroupID : item.kind === 'ticket' ? item.raw?.TicketID : item.raw?.SessionID;
     return onLive('changed', frame => {
       if ((frame.items || []).some(c => c.kind === item.kind && c.id === id)) syncNew();
     });
@@ -425,36 +607,97 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const trySend = useCallback(async (p) => {
     setPending(list => list.map(x => (x.localId === p.localId ? { ...x, status: 'sending' } : x)));
     try {
-      const saved = await api.send({ text: p.text, replyToId: p.replyToId, localId: p.localId, me });
+      const saved = await api.send({ text: p.text, html: p.html, replyToId: p.replyToId, localId: p.localId, me, adminOnly: p.adminOnly });
       setPending(list => list.filter(x => x.localId !== p.localId));
       stickBottom.current = true;
       setState(s => ({ ...s, messages: [...s.messages.filter(x => x.id !== saved.id), saved].sort(bySort) }));
-      onActivity?.(item.id, { preview: saved.text, at: saved.at || new Date() });
+      if (!saved.adminNote) onActivity?.(item.id, { preview: saved.text, at: saved.at || new Date() });
+      // a manager's first message starts a new ticket: pick up the new state
+      if (isTicket && header?.state === 0 && !saved.adminNote) fullLoad(true);
     } catch (err) {
       setPending(list => list.map(x => (x.localId === p.localId ? { ...x, status: 'failed', error: err.message } : x)));
     }
-  }, [api, me, item.id, onActivity]);
+  }, [api, me, item.id, onActivity, isTicket, header?.state, fullLoad]);
 
-  const submit = async (e) => {
+  // ---- files: upload to the Files API (:7500), then post the message. A failed
+  // step can be retried: an upload that already succeeded is not repeated.
+  const setUp = (localId, patch) => setPending(list => list.map(x => (x.localId === localId ? { ...x, ...patch } : x)));
+  const tryFile = useCallback(async (p) => {
+    let attachmentId = p.attachmentId;
+    try {
+      if (!attachmentId) {
+        setUp(p.localId, { status: 'sending', stage: 'uploading', progress: 0, error: '' });
+        attachmentId = await uploadFile({
+          file: p.file, ...entity, onProgress: (f) => setUp(p.localId, { progress: f }),
+        });
+        setUp(p.localId, { attachmentId });
+      }
+      setUp(p.localId, { status: 'sending', stage: 'sending', error: '' });
+      const saved = await api.sendFile({ attachmentId, replyToId: p.replyToId, localId: p.localId, me, adminOnly: p.adminOnly });
+      setPending(list => list.filter(x => x.localId !== p.localId));
+      stickBottom.current = true;
+      setState(s => ({ ...s, messages: [...s.messages.filter(x => x.id !== saved.id), saved].sort(bySort) }));
+      if (!saved.adminNote) onActivity?.(item.id, { preview: p.file.name, at: saved.at || new Date() });
+      if (isTicket && header?.state === 0 && !saved.adminNote) fullLoad(true);
+    } catch (err) {
+      setUp(p.localId, { status: 'failed', stage: 'failed', error: err.message || 'Not sent', attachmentId });
+    }
+  }, [api, entity, me, item.id, onActivity, isTicket, header?.state, fullLoad]);
+
+  const pickFiles = (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';   // the same file can be picked again
+    if (!files.length || !canWrite) return;
+    const problems = [];
+    for (const file of files.slice(0, 10)) {
+      const problem = checkFile(file);
+      if (problem) { problems.push(problem); continue; }
+      const p = {
+        localId: newLocalId(), kind: 'file', file, text: '', status: 'sending', stage: 'uploading', progress: 0,
+        at: new Date(), replyToId: replyTo?.id || 0, reply: replyTo ? { text: replyTo.text || 'Attachment', mine: replyTo.mine } : null,
+        adminOnly: isTicket && adminOnly,
+      };
+      stickBottom.current = true;
+      setPending(list => [...list, p]);
+      tryFile(p);
+    }
+    setReplyTo(null);
+    if (files.length > 10) problems.push('Up to 10 files at a time.');
+    if (problems.length) flash(problems[0]);
+  };
+
+  // what is being sent: { text, html } -- from the plain box, or from the pop-up's
+  // editor (html only when there is real formatting)
+  const readComposer = (fromRich) => {
+    if (!fromRich) return { text: draft.trim(), html: '' };
+    const html = sanitizeForSend(richRef.current?.getHtml() || '');
+    const text = toPlainText(html);
+    return { text, html: hasFormatting(html) ? html : '' };
+  };
+  const clearComposer = () => { setDraft(''); richRef.current?.clear(); };
+
+  const submit = async (e, fromRich = false) => {
     e?.preventDefault();
-    const text = draft.trim();
+    const { text, html } = readComposer(fromRich);
     if (!text || busy || state.status !== 'ready' || !canWrite) return;
+    if (text.length > 10000) { flash('The message is too long.'); return; }
     if (editing) {
-      if (text === editing.text) { setEditing(null); setDraft(''); return; }
+      if (text === editing.text && html === (editing.html || '')) { setEditing(null); clearComposer(); setRichOpen(false); return; }
       setBusy(true);
       try {
-        const saved = await api.edit({ chatId: editing.id, text, localId: newLocalId(), me });
+        const saved = await api.edit({ chatId: editing.id, text, html, localId: newLocalId(), me });
         replaceMessage(editing.id, saved);
-        setEditing(null); setDraft('');
+        setEditing(null); clearComposer(); setRichOpen(false);
       } catch (err) { flash(err.message || 'Could not save the edit.'); }
       finally { setBusy(false); }
       return;
     }
     const p = {
-      localId: newLocalId(), text, status: 'sending', at: new Date(),
+      localId: newLocalId(), text, html, status: 'sending', at: new Date(),
       replyToId: replyTo?.id || 0, reply: replyTo ? { text: replyTo.text || 'Attachment', mine: replyTo.mine } : null,
+      adminOnly: isTicket && adminOnly,
     };
-    setDraft(''); setReplyTo(null);
+    clearComposer(); setReplyTo(null); setRichOpen(false);
     stickBottom.current = true;
     setPending(list => [...list, p]);
     trySend(p);
@@ -473,16 +716,58 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
     finally { setBusy(false); }
   };
 
+  // ticket state change; the SP re-checks the role and the state, and posts a system line
+  const runTicketAction = async (a) => {
+    setConfirmAction(null);
+    setActionBusy(a.key);
+    try {
+      await changeTicketState(header.ticketId, a.action);
+      stickBottom.current = true;
+      fullLoad(true);
+      onTicketChange?.(item.id);
+    } catch (err) { flash(err.message || 'Could not change the ticket.'); }
+    finally { setActionBusy(null); }
+  };
+
   const actions = {
     onReply: (m) => { setEditing(null); setReplyTo(m); inputRef.current?.focus(); },
     onCopy: (m) => {
       navigator.clipboard?.writeText(m.text).then(() => flash('Message copied'), () => flash('Copy is blocked in this browser'));
     },
-    onEdit: (m) => { setReplyTo(null); setEditing(m); setDraft(m.text); setTimeout(() => inputRef.current?.focus(), 0); },
+    onEdit: (m) => {
+      setReplyTo(null); setEditing(m);
+      if (m.html) {
+        openRich(sanitizeForSend(m.html));   // a formatted message is edited in the pop-up
+      } else {
+        setDraft(m.text);
+        setTimeout(() => inputRef.current?.focus(), 0);
+      }
+    },
     onDelete: (m) => setConfirmDel(m),
-    onRetry: (m) => trySend(pending.find(p => p.localId === m.localId)),
+    onRetry: (m) => {
+      const p = pending.find(x => x.localId === m.localId);
+      if (p) (p.kind === 'file' ? tryFile(p) : trySend(p));
+    },
   };
-  const cancelBar = () => { if (editing) setDraft(''); setEditing(null); setReplyTo(null); };
+  const cancelBar = () => { if (editing) clearComposer(); setEditing(null); setReplyTo(null); };
+  // the formatted-text pop-up: opens with what was typed (or the message being edited)
+  function openRich(html = null) {
+    const text = draft;
+    setRichOpen(true);
+    setTimeout(() => {
+      richRef.current?.setHtml(html || '');
+      richRef.current?.focus();
+      if (!html && text) document.execCommand('insertText', false, text);
+    }, 0);
+  }
+  // closed without sending: the text goes back to the plain box, so nothing is lost
+  const closeRich = () => {
+    const { text } = readComposer(true);
+    setRichOpen(false);
+    if (editing?.html) { setEditing(null); setDraft(''); }
+    else setDraft(text);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
 
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
@@ -507,7 +792,8 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
     ...state.messages,
     ...pending.map(p => ({
       id: `p-${p.localId}`, localId: p.localId, sortId: Infinity, mine: true, at: p.at, text: p.text,
-      reply: p.reply, pending: p.status,
+      reply: p.reply, pending: p.status, adminNote: p.adminOnly, html: p.html,
+      upload: p.kind === 'file' ? { name: p.file.name, size: p.file.size, progress: p.progress, stage: p.stage, error: p.error } : null,
     })),
   ];
   const rows = [];
@@ -521,7 +807,33 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
     : replyTo ? { title: `Replying to ${replyTo.mine ? 'yourself' : (replyTo.from?.name || otherName)}`, text: replyTo.text || 'Attachment', label: 'Cancel reply' }
     : null;
 
-  const headerBody = (
+  const tone = TICKET_TONE[header?.state] || ['var(--text2)', 'var(--soft)'];
+  const ticketHeaderBody = (
+    <>
+      <span style={{
+        flex: '0 0 44px', width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--accent-soft)', border: '1.5px solid var(--accent-line)', color: 'var(--accent-strong)',
+      }}><Hash size={22} strokeWidth={1.8} /></span>
+      <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>
+          <span dir="auto"># {header?.channel || item.raw?.ChannelName || ''} · #{item.raw?.TicketID}</span>
+          {(header?.stateLabel || item.state) && (
+            <span style={{ padding: '1px 9px', borderRadius: 999, background: tone[1], color: tone[0], fontSize: 11, fontWeight: 700 }}>
+              {header?.stateLabel || item.state}
+            </span>
+          )}
+        </span>
+        <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }} dir="auto">{header?.title || item.title}</span>
+        <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+          {header ? `${header.memberCount} member${header.memberCount === 1 ? '' : 's'}` : '\u00a0'}
+          <span style={{ color: 'var(--accent-strong)', fontWeight: 600 }}> · {showInfo ? 'hide details' : 'details'}</span>
+        </span>
+      </span>
+    </>
+  );
+  const ticketActions = isTicket && header ? TICKET_ACTIONS.filter(a => header.can[a.key]) : [];
+
+  const headerBody = isTicket ? ticketHeaderBody : (
     <>
       <Avatar name={otherName} size={44} photoUrl={photoUrl} online={headerOnline} />
       <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
@@ -542,9 +854,10 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
         minHeight: 72, padding: '12px 24px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
         display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0,
       }}>
-        {isGroup ? (
-          // the group header opens the details panel (members)
-          <button onClick={() => setShowInfo(v => !v)} aria-expanded={showInfo} aria-label={`${otherName}: ${showInfo ? 'hide' : 'show'} group info`}
+        {multi ? (
+          // the group / ticket header opens the details panel (members)
+          <button onClick={() => setShowInfo(v => !v)} aria-expanded={showInfo}
+            aria-label={`${otherName}: ${showInfo ? 'hide' : 'show'} ${isTicket ? 'ticket details' : 'group info'}`}
             style={{
               display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, padding: '4px 8px', margin: '-4px -8px',
               border: 'none', borderRadius: 12, background: showInfo ? 'var(--soft)' : 'transparent', cursor: 'pointer',
@@ -552,6 +865,26 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
             }}>{headerBody}</button>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>{headerBody}</div>
+        )}
+        {ticketActions.length > 0 && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {ticketActions.map(a => {
+              const Icon = a.icon;
+              const asking = confirmAction?.key === a.key;
+              return asking ? (
+                <span key={a.key} role="group" aria-label={`Confirm ${a.label}`} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>Close this ticket for good?</span>
+                  <button onClick={() => runTicketAction(a)} style={actionButton(true)}>Close</button>
+                  <button onClick={() => setConfirmAction(null)} style={actionButton(false)}>Cancel</button>
+                </span>
+              ) : (
+                <button key={a.key} disabled={!!actionBusy} onClick={() => (a.confirm ? setConfirmAction(a) : runTicketAction(a))}
+                  style={{ ...actionButton(a.primary), opacity: actionBusy && actionBusy !== a.key ? 0.5 : 1 }}>
+                  <Icon size={15} /> {actionBusy === a.key ? `${a.label}…` : a.label}
+                </button>
+              );
+            })}
+          </div>
         )}
       </header>
 
@@ -589,7 +922,8 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
           }}>{r.divider}</div>
         ) : (
           <Bubble key={r.key} m={r.m} otherName={otherName} menuOpen={menuFor === r.m.id}
-            onMenu={setMenuFor} actions={actions} isGroup={isGroup} canChange={canWrite} online={isOnline} />
+            onMenu={setMenuFor} actions={actions} isGroup={multi} canChange={canWrite || (isTicket && header?.state < 50)} online={isOnline}
+            entity={entity} onView={setViewing} />
         )))}
       </div>
 
@@ -609,26 +943,50 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
         </div>
       )}
 
+      {isTicket && adminOnly && canWrite && (
+        <div role="status" style={{
+          flexShrink: 0, padding: '8px 24px', background: 'var(--amber-soft)', borderTop: '1px solid var(--border)',
+          color: 'var(--amber)', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6,
+        }}><ShieldAlert size={14} /> Only ticket admins will see this message. It won't start the ticket.</div>
+      )}
       {!canWrite ? (
         <div style={{
           flexShrink: 0, padding: '16px 24px', background: 'var(--surface)', borderTop: '1px solid var(--border)',
           display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text2)', fontSize: 13,
-        }}><Lock size={16} /> Only admins can send messages in this group.</div>
+        }}><Lock size={16} /> {isTicket
+          ? (header?.state === 50 ? 'This ticket is closed.'
+            : `Messages are paused while the ticket is ${(header?.stateLabel || 'not open').toLowerCase()}.${header?.can.reopen ? ' Reopen it to continue.' : ''}`)
+          : 'Only admins can send messages in this group.'}</div>
       ) : (
       <form onSubmit={submit} style={{
         flexShrink: 0, padding: '12px 24px 16px', background: 'var(--surface)', borderTop: bar ? 'none' : '1px solid var(--border)',
         display: 'flex', alignItems: 'flex-end', gap: 10,
       }}>
-        <button type="button" disabled aria-label="Attach file" title="Attachments come next" style={{
+        <input ref={fileInputRef} type="file" multiple accept={ACCEPT} onChange={pickFiles} hidden />
+        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={state.status !== 'ready'}
+          aria-label="Attach files" title="Attach files (PDF, images, Word, Excel, PowerPoint, TXT, CSV · up to 50 MB)" style={{
           width: 44, height: 44, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)',
-          color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.6, flexShrink: 0,
+          color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
         }}><Paperclip size={20} /></button>
+        {isTicket && header?.can.adminNote && (
+          <button type="button" onClick={() => setAdminOnly(v => !v)} aria-pressed={adminOnly} title="Admins-only note" style={{
+            height: 44, padding: '0 12px', borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
+            border: `1.5px solid ${adminOnly ? 'var(--amber)' : 'var(--border)'}`, background: adminOnly ? 'var(--amber-soft)' : 'var(--surface)',
+            color: adminOnly ? 'var(--amber)' : 'var(--text2)', fontWeight: 700, fontSize: 12, fontFamily: 'var(--font)', cursor: 'pointer',
+          }}><ShieldAlert size={16} /> Admins only</button>
+        )}
+        <button type="button" onClick={() => openRich()} disabled={state.status !== 'ready'} aria-haspopup="dialog"
+          aria-label="Formatted text" title="Formatted text (bold, lists…)" style={{
+            width: 44, height: 44, borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)', cursor: 'pointer',
+          }}><Type size={20} /></button>
         <label htmlFor="chat-composer" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>Message</label>
         <textarea id="chat-composer" ref={inputRef} rows={1} value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={onKeyDown}
           disabled={state.status !== 'ready'} dir="auto"
           placeholder={editing ? 'Edit your message…' : `Message ${otherName.split(' ')[0]}…`} style={{
             flex: 1, minWidth: 0, minHeight: 44, maxHeight: 132, resize: 'none', padding: '11px 16px', borderRadius: 12,
-            border: `1.5px solid ${editing ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--soft)', fontSize: 14,
+            border: `1.5px solid ${editing ? 'var(--accent)' : isTicket && adminOnly ? 'var(--amber)' : 'var(--border)'}`,
+            background: isTicket && adminOnly ? 'var(--amber-soft)' : 'var(--soft)', fontSize: 14,
             lineHeight: '20px', color: 'var(--text)', fontFamily: 'var(--font)', outlineColor: 'var(--accent)',
           }} />
         <button type="submit" aria-label={editing ? 'Save edit' : 'Send'} disabled={!draft.trim() || busy || state.status !== 'ready'} style={{
@@ -645,8 +1003,62 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
           borderRadius: 10, background: 'var(--text)', color: 'var(--surface)', fontSize: 13, fontWeight: 600, boxShadow: 'var(--shadow-lg)',
         }}>{notice}</div>
       )}
-      {confirmDel && <ConfirmDelete m={confirmDel} busy={busy} isGroup={isGroup} onCancel={() => setConfirmDel(null)} onConfirm={doDelete} />}
+      {viewing && <ImageViewer image={viewing} onClose={closeViewer} />}
+      {richOpen && (
+        <div style={{ position: 'absolute', inset: 0, zIndex: 45, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,.45)' }} />
+          <div role="dialog" aria-modal="true" aria-labelledby="rich-title" style={{
+            position: 'relative', width: 'min(720px, 100%)', maxHeight: '92%', display: 'flex', flexDirection: 'column', gap: 12,
+            padding: 20, borderRadius: 16, background: 'var(--surface)', boxShadow: 'var(--shadow-lg)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Type size={18} style={{ color: 'var(--accent-strong)' }} />
+              <h2 id="rich-title" style={{ flex: 1, margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>
+                {editing ? 'Edit formatted message' : 'Formatted message'}
+              </h2>
+              <button onClick={closeRich} aria-label="Close" style={{
+                width: 36, height: 36, borderRadius: 18, border: 'none', background: 'transparent', color: 'var(--text2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+              }}><X size={18} /></button>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text2)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span dir="auto">To {isTicket ? `# ${header?.channel || ''} · ${header?.title || otherName}` : otherName}</span>
+              {replyTo && !editing && (
+                <span dir="auto" style={{ padding: '4px 10px', borderInlineStart: '3px solid var(--accent)', background: 'var(--soft)', borderRadius: 6,
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Replying to {replyTo.mine ? 'yourself' : (replyTo.from?.name || otherName)}: {replyTo.text}
+                </span>
+              )}
+              {isTicket && adminOnly && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--amber)', fontWeight: 700 }}>
+                  <ShieldAlert size={14} /> Admins-only note: only ticket admins will see it.
+                </span>
+              )}
+            </div>
+            <RichComposer ref={richRef} disabled={busy} onSubmit={() => submit(null, true)} onEscape={closeRich}
+              onEmptyChange={setRichEmpty} minHeight={200} maxHeight={420} hint={false}
+              accent={isTicket && adminOnly ? 'var(--amber)' : 'var(--border)'}
+              placeholder={editing ? 'Edit your message…' : `Message ${otherName.split(' ')[0]}…`} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ flex: 1, fontSize: 12, color: 'var(--muted)' }}>Enter adds a line · Ctrl + Enter sends</span>
+              <button onClick={closeRich} disabled={busy} style={{
+                height: 40, padding: '0 16px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--surface)',
+                color: 'var(--text)', fontWeight: 700, fontFamily: 'var(--font)', cursor: 'pointer',
+              }}>Cancel</button>
+              <button onClick={() => submit(null, true)} disabled={richEmpty || busy} style={{
+                height: 40, padding: '0 18px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: 'var(--on-accent)',
+                fontWeight: 700, fontFamily: 'var(--font)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+                opacity: richEmpty || busy ? 0.5 : 1,
+              }}>{editing ? <><Check size={16} /> Save</> : <><Send size={16} /> Send</>}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDel && <ConfirmDelete m={confirmDel} busy={busy} isGroup={multi} onCancel={() => setConfirmDel(null)} onConfirm={doDelete} />}
     </main>
+    {isTicket && showInfo && (
+      <TicketInfoPanel ticketId={item.raw?.TicketID} header={header} isOnline={isOnline} onClose={() => setShowInfo(false)} />
+    )}
     {isGroup && showInfo && (
       <GroupInfoPanel groupId={item.raw?.GroupID} header={header} isOnline={isOnline} onClose={() => setShowInfo(false)}
         onLockChange={({ locked, system }) => {
