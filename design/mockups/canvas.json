@@ -1,6 +1,6 @@
 {
   "v": 3,
-  "createdOnFiles": {"v": 1, "at": "2026-10-20T19:40:00Z"},
+  "createdOnFiles": {"v": 1, "at": "2026-10-24T00:45:00Z"},
   "title": "Sila App Mockups",
   "launch": {"view": "canvas"},
   "pages": [],
@@ -13,11 +13,17 @@
     "Forward.dc.html": {"x": 3760, "y": 2040, "w": 560, "h": 560, "title": "Dialog — Forward ticket"},
     "Avatar.dc.html": {"x": 4400, "y": 2040, "w": 64, "h": 64, "title": "Component — Avatar"},
     "MediaPanel.dc.html": {"x": 4544, "y": 2040, "w": 320, "h": 620, "title": "Component — Media, links and docs", "is_interactive": true},
-    "ChatMessage.dc.html": {"x": 4944, "y": 2040, "w": 560, "h": 220, "title": "Component — Chat message + options", "is_interactive": true}
+    "ChatMessage.dc.html": {"x": 4944, "y": 2040, "w": 560, "h": 220, "title": "Component — Chat message + options", "is_interactive": true},
+    "MyDay.dc.html": {"x": 0, "y": 3260, "w": 1440, "h": 900, "title": "My Day — reminders list", "expand": "fill", "is_interactive": true},
+    "MyDayCalendar.dc.html": {"x": 1520, "y": 3260, "w": 1440, "h": 900, "title": "My Day — calendar", "expand": "fill", "is_interactive": true},
+    "ReminderDialog.dc.html": {"x": 3040, "y": 3260, "w": 560, "h": 760, "title": "Dialog — New reminder / note", "is_interactive": true},
+    "RemindMe.dc.html": {"x": 3680, "y": 3260, "w": 560, "h": 480, "title": "Component — Remind me on a message", "is_interactive": true},
+    "ReminderAlert.dc.html": {"x": 4320, "y": 3260, "w": 760, "h": 520, "title": "At the due time — web toast + phone push"}
   },
-  "order": ["Home.dc.html", "Main.dc.html", "Groups.dc.html", "Channels.dc.html", "NewTicket.dc.html", "Forward.dc.html", "Avatar.dc.html", "MediaPanel.dc.html", "ChatMessage.dc.html"],
+  "order": ["Home.dc.html", "Main.dc.html", "Groups.dc.html", "Channels.dc.html", "NewTicket.dc.html", "Forward.dc.html", "Avatar.dc.html", "MediaPanel.dc.html", "ChatMessage.dc.html", "MyDay.dc.html", "MyDayCalendar.dc.html", "ReminderDialog.dc.html", "RemindMe.dc.html", "ReminderAlert.dc.html"],
   "notes": {
-    "flows": {"x": 0, "y": -300, "text": "Sila — Home, Chats, Groups, Channels", "kind": "title1", "maxW": 4480}
+    "flows": {"x": 0, "y": -300, "text": "Sila — Home, Chats, Groups, Channels", "kind": "title1", "maxW": 4480},
+    "reminders": {"x": 0, "y": 3000, "text": "Reminders — My Day, notes and calendar", "kind": "title1", "maxW": 5080}
   },
   "designSystems": []
 }

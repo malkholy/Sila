@@ -155,3 +155,49 @@ export async function saveChannelSla(channelId, replyMinutes, finishMinutes) {
   const r = res?.data?.List0?.[0] || {};
   return { replyTarget: r.FirstReplyMinutes == null ? null : Number(r.FirstReplyMinutes), finishTarget: r.FinishMinutes == null ? null : Number(r.FinishMinutes) };
 }
+
+// Group master: the chat groups (GRP.GroupMaster) with their type -- 'Group' or
+// 'Broadcast' (every active user is a member, only its admins send).
+export async function loadSettingsChatGroups() {
+  const res = await apiExec(PROC, 'Settings chat groups', {});
+  return {
+    groups: (res?.data?.List0 || []).map(r => ({
+      id: r.GroupID, name: r.Name || `Group ${r.GroupID}`, broadcast: r.GroupType === 'Broadcast',
+      locked: flag(r.ChatIsLocked), active: !flag(r.Inactive), members: Number(r.Members) || 0, admins: Number(r.Admins) || 0,
+      createdBy: r.CreatedBy || '', created: date(r.CreatedDate), changed: date(r.LastMaintDate),
+    })),
+    activeUsers: Number(res?.data?.List1?.[0]?.ActiveUsers) || 0,
+  };
+}
+
+// One chat group for its drawer: { group, members }.
+export async function loadSettingsChatGroup(groupId) {
+  const res = await apiExec(PROC, 'Settings chat group', { GroupID: groupId });
+  const g = res?.data?.List0?.[0];
+  if (!g) throw new Error('Group not found.');
+  return {
+    group: {
+      id: g.GroupID, name: g.Name || `Group ${g.GroupID}`, broadcast: g.GroupType === 'Broadcast', locked: flag(g.ChatIsLocked),
+      createdBy: g.CreatedByName || g.CreatedBy || '', created: date(g.CreatedDate), changed: date(g.LastMaintDate),
+      activeUsers: Number(g.ActiveUsers) || 0, activeMembers: Number(g.ActiveMembers) || 0,
+    },
+    members: (res?.data?.List1 || []).map(m => ({
+      id: m.UserID, username: String(m.Username || '').toLowerCase(), name: m.FullName || m.Username || '',
+      title: [m.JobName, m.DepartmentName].filter(Boolean).join(' · '), photoUrl: m.PhotoURL || '',
+      admin: flag(m.IsAdmin), creator: flag(m.IsCreator), active: !flag(m.IsNotActive),
+    })),
+  };
+}
+
+// New group (id 0; adminIds = its other admins) or rename / change type. Resolves to { id, added, memberCount }.
+export async function saveChatGroup({ id = 0, name, broadcast, adminIds = [] }) {
+  const res = await apiExec(PROC, 'Save chat group', {
+    GroupID: id, Name: name, Broadcast: broadcast ? 1 : 0, ...(id ? {} : { AdminIDs: adminIds }),
+  });
+  const r = res?.data?.List0?.[0] || {};
+  return { id: Number(r.GroupID) || id, added: Number(r.Added) || 0, memberCount: Number(r.MemberCount) || 0 };
+}
+
+export async function setChatGroupAdmin(groupId, userId, admin) {
+  await apiExec(PROC, 'Set chat group admin', { GroupID: groupId, UserID: userId, Admin: admin ? 1 : 0 });
+}

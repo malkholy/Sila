@@ -97,6 +97,31 @@ public sealed class AttachmentTests
         Assert.Null(Check(".csv", Encoding.UTF8.GetBytes("a,b\n1,2\n")));
     }
 
+    [Fact]
+    public void Voice_note_formats_with_matching_content_pass()
+    {
+        Assert.Null(Check(".m4a", [0, 0, 0, 0x20, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'M', (byte)'4', (byte)'A', (byte)' ']));
+        Assert.Null(Check(".aac", [0xFF, 0xF1, 0x50, 0x80, 1]));
+        Assert.Null(Check(".mp3", Encoding.ASCII.GetBytes("ID3\u0004\0\0\0\0\0\0")));
+        Assert.Null(Check(".mp3", [0xFF, 0xFB, 0x90, 0x64, 0]));
+        Assert.Null(Check(".ogg", Encoding.ASCII.GetBytes("OggS\0\u0002")));
+        Assert.Null(Check(".opus", Encoding.ASCII.GetBytes("OggS\0\u0002")));
+        Assert.Null(Check(".wav", Encoding.ASCII.GetBytes("RIFF\u0024\0\0\0WAVEfmt ")));
+        Assert.Null(Check(".webm", [0x1A, 0x45, 0xDF, 0xA3, 0x9F, 0x42]));
+    }
+
+    [Fact]
+    public void Voice_note_formats_reject_other_content()
+    {
+        Assert.NotNull(Check(".m4a", Exe));
+        Assert.NotNull(Check(".mp3", Pdf));
+        Assert.NotNull(Check(".aac", Exe));
+        Assert.NotNull(Check(".ogg", Exe));
+        Assert.NotNull(Check(".wav", Encoding.ASCII.GetBytes("RIFF\u0024\0\0\0AVI LIST")));   // a video, not WAVE
+        Assert.NotNull(Check(".webm", Pdf));
+        Assert.Equal("audio/mp4", FileTypePolicy.ForExtension(".m4a")!.ContentType);
+    }
+
     [Theory]
     [InlineData(".exe")]
     [InlineData(".js")]

@@ -16,7 +16,9 @@ export function FlagMark({ flag, size = 13 }) {
 
 // The ticket header's flag button: flag / unflag, and an optional due date and
 // note in a small panel. onChange(flag | null) after the server saved it.
-export function FlagButton({ ticketId, flag, onChange }) {
+// openSignal: a number that changes when something else (the pinned note)
+// asks for the panel to open.
+export function FlagButton({ ticketId, flag, onChange, openSignal = 0 }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ due: '', note: '' });
   const [busy, setBusy] = useState(false);
@@ -30,6 +32,10 @@ export function FlagButton({ ticketId, flag, onChange }) {
     document.addEventListener('keydown', esc, true);
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc, true); };
   }, [open]);
+  useEffect(() => {
+    if (!openSignal) return;
+    setForm({ due: flag?.due || '', note: flag?.note || '' }); setError(''); setOpen(true);
+  }, [openSignal]);   // eslint-disable-line react-hooks/exhaustive-deps -- open on a new signal only
   const save = async (next) => {
     setBusy(true); setError('');
     try { onChange(await setTicketFlag(ticketId, next)); setOpen(false); }
@@ -88,5 +94,33 @@ export function FlagButton({ ticketId, flag, onChange }) {
         </div>
       )}
     </span>
+  );
+}
+
+// The caller's flag pinned at the top of the ticket chat: its note and due
+// date, like a pinned message. Only when the flag has a note or a due date;
+// a click opens the flag panel (onEdit) to change or clear it.
+export function FlagPin({ flag, onEdit }) {
+  if (!flag || (!flag.note && !flag.due)) return null;
+  const late = flagOverdue(flag);
+  const due = flag.due && new Date(`${flag.due}T00:00:00`).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+  return (
+    <button type="button" onClick={onEdit} title="Your flag (only you see it): click to change or clear" style={{
+      flexShrink: 0, display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%', padding: '9px 24px', border: 'none',
+      borderBottom: '1px solid var(--border)', background: late ? 'var(--red-soft)' : 'var(--amber-soft)', color: 'var(--text)',
+      textAlign: 'left', cursor: 'pointer', fontFamily: 'var(--font)', fontSize: 13,
+    }}>
+      <Flag size={15} fill="currentColor" style={{ color: late ? 'var(--red)' : 'var(--amber)', flexShrink: 0, marginTop: 2 }} />
+      <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.03em', textTransform: 'uppercase', color: late ? 'var(--red)' : 'var(--amber)' }}>
+          My follow-up{due ? ` · ${late ? 'overdue since' : flagDueToday(flag) ? 'due today,' : 'due'} ${due}` : ''}
+        </span>
+        {flag.note && (
+          <span dir="auto" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', whiteSpace: 'pre-wrap' }}>
+            {flag.note}
+          </span>
+        )}
+      </span>
+    </button>
   );
 }

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — My Day</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#c2410c}a:hover{color:#9a3412}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="position: relative; height: 100vh; min-height: 640px; display: flex; flex-wrap: wrap; overflow-y: auto; background: #f1f5f9; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <!-- Rail: My Day is new, under Channels -->
+  <nav aria-label="Main" style="flex: 0 0 84px; background: #1a2332; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 0">
+    <div style="width: 44px; height: 44px; border-radius: 13px; background: #c2410c; color: #ffffff; font-weight: 800; font-size: 18px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px">S</div>
+    <a href="Home.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path><path d="M10 20v-6h4v6"></path></svg>
+      Home
+    </a>
+    <a href="Main.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg>
+      Chats
+    </a>
+    <a href="Groups.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0"></path><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"></path><path d="M18 14.5a6.5 6.5 0 0 1 3.5 5.5"></path></svg>
+      Groups
+    </a>
+    <a href="Channels.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+      Channels
+    </a>
+    <a href="MyDay.dc.html" aria-current="page" style="width: 68px; min-height: 60px; border-radius: 12px; background: #c2410c; color: #ffffff; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700; position: relative">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path><path d="m9 15 2 2 4-4"></path></svg>
+      My Day
+      <span style="position: absolute; top: 6px; right: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ffffff; color: #c2410c; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{dueCount}}</span>
+    </a>
+  </nav>
+
+  <!-- List -->
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: #ffffff; border-right: 1px solid #e2e8f0">
+    <header style="padding: 20px 28px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; border-bottom: 1px solid #e2e8f0">
+      <div style="flex: 1 1 220px; min-width: 0">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 800">My Day</h1>
+        <div style="font-size: 13px; color: #64748b">Saturday, 24 October 2026 · only you see your reminders</div>
+      </div>
+      <div role="group" aria-label="View" style="display: flex; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden">
+        <a href="MyDay.dc.html" aria-current="page" style="height: 40px; padding: 0 14px; display: flex; align-items: center; gap: 6px; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; text-decoration: none">List</a>
+        <a href="MyDayCalendar.dc.html" style="height: 40px; padding: 0 14px; display: flex; align-items: center; gap: 6px; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; text-decoration: none">Calendar</a>
+      </div>
+      <a href="ReminderDialog.dc.html" style="height: 40px; padding: 0 14px; border-radius: 12px; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; text-decoration: none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        New reminder
+      </a>
+    </header>
+
+    <div style="padding: 14px 28px 4px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center">
+      <div role="tablist" aria-label="Show" style="display: flex; gap: 6px; flex-wrap: wrap">
+        <sc-for list="{{filters}}" as="f" hint-placeholder-count="4">
+          <button role="tab" aria-selected="{{f.selected}}" onClick="{{f.pick}}" style="height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid {{f.border}}; background: {{f.bg}}; color: {{f.fg}}; font-weight: 700; font-size: 12px; cursor: pointer">{{f.label}} · {{f.count}}</button>
+        </sc-for>
+      </div>
+      <div style="flex: 1"></div>
+      <span style="font-size: 12px; color: #64748b; font-weight: 600">{{overdueCount}} overdue · {{todayCount}} today</span>
+    </div>
+
+    <div style="flex: 1; overflow-y: auto; padding: 4px 18px 24px">
+      <sc-for list="{{sections}}" as="s" hint-placeholder-count="4">
+        <section aria-label="{{s.label}}" style="margin-top: 14px">
+          <h2 style="margin: 0 10px 6px; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: {{s.color}}">{{s.label}} · {{s.count}}</h2>
+          <sc-for list="{{s.rows}}" as="r" hint-placeholder-count="2">
+            <div style="display: flex; align-items: flex-start; gap: 12px; padding: 10px; border-radius: 12px; background: {{r.bg}}">
+              <button onClick="{{r.toggle}}" aria-pressed="{{r.donePressed}}" aria-label="Mark done: {{r.title}}" style="flex: 0 0 22px; width: 22px; height: 22px; margin-top: 2px; border-radius: 7px; border: 2px solid {{r.boxBorder}}; background: {{r.boxBg}}; color: #ffffff; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0">
+                <sc-if value="{{r.done}}" hint-placeholder-val="{{false}}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg></sc-if>
+              </button>
+              <span style="flex: 0 0 34px; width: 34px; height: 34px; border-radius: 10px; background: {{r.kBg}}; border: 1.5px solid {{r.kBorder}}; color: {{r.kFg}}; display: flex; align-items: center; justify-content: center">
+                <sc-if value="{{r.isTicket}}" hint-placeholder-val="{{true}}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg></sc-if>
+                <sc-if value="{{r.isNote}}" hint-placeholder-val="{{false}}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"></path><path d="m13.5 6.5 4 4"></path></svg></sc-if>
+                <sc-if value="{{r.isMessage}}" hint-placeholder-val="{{false}}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg></sc-if>
+              </span>
+              <button onClick="{{r.pick}}" style="flex: 1; min-width: 0; padding: 0; border: none; background: transparent; text-align: left; cursor: pointer; color: #0f172a; display: flex; flex-direction: column; gap: 1px">
+                <span style="display: flex; justify-content: space-between; gap: 10px; align-items: baseline">
+                  <span style="font-weight: 700; text-decoration: {{r.strike}}; color: {{r.titleColor}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.title}}</span>
+                  <span style="flex-shrink: 0; font-size: 12px; font-weight: 700; color: {{r.dueColor}}">{{r.dueText}}</span>
+                </span>
+                <sc-if value="{{r.hasNote}}" hint-placeholder-val="{{true}}">
+                  <span style="font-size: 13px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.note}}</span>
+                </sc-if>
+                <span style="font-size: 12px; color: #64748b">{{r.source}}</span>
+              </button>
+              <button onClick="{{r.snooze}}" title="Move to tomorrow 9:00" style="flex-shrink: 0; height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; font-size: 12px; font-weight: 700; cursor: pointer">Tomorrow</button>
+            </div>
+          </sc-for>
+        </section>
+      </sc-for>
+    </div>
+  </main>
+
+  <!-- Details of the selected reminder -->
+  <aside aria-label="Reminder details" style="flex: 1 1 340px; max-width: 100%; min-width: 0; background: #f8fafc; display: flex; flex-direction: column; gap: 14px; padding: 22px 24px">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="padding: 2px 10px; border-radius: 999px; background: {{cur.kBg}}; color: {{cur.kFg}}; border: 1px solid {{cur.kBorder}}; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em">{{cur.kindLabel}}</span>
+      <span style="font-size: 12px; font-weight: 700; color: {{cur.dueColor}}">{{cur.dueLong}}</span>
+    </div>
+    <h2 style="margin: 0; font-size: 18px; font-weight: 800">{{cur.title}}</h2>
+    <div style="padding: 12px 14px; border-radius: 12px; background: #fff7ed; border: 1px solid #fed7aa; font-size: 14px; color: #0f172a; white-space: pre-line">{{cur.noteOrEmpty}}</div>
+    <div style="font-size: 13px; color: #475569">{{cur.source}}</div>
+    <sc-if value="{{cur.hasLink}}" hint-placeholder-val="{{true}}">
+      <a href="{{cur.href}}" style="align-self: flex-start; height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; text-decoration: none">{{cur.linkLabel}}</a>
+    </sc-if>
+    <div>
+      <div style="font-size: 12px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px">Remind me again</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px">
+        <sc-for list="{{snoozes}}" as="z" hint-placeholder-count="4">
+          <button onClick="{{z.run}}" style="height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; font-size: 12px; font-weight: 700; cursor: pointer">{{z.label}}</button>
+        </sc-for>
+      </div>
+    </div>
+    <div style="font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"></rect><path d="M11 18h2"></path></svg>
+      Push to your phone at the due time
+    </div>
+    <div style="flex: 1"></div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap">
+      <button onClick="{{cur.toggle}}" style="height: 40px; padding: 0 16px; border-radius: 12px; border: none; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; cursor: pointer">{{cur.doneLabel}}</button>
+      <a href="ReminderDialog.dc.html" style="height: 40px; padding: 0 16px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; display: flex; align-items: center; text-decoration: none">Edit</a>
+      <button onClick="{{cur.remove}}" style="height: 40px; padding: 0 16px; border-radius: 12px; border: 1px solid #e2e8f0; background: #ffffff; color: #b91c1c; font-weight: 700; font-size: 13px; cursor: pointer">Delete</button>
+    </div>
+  </aside>
+
+  <sc-if value="{{hasToast}}" hint-placeholder-val="{{false}}">
+    <div role="status" style="position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 16px; border-radius: 12px; background: #0f172a; color: #ffffff; font-size: 13px; font-weight: 600">{{toast}}</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    // Demo data. Today = Saturday 24 Oct 2026. bucket: overdue | today | tomorrow | week | later | nodate
+    const R = [
+      { id: 'a', kind: 'ticket', title: 'Laptop request — Mona Hassan', note: 'Waiting for the supplier’s quotation.', bucket: 'overdue', due: 'Thu 22 Oct', long: 'Overdue since Thu 22 Oct', source: '# IT Support · Ticket #2301841 · your flag', href: 'Channels.dc.html', link: 'Open ticket #2301841' },
+      { id: 'b', kind: 'note', title: 'Send the monthly freight report', note: 'Use the September figures from Logistics.', bucket: 'overdue', due: 'Fri 23 Oct 16:00', long: 'Overdue since Fri 23 Oct, 16:00', source: 'Personal note' },
+      { id: 'c', kind: 'message', title: 'Confirm the delivery date for order 4512', note: 'Ahmed asked: “Can you confirm the delivery date today?”', bucket: 'today', due: '11:00', long: 'Today, 11:00', source: 'Chat with Ahmed Ali · message of 23 Oct', href: 'Main.dc.html', link: 'Open the message' },
+      { id: 'd', kind: 'ticket', title: 'Vendor code for the new supplier', note: 'Follow up with Finance on the bank letter.', bucket: 'today', due: '14:00', long: 'Today, 14:00', source: '# Purchasing · Ticket #2301855 · your flag', href: 'Channels.dc.html', link: 'Open ticket #2301855' },
+      { id: 'e', kind: 'note', title: 'Call the Alexandria warehouse', note: '', bucket: 'today', due: '15:30', long: 'Today, 15:30', source: 'Personal note' },
+      { id: 'f', kind: 'message', title: 'Q4 targets meeting agenda', note: 'Prepare the branch figures before the meeting.', bucket: 'tomorrow', due: 'Sun 09:00', long: 'Tomorrow, Sun 25 Oct, 09:00', source: 'Group Sales Team · message of 22 Oct', href: 'Groups.dc.html', link: 'Open the message' },
+      { id: 'g', kind: 'ticket', title: 'Printer on the 2nd floor', note: 'Check that the technician visited.', bucket: 'week', due: 'Tue 27 Oct', long: 'Tue 27 Oct', source: '# IT Support · Ticket #2301862 · your flag', href: 'Channels.dc.html', link: 'Open ticket #2301862' },
+      { id: 'h', kind: 'note', title: 'Renew the antivirus licences', note: '120 seats, expiry 31 Oct.', bucket: 'week', due: 'Thu 29 Oct', long: 'Thu 29 Oct', source: 'Personal note' },
+      { id: 'i', kind: 'note', title: 'Quarterly access review', note: '', bucket: 'later', due: 'Thu 5 Nov', long: 'Thu 5 Nov', source: 'Personal note' },
+      { id: 'j', kind: 'ticket', title: 'Email signature update', note: '', bucket: 'nodate', due: 'No date', long: 'No date', source: '# IT Support · Ticket #2301870 · your flag', href: 'Channels.dc.html', link: 'Open ticket #2301870' }
+    ];
+    this.state = { items: R.map(r => ({ ...r, done: false })), sel: 'c', filter: 'all', toast: '' };
+  }
+  flash(t) {
+    this.setState({ toast: t });
+    clearTimeout(this.tt);
+    this.tt = setTimeout(() => this.setState({ toast: '' }), 1800);
+  }
+  componentWillUnmount() { clearTimeout(this.tt); }
+  update(id, f) { this.setState({ items: this.state.items.map(x => (x.id === id ? f(x) : x)) }); }
+  renderVals() {
+    const st = this.state;
+    const K = {
+      ticket: { bg: '#fff7ed', border: '#fdba74', fg: '#9a3412', label: 'Ticket' },
+      note: { bg: '#eff6ff', border: '#bfdbfe', fg: '#1d4ed8', label: 'Note' },
+      message: { bg: '#f0fdf4', border: '#bbf7d0', fg: '#15803d', label: 'Message' }
+    };
+    const SECTIONS = [
+      ['overdue', 'Overdue', '#b91c1c'], ['today', 'Today', '#c2410c'], ['tomorrow', 'Tomorrow', '#0f172a'],
+      ['week', 'This week', '#0f172a'], ['later', 'Later', '#475569'], ['nodate', 'No date', '#475569']
+    ];
+    const FILTERS = [['all', 'All'], ['ticket', 'Tickets'], ['note', 'Notes'], ['message', 'Messages']];
+    const open = st.items.filter(x => !x.done);
+    const shown = st.items.filter(x => st.filter === 'all' || x.kind === st.filter);
+    const tomorrow = (x) => ({ ...x, bucket: 'tomorrow', due: 'Sun 09:00', long: 'Tomorrow, Sun 25 Oct, 09:00' });
+    const row = (x) => {
+      const k = K[x.kind];
+      const late = x.bucket === 'overdue' && !x.done;
+      return {
+        ...x, isTicket: x.kind === 'ticket', isNote: x.kind === 'note', isMessage: x.kind === 'message',
+        kBg: k.bg, kBorder: k.border, kFg: k.fg, kindLabel: k.label,
+        hasNote: !!x.note, noteOrEmpty: x.note || 'No note.', hasLink: !!x.href, href: x.href || '', linkLabel: x.link || '',
+        dueText: x.done ? 'Done' : x.due, dueLong: x.done ? 'Done' : x.long,
+        dueColor: x.done ? '#15803d' : late ? '#b91c1c' : x.bucket === 'today' ? '#c2410c' : '#475569',
+        strike: x.done ? 'line-through' : 'none', titleColor: x.done ? '#64748b' : '#0f172a',
+        bg: x.id === st.sel ? '#fff7ed' : 'transparent', done: x.done, donePressed: x.done ? 'true' : 'false',
+        boxBorder: x.done ? '#15803d' : late ? '#b91c1c' : '#94a3b8', boxBg: x.done ? '#15803d' : '#ffffff',
+        doneLabel: x.done ? 'Not done' : 'Mark done',
+        pick: () => this.setState({ sel: x.id }),
+        toggle: () => { this.update(x.id, y => ({ ...y, done: !y.done })); this.flash(x.done ? 'Back on your list' : 'Done — nice'); },
+        snooze: () => { this.update(x.id, tomorrow); this.flash('Moved to tomorrow, 09:00'); },
+        remove: () => {
+          const rest = st.items.filter(y => y.id !== x.id);
+          this.setState({ items: rest, sel: (rest[0] || {}).id });
+          this.flash('Reminder deleted');
+        }
+      };
+    };
+    const sections = SECTIONS.map(([key, label, color]) => {
+      const rows = shown.filter(x => x.bucket === key).map(row);
+      return { key, label, color, rows, count: rows.length };
+    }).filter(s => s.count > 0);
+    const raw = st.items.find(x => x.id === st.sel) || st.items[0];
+    const cur = raw ? row(raw) : row({ id: '-', kind: 'note', title: 'Nothing selected', note: '', bucket: 'nodate', due: '', long: '', source: '' });
+    const snoozeTo = (label, bucket, due, long) => ({ label, run: () => { if (raw) { this.update(raw.id, y => ({ ...y, bucket, due, long, done: false })); this.flash('Reminder set: ' + long); } } });
+    return {
+      filters: FILTERS.map(([key, label]) => {
+        const on = key === st.filter;
+        return { label, count: st.items.filter(x => key === 'all' || x.kind === key).length, selected: on ? 'true' : 'false',
+          bg: on ? '#fff7ed' : '#ffffff', fg: on ? '#9a3412' : '#475569', border: on ? '#c2410c' : '#e2e8f0',
+          pick: () => this.setState({ filter: key }) };
+      }),
+      sections, cur,
+      snoozes: [
+        snoozeTo('In 1 hour', 'today', '12:30', 'Today, 12:30'),
+        snoozeTo('Later today 16:00', 'today', '16:00', 'Today, 16:00'),
+        snoozeTo('Tomorrow 9:00', 'tomorrow', 'Sun 09:00', 'Tomorrow, Sun 25 Oct, 09:00'),
+        snoozeTo('Next week', 'week', 'Thu 29 Oct', 'Thu 29 Oct')
+      ],
+      dueCount: open.filter(x => x.bucket === 'overdue' || x.bucket === 'today').length,
+      overdueCount: open.filter(x => x.bucket === 'overdue').length,
+      todayCount: open.filter(x => x.bucket === 'today').length,
+      toast: st.toast, hasToast: !!st.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

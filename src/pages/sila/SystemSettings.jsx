@@ -1,15 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Users, UserCog, Hash, Search, RefreshCw, Lock, AlertTriangle, ArrowUp, ArrowDown, X, Pencil, Plus, UserPlus, UserMinus } from 'lucide-react';
+import { Users, UserCog, Hash, Search, RefreshCw, Lock, AlertTriangle, ArrowUp, ArrowDown, X, Pencil, Plus, UserPlus, UserMinus, Megaphone, MessagesSquare } from 'lucide-react';
 import Avatar from './Avatar.jsx';
 import { formatWhen } from '../../shared/leftSide.js';
 import {
   loadSettingsChannel, loadSettingsChannels, loadSettingsUserGroups, loadSettingsUsers, saveChannelPurpose,
   loadChannelCategories, saveChannel, addChannelMembers, setChannelMember, removeChannelMember,
   loadSettingsUserGroup, saveUserGroup, deleteUserGroup, moveUsersToGroup, saveChannelSla,
+  loadSettingsChatGroups, loadSettingsChatGroup, saveChatGroup, setChatGroupAdmin,
 } from '../../shared/settings.js';
 import { fmtWork } from '../../shared/ticketSla.js';
 import AddMembersDialog from './AddMembersDialog.jsx';
-import { isSelectingText } from '../../shared/textSelection.js';
+import { noWordSelect } from '../../shared/textSelection.js';
 import ClearSearch from './ClearSearch.jsx';
 
 // System Settings (user 'mhd' only -- the SP checks it): master lists -- User
@@ -17,9 +18,10 @@ import ClearSearch from './ClearSearch.jsx';
 // Users are read-only. Sila user groups can be added, renamed, deleted when
 // empty, and people moved into them (the group drawer). Channels can be added
 // and edited, and in the channel drawer their purpose and members (admin /
-// team leader roles) too. Each tab: search, a status filter, sortable columns.
+// team leader roles) too. Group Master: chat groups, normal or Broadcast
+// (every active user, admins send), with their admins. Each tab: search, a status filter, sortable columns.
 
-const TABS = [['users', 'User Master', Users], ['groups', 'User Group Master', UserCog], ['channels', 'Channel Master', Hash]];
+const TABS = [['users', 'User Master', Users], ['groups', 'User Group Master', UserCog], ['chatgroups', 'Group Master', MessagesSquare], ['channels', 'Channel Master', Hash]];
 
 const th = {
   padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase',
@@ -79,7 +81,7 @@ function Grid({ columns, rows, rowKey, initialSort, onRowClick }) {
         </thead>
         <tbody>
           {sorted.map(r => (
-            <tr key={rowKey(r)} onDoubleClick={onRowClick ? () => { if (!isSelectingText()) onRowClick(r); } : undefined}
+            <tr key={rowKey(r)} onMouseDown={onRowClick ? noWordSelect : undefined} onDoubleClick={onRowClick ? () => onRowClick(r) : undefined}
               style={onRowClick ? { cursor: 'pointer' } : undefined}
               onMouseEnter={e => { e.currentTarget.style.background = 'var(--orange-soft)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = ''; }}>
@@ -724,12 +726,221 @@ function ChannelDrawer({ channelId, onClose, onPurposeSaved, onChanged }) {
     </>
   );
 }
+// Group master: new chat group (group = null) or rename / change its type.
+// Broadcast = every active user is in it and only its admins send. A new group
+// may get more admins (the signed-in user is always creator + admin). onSaved(groupId).
+function ChatGroupForm({ group, activeUsers, onClose, onSaved }) {
+  const isNew = !group;
+  const [name, setName] = useState(group?.name || '');
+  const [broadcast, setBroadcast] = useState(!!group?.broadcast);
+  const [admins, setAdmins] = useState([]);       // [{ id, name }] -- new group only
+  const [picking, setPicking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape' && !busy && !picking) { e.stopImmediatePropagation(); onClose(); } };
+    document.addEventListener('keydown', esc, true);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [busy, picking, onClose]);
+  const changed = isNew || name.trim() !== group.name || broadcast !== group.broadcast;
+  const ok = name.trim() && changed && !busy;
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!ok) return;
+    setBusy(true); setError('');
+    try {
+      const r = await saveChatGroup({ id: group?.id || 0, name: name.trim(), broadcast, adminIds: admins.map(a => a.id) });
+      onSaved(r.id);
+    } catch (err) { setError(err.message || 'Could not save the group.'); setBusy(false); }
+  };
+  const typeOption = (value, title, text) => (
+    <label style={{
+      display: 'flex', gap: 10, padding: '10px 12px', borderRadius: 10, cursor: busy ? 'default' : 'pointer',
+      border: `1.5px solid ${broadcast === value ? 'var(--accent)' : 'var(--border)'}`,
+      background: broadcast === value ? 'var(--accent-soft)' : 'var(--surface)',
+    }}>
+      <input type="radio" name="cg-type" checked={broadcast === value} onChange={() => setBroadcast(value)} disabled={busy}
+        style={{ width: 16, height: 16, marginTop: 2, accentColor: 'var(--accent)' }} />
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{title}</span>
+        <span style={muted}>{text}</span>
+      </span>
+    </label>
+  );
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="cgform-title" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(15,23,42,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <form onSubmit={submit} style={{
+        width: 'min(480px, 100%)', maxHeight: '92vh', overflowY: 'auto', padding: 20, borderRadius: 16, background: 'var(--surface)',
+        boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 12, fontFamily: 'var(--font)',
+      }}>
+        <h2 id="cgform-title" style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{isNew ? 'New group' : 'Edit group'}</h2>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ ...muted, fontWeight: 700 }}>Name</span>
+          <input autoFocus dir="auto" value={name} maxLength={50} onChange={e => setName(e.target.value)} disabled={busy} style={formField} />
+        </label>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ ...muted, fontWeight: 700 }}>Type</span>
+          {typeOption(false, 'Group', 'Members are added by hand; everyone in it can send (unless an admin locks it).')}
+          {typeOption(true, 'Broadcast', `Announcements for everyone: no members to pick. All ${activeUsers || ''} active users see it, and every new user too. Only its admins send.`)}
+        </div>
+        {!isNew && group.broadcast && !broadcast && (
+          <div role="note" style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--amber-soft)', color: 'var(--amber)', fontSize: 12, fontWeight: 600 }}>
+            Its {group.members} members stay in it, and everyone will be able to send. Remove people from the group's own panel if needed.
+          </div>
+        )}
+        {isNew && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={{ ...muted, fontWeight: 700 }}>Admins (you are one already){broadcast ? ' -- they send the announcements' : ''}</span>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              {admins.map(a => (
+                <span key={a.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 4px 2px 10px', borderRadius: 999, background: 'var(--accent-soft)', color: 'var(--accent-strong)', fontSize: 12, fontWeight: 700 }}>
+                  <span dir="auto">{a.name}</span>
+                  <button type="button" onClick={() => setAdmins(list => list.filter(x => x.id !== a.id))} aria-label={`Remove ${a.name}`} disabled={busy}
+                    style={{ width: 20, height: 20, border: 'none', borderRadius: 10, background: 'transparent', color: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+              <button type="button" onClick={() => setPicking(true)} disabled={busy} style={{ ...formBtn(false), height: 28, padding: '0 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <UserPlus size={13} /> Add admins
+              </button>
+            </div>
+          </div>
+        )}
+        {error && <div role="alert" style={{ fontSize: 12, color: 'var(--red)' }}>{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" onClick={onClose} disabled={busy} style={formBtn(false)}>Cancel</button>
+          <button type="submit" disabled={!ok} style={{ ...formBtn(true), opacity: ok ? 1 : 0.5 }}>
+            {busy ? 'Saving…' : isNew ? 'Create group' : 'Save'}
+          </button>
+        </div>
+      </form>
+      {picking && (
+        <AddMembersDialog title="Group admins" verb="Add" where="group" existingIds={admins.map(a => a.id)}
+          onAdd={async (ids, users) => {
+            const byId = new Map((users || []).map(u => [u.id, u.name]));
+            setAdmins(list => [...list, ...ids.filter(id => !list.some(a => a.id === id)).map(id => ({ id, name: byId.get(id) || `#${id}` }))]);
+          }} onClose={() => setPicking(false)} />
+      )}
+    </div>
+  );
+}
+
+// One chat group: type, members (admins first) with the Admin role switch, Edit.
+// A broadcast group's members are every active user, kept by the server.
+function ChatGroupDrawer({ groupId, activeUsers, onClose, onChanged }) {
+  const [state, setState] = useState({ status: 'loading', data: null, error: '' });
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState('');
+  const [q, setQ] = useState('');
+  const load = useCallback(() => loadSettingsChatGroup(groupId)
+    .then(data => setState({ status: 'ready', data, error: '' }))
+    .catch(err => setState(s => ({ ...s, status: s.data ? 'ready' : 'error', error: err.message || 'Could not load the group.' }))), [groupId]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape' && !editing && !document.querySelector('[aria-modal="true"]')) onClose(); };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [onClose, editing]);
+  const d = state.data;
+  const shown = d ? d.members.filter(m => has(q.trim().toLowerCase(), m.name, m.username, m.title)) : [];
+  const toggleAdmin = async (m) => {
+    setBusy(m.id); setError('');
+    try { await setChatGroupAdmin(groupId, m.id, !m.admin); await load(); onChanged?.(); }
+    catch (err) { setError(err.message || 'Could not change the admin.'); }
+    finally { setBusy(null); }
+  };
+  return (
+    <>
+      <div aria-hidden="true" onMouseDown={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.3)', zIndex: 990 }} />
+      <aside role="dialog" aria-label="Group details" style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(640px, 94vw)', zIndex: 991, background: 'var(--surface)',
+        boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font)',
+      }}>
+        <header style={{ flexShrink: 0, padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <span style={{
+            width: 46, height: 46, borderRadius: 13, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'var(--accent-soft)', border: '1.5px solid var(--accent-line)', color: 'var(--accent-strong)',
+          }}>{d?.group.broadcast ? <Megaphone size={22} /> : <Users size={22} />}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>{d?.group.broadcast ? 'Broadcast group' : 'Group'} #{groupId}</div>
+            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: 'var(--text)' }}><span dir="auto">{d?.group.name || 'Loading…'}</span></h2>
+            {d && (
+              <div style={{ ...muted, marginTop: 4 }}>
+                {d.members.length} members · {d.members.filter(m => m.admin).length} admins
+                {d.group.created && <> · created {fullDate(d.group.created)}{d.group.createdBy && <> by <span dir="auto">{d.group.createdBy}</span></>}</>}
+              </div>
+            )}
+          </div>
+          {d && <button onClick={() => setEditing(true)} style={{ ...formBtn(false), height: 40, display: 'flex', alignItems: 'center', gap: 6 }}><Pencil size={14} /> Edit</button>}
+          <button onClick={onClose} aria-label="Close" style={{
+            width: 40, height: 40, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
+            color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
+          }}><X size={18} /></button>
+        </header>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '6px 20px 24px' }}>
+          {state.status === 'loading' && <div role="status" style={{ padding: 24, color: 'var(--muted)' }}>Loading…</div>}
+          {state.error && <div role="alert" style={{ marginTop: 14, padding: 12, borderRadius: 10, background: 'var(--red-soft)', color: 'var(--red)', fontSize: 13 }}>{state.error}</div>}
+          {d && d.group.broadcast && (
+            <div role="note" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, background: 'var(--accent-soft)', color: 'var(--accent-strong)', fontSize: 13, fontWeight: 600, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <Megaphone size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>
+                Every active user is in this group automatically ({d.group.activeMembers} of {d.group.activeUsers || activeUsers} now): a new
+                user joins the moment the account is created, a deactivated one leaves. Only its admins send. Make someone an admin below to let them post.
+              </span>
+            </div>
+          )}
+          {error && <div role="alert" style={{ marginTop: 14, fontSize: 12, color: 'var(--red)' }}>{error}</div>}
+          {d && (
+            <>
+              <DrawerHeading>Members · {d.members.length}</DrawerHeading>
+              {d.members.length > 8 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 34, padding: '0 10px', marginBottom: 6, borderRadius: 8, background: 'var(--bg)', color: 'var(--muted)' }}>
+                  <Search size={14} />
+                  <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search members" aria-label="Search members"
+                    style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
+                  <ClearSearch value={q} onClear={() => setQ('')} size={24} style={{ marginRight: -6 }} />
+                </div>
+              )}
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                {shown.map(m => (
+                  <li key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: '1px solid var(--border)', opacity: m.active ? (busy === m.id ? 0.6 : 1) : 0.55 }}>
+                    <Avatar name={m.name} size={34} photoUrl={m.photoUrl} />
+                    <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                        <span dir="auto">{m.name}</span>{m.creator && <span style={muted}> · creator</span>}{!m.active && <span style={muted}> · inactive</span>}
+                      </span>
+                      <span style={{ ...muted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}><span dir="auto">{m.title || `@${m.username}`}</span></span>
+                    </span>
+                    <button onClick={() => toggleAdmin(m)} disabled={busy === m.id} aria-pressed={m.admin}
+                      title={m.admin ? 'Dismiss as admin' : 'Make admin'} style={{
+                        height: 24, padding: '0 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font)',
+                        border: `1px solid ${m.admin ? 'transparent' : 'var(--border)'}`, whiteSpace: 'nowrap',
+                        background: m.admin ? 'var(--accent-soft)' : 'var(--surface)', color: m.admin ? 'var(--accent-strong)' : 'var(--muted)',
+                      }}>Admin</button>
+                  </li>
+                ))}
+              </ul>
+              {shown.length === 0 && <div style={muted}>No members match.</div>}
+            </>
+          )}
+        </div>
+      </aside>
+      {editing && d && (
+        <ChatGroupForm group={{ ...d.group, members: d.members.length }} activeUsers={d.group.activeUsers || activeUsers}
+          onClose={() => setEditing(false)} onSaved={() => { setEditing(false); load(); onChanged?.(); }} />
+      )}
+    </>
+  );
+}
 const has = (q, ...texts) => !q || texts.some(t => t && String(t).toLowerCase().includes(q));
 
 export default function SystemSettings() {
   const [tab, setTab] = useState(() => { try { return localStorage.getItem('silaSettingsTab') || 'users'; } catch { return 'users'; } });
   const pickTab = (t) => { setTab(t); try { localStorage.setItem('silaSettingsTab', t); } catch { /* not remembered */ } };
-  const [data, setData] = useState({ users: null, groups: null, channels: null });
+  const [data, setData] = useState({ users: null, groups: null, channels: null, chatGroups: null });
   const [state, setState] = useState({ status: 'loading', error: '' });
   const [q, setQ] = useState('');
   const [userFilter, setUserFilter] = useState('active');
@@ -738,13 +949,17 @@ export default function SystemSettings() {
   const [newChannel, setNewChannel] = useState(false);
   const [groupId, setGroupId] = useState(null);       // the user group drawer
   const [newGroup, setNewGroup] = useState(false);
+  const [chatGroupId, setChatGroupId] = useState(null);   // the chat group drawer
+  const [newChatGroup, setNewChatGroup] = useState(false);
+  const [chatGroupFilter, setChatGroupFilter] = useState('all');
+  const closeChatGroup = useCallback(() => setChatGroupId(null), []);
   const closeGroup = useCallback(() => setGroupId(null), []);
   const closeChannel = useCallback(() => setChannelId(null), []);
 
   const load = useCallback(() => {
     setState({ status: 'loading', error: '' });
-    Promise.all([loadSettingsUsers(), loadSettingsUserGroups(), loadSettingsChannels()])
-      .then(([users, groups, channels]) => { setData({ users, groups, channels }); setState({ status: 'ready', error: '' }); })
+    Promise.all([loadSettingsUsers(), loadSettingsUserGroups(), loadSettingsChannels(), loadSettingsChatGroups()])
+      .then(([users, groups, channels, chatGroups]) => { setData({ users, groups, channels, chatGroups }); setState({ status: 'ready', error: '' }); })
       .catch(err => setState({ status: 'error', error: err.message || 'Could not load the settings.' }));
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -752,6 +967,10 @@ export default function SystemSettings() {
   const reloadGroups = useCallback(() => {
     Promise.all([loadSettingsUserGroups(), loadSettingsUsers()])
       .then(([groups, users]) => setData(dd => ({ ...dd, groups, users }))).catch(() => { /* the next Refresh */ });
+  }, []);
+  // a chat group was added or changed: the group master reloads quietly
+  const reloadChatGroups = useCallback(() => {
+    loadSettingsChatGroups().then(chatGroups => setData(dd => ({ ...dd, chatGroups }))).catch(() => { /* the next Refresh */ });
   }, []);
   // a channel was added or changed: its row (counts, name, category) reloads quietly
   const reloadChannels = useCallback(() => {
@@ -764,7 +983,10 @@ export default function SystemSettings() {
   const groups = (data.groups?.groups || []).filter(g => has(needle, g.name, g.id, g.createdBy));
   const channels = (data.channels || []).filter(c => (channelFilter === 'all' || (channelFilter === 'active') === c.active)
     && has(needle, c.name, c.category, c.id, c.createdBy, c.purpose));
-  const counts = { users: data.users?.length ?? 0, groups: data.groups?.groups.length ?? 0, channels: data.channels?.length ?? 0 };
+  const chatGroups = (data.chatGroups?.groups || []).filter(g => (chatGroupFilter === 'all' || (chatGroupFilter === 'broadcast') === g.broadcast)
+    && has(needle, g.name, g.id, g.createdBy));
+  const counts = { users: data.users?.length ?? 0, groups: data.groups?.groups.length ?? 0, channels: data.channels?.length ?? 0,
+    chatgroups: data.chatGroups?.groups.length ?? 0 };
 
   const userCols = [
     { key: 'name', label: 'User', sort: u => u.name.toLowerCase(), render: u => (
@@ -823,6 +1045,29 @@ export default function SystemSettings() {
     { key: 'changed', label: 'Last changed', sort: g => g.changed?.getTime() || 0, render: g => <span>{fullDate(g.changed) || '-'}{g.changedBy && <span style={muted}> · {g.changedBy}</span>}</span> },
   ];
 
+  const chatGroupCols = [
+    { key: 'id', label: 'ID', sort: g => g.id, render: g => <span style={{ fontFamily: 'var(--mono)' }}>{g.id}</span>, width: 70 },
+    { key: 'name', label: 'Group', sort: g => g.name.toLowerCase(), render: g => (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}>
+        {g.broadcast ? <Megaphone size={13} style={{ color: 'var(--accent-strong)' }} /> : <Users size={13} style={{ color: 'var(--muted)' }} />}
+        <button onClick={(e) => { e.stopPropagation(); setChatGroupId(g.id); }} style={{
+          padding: 0, border: 'none', background: 'none', font: 'inherit', color: 'var(--accent-strong)', cursor: 'pointer',
+          textDecoration: 'underline', textDecorationColor: 'var(--accent-line)', textAlign: 'left',
+        }}><span dir="auto">{g.name}</span></button>
+        {g.locked && !g.broadcast && <Lock size={12} style={{ color: 'var(--amber)' }} aria-label="Locked" />}
+      </span>
+    ) },
+    { key: 'type', label: 'Type', sort: g => (g.broadcast ? 0 : 1), render: g => <Pill tone={g.broadcast ? 'accent' : 'blue'}>{g.broadcast ? 'Broadcast' : 'Group'}</Pill> },
+    { key: 'members', label: 'Members', sort: g => g.members, align: 'right', render: g => (
+      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+        <span style={{ fontFamily: 'var(--mono)', fontWeight: 700 }}>{g.members}</span>
+        <span style={muted}>{g.admins} admin{g.admins === 1 ? '' : 's'}</span>
+      </span>
+    ) },
+    { key: 'last', label: 'Last activity', sort: g => g.changed?.getTime() || 0, render: g => <span style={{ whiteSpace: 'nowrap' }}>{g.changed ? formatWhen(g.changed) : '-'}</span> },
+    { key: 'created', label: 'Created', sort: g => g.created?.getTime() || 0, render: g => <span style={{ whiteSpace: 'nowrap' }}>{fullDate(g.created) || '-'}{g.createdBy && <span style={muted}> · {g.createdBy}</span>}</span> },
+  ];
+
   const channelCols = [
     { key: 'id', label: 'ID', sort: c => c.id, render: c => <span style={{ fontFamily: 'var(--mono)' }}>{c.id}</span>, width: 70 },
     { key: 'name', label: 'Channel', sort: c => c.name.toLowerCase(), render: c => (
@@ -865,7 +1110,7 @@ export default function SystemSettings() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text)', flex: 1 }}>System settings</h1>
-          <span style={muted}>Users read-only · groups and channels editable</span>
+          <span style={muted}>Users read-only · groups, chat groups and channels editable</span>
           <button onClick={load} disabled={state.status === 'loading'} aria-label="Refresh" title="Refresh" style={{
             width: 36, height: 36, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
             color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
@@ -896,7 +1141,7 @@ export default function SystemSettings() {
           }}>
             <Search size={15} />
             <input value={q} onChange={e => setQ(e.target.value)} aria-label="Search"
-              placeholder={tab === 'users' ? 'Name, username, job, group, phone' : tab === 'groups' ? 'Group name or ID' : 'Channel, category or ID'}
+              placeholder={tab === 'users' ? 'Name, username, job, group, phone' : tab === 'groups' || tab === 'chatgroups' ? 'Group name or ID' : 'Channel, category or ID'}
               style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
             <ClearSearch value={q} onClear={() => setQ('')} size={24} style={{ marginRight: -6 }} />
           </div>
@@ -907,13 +1152,20 @@ export default function SystemSettings() {
               <Plus size={15} strokeWidth={2.4} /> New group
             </button>
           )}
+          {tab === 'chatgroups' && <Chips value={chatGroupFilter} onPick={setChatGroupFilter} items={[['all', 'All'], ['broadcast', 'Broadcast'], ['group', 'Groups']]} />}
+          {tab === 'chatgroups' && (
+            <button onClick={() => setNewChatGroup(true)} style={{ ...formBtn(true), height: 38, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Plus size={15} strokeWidth={2.4} /> New group
+            </button>
+          )}
           {tab === 'channels' && (
             <button onClick={() => setNewChannel(true)} style={{ ...formBtn(true), height: 38, display: 'flex', alignItems: 'center', gap: 6 }}>
               <Plus size={15} strokeWidth={2.4} /> New channel
             </button>
           )}
           <span style={{ ...muted, fontWeight: 600 }}>
-            {tab === 'users' ? `${users.length} users` : tab === 'groups' ? `${groups.length} groups` : `${channels.length} channels`}
+            {tab === 'users' ? `${users.length} users` : tab === 'groups' ? `${groups.length} groups`
+              : tab === 'chatgroups' ? `${chatGroups.length} groups` : `${channels.length} channels`}
           </span>
         </div>
 
@@ -935,6 +1187,9 @@ export default function SystemSettings() {
           <div role="status" style={{ padding: 28, textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
         ) : tab === 'users' ? (
           <Grid columns={userCols} rows={users} rowKey={u => u.id} initialSort={{ key: 'name', desc: false }} />
+        ) : tab === 'chatgroups' ? (
+          <Grid columns={chatGroupCols} rows={chatGroups} rowKey={g => g.id} initialSort={{ key: 'type', desc: false }}
+            onRowClick={g => setChatGroupId(g.id)} />
         ) : tab === 'groups' ? (
           <Grid columns={groupCols} rows={groups} rowKey={g => g.id} initialSort={{ key: 'name', desc: false }}
             onRowClick={g => setGroupId(g.id)} />
@@ -949,6 +1204,13 @@ export default function SystemSettings() {
       )}
       {groupId != null && (
         <UserGroupDrawer groupId={groupId} onClose={closeGroup} onChanged={reloadGroups} onDeleted={closeGroup} />
+      )}
+      {newChatGroup && (
+        <ChatGroupForm group={null} activeUsers={data.chatGroups?.activeUsers} onClose={() => setNewChatGroup(false)}
+          onSaved={(id) => { setNewChatGroup(false); reloadChatGroups(); setChatGroupId(id); }} />
+      )}
+      {chatGroupId != null && (
+        <ChatGroupDrawer groupId={chatGroupId} activeUsers={data.chatGroups?.activeUsers} onClose={closeChatGroup} onChanged={reloadChatGroups} />
       )}
       {newChannel && (
         <ChannelForm channel={null} onClose={() => setNewChannel(false)}

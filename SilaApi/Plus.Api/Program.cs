@@ -16,6 +16,7 @@ using Plus.Api.Auth;
 using Plus.Api.Attachments;
 using Plus.Api.Live;
 using Plus.Api.Photos;
+using Plus.Api.Push;
 using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -194,6 +195,12 @@ builder.Services.AddOptions<PhotoOptions>().BindConfiguration("Photos");
 builder.Services.AddHttpClient(HttpPhotoSource.ClientName, c => c.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddSingleton<IPhotoSource, HttpPhotoSource>();
+// Push notifications (Firebase): off unless Push:Enabled; run on the main API only.
+builder.Services.AddOptions<PushOptions>().BindConfiguration("Push");
+builder.Services.AddHttpClient(FirebaseMessaging.ClientName, c => c.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddSingleton<IPushStore, SqlPushStore>();
+builder.Services.AddSingleton<IPushTransport, FirebaseMessaging>();
+builder.Services.AddHostedService<PushSender>();
 var attachmentRequestLimit = (builder.Configuration.GetValue<long?>("Attachments:MaxFileSizeBytes")
     ?? 50L * 1024 * 1024) + 1024 * 1024;
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>

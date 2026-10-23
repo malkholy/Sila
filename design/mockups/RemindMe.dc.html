@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — Remind me on a message</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 560px; height: 480px; box-sizing: border-box; padding: 24px; background: #f8fafc; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.5; position: relative">
+  <div style="display: flex; gap: 10px; align-items: flex-start">
+    <dc-import name="Avatar" p="{{ahmed}}" size="36" hint-size="36px,36px"></dc-import>
+    <div style="display: flex; flex-direction: column; gap: 4px; max-width: 380px">
+      <span style="font-size: 12px; font-weight: 700; color: #475569">Ahmed Ali · Logistics Supervisor</span>
+      <div style="position: relative; padding: 10px 14px; border-radius: 4px 14px 14px 14px; background: #ffffff; border: 1px solid #e2e8f0">
+        Can you confirm the delivery date for order 4512 today? The customer is asking.
+        <span style="display: block; text-align: right; font-size: 11px; color: #64748b; margin-top: 2px">23 Oct, 17:42</span>
+      </div>
+      <sc-if value="{{hasReminder}}" hint-placeholder-val="{{false}}">
+        <span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; font-size: 12px; font-weight: 700">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10 21a2 2 0 0 0 4 0"></path></svg>
+          Reminder {{reminderText}} · only you see it
+        </span>
+      </sc-if>
+    </div>
+    <button onClick="{{toggleMenu}}" aria-label="Message options" aria-expanded="{{menuExpanded}}" style="margin-top: 26px; width: 32px; height: 32px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"></circle><circle cx="12" cy="12" r="1.8"></circle><circle cx="12" cy="19" r="1.8"></circle></svg>
+    </button>
+  </div>
+
+  <sc-if value="{{menuOpen}}" hint-placeholder-val="{{true}}">
+    <div role="menu" aria-label="Message options" style="position: absolute; left: 286px; top: 132px; width: 220px; padding: 6px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; box-shadow: 0 12px 30px rgba(15,23,42,.15); display: flex; flex-direction: column">
+      <button role="menuitem" style="height: 36px; padding: 0 10px; border: none; border-radius: 8px; background: transparent; text-align: left; font-size: 13px; color: #0f172a; cursor: pointer">Reply</button>
+      <button role="menuitem" style="height: 36px; padding: 0 10px; border: none; border-radius: 8px; background: transparent; text-align: left; font-size: 13px; color: #0f172a; cursor: pointer">Copy</button>
+      <div style="height: 1px; background: #e2e8f0; margin: 4px 0"></div>
+      <div style="padding: 4px 10px 2px; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #c2410c">Remind me</div>
+      <sc-for list="{{options}}" as="o" hint-placeholder-count="5">
+        <button role="menuitem" onClick="{{o.pick}}" style="height: 34px; padding: 0 10px; border: none; border-radius: 8px; background: transparent; text-align: left; font-size: 13px; color: #0f172a; cursor: pointer; display: flex; justify-content: space-between; align-items: center">
+          <span>{{o.label}}</span><span style="font-size: 12px; color: #64748b">{{o.hint}}</span>
+        </button>
+      </sc-for>
+      <a href="ReminderDialog.dc.html" role="menuitem" style="height: 34px; padding: 0 10px; border-radius: 8px; font-size: 13px; color: #0f172a; text-decoration: none; display: flex; align-items: center">Pick date and time…</a>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":560,"height":480}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { open: true, picked: '' };
+  }
+  renderVals() {
+    const O = [
+      ['In 1 hour', '12:30', 'today at 12:30'],
+      ['Later today', '16:00', 'today at 16:00'],
+      ['Tomorrow', 'Sun 9:00', 'tomorrow at 09:00'],
+      ['Next week', 'Sat 9:00', 'Sat 31 Oct at 09:00']
+    ];
+    return {
+      ahmed: { name: 'Ahmed Ali', initials: 'AA', color: '#0f766e' },
+      menuOpen: this.state.open, menuExpanded: this.state.open ? 'true' : 'false',
+      toggleMenu: () => this.setState({ open: !this.state.open }),
+      options: O.map(([label, hint, text]) => ({ label, hint, pick: () => this.setState({ open: false, picked: text }) })),
+      hasReminder: !!this.state.picked, reminderText: this.state.picked
+    };
+  }
+}
+</script>
+</body>
+</html>

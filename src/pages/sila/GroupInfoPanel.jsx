@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Search, Lock, Users, MoreVertical, ShieldCheck, ShieldOff, UserPlus, UserMinus, LogOut } from 'lucide-react';
+import { X, Search, Lock, Users, MoreVertical, ShieldCheck, ShieldOff, UserPlus, UserMinus, LogOut, Megaphone } from 'lucide-react';
 import Avatar from './Avatar.jsx';
 import { loadGroupMembers, setGroupLock, setGroupAdmin, addGroupMembers, removeGroupMember, leaveGroup } from '../../shared/chat.js';
 import AddMembersDialog from './AddMembersDialog.jsx';
@@ -107,7 +107,7 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
     const list = [];
     if (!m.admin) list.push({ label: 'Make group admin', Icon: ShieldCheck, run: () => changeAdmin(m, true) });
     if (m.admin && !m.creator) list.push({ label: 'Dismiss as admin', Icon: ShieldOff, danger: true, run: () => changeAdmin(m, false) });
-    if (!m.creator) list.push({ label: 'Remove from group', Icon: UserMinus, danger: true, run: () => { setConfirmError(''); setConfirm({ kind: 'remove', m }); } });
+    if (!m.creator && !header?.broadcast) list.push({ label: 'Remove from group', Icon: UserMinus, danger: true, run: () => { setConfirmError(''); setConfirm({ kind: 'remove', m }); } });
     return list;
   };
   const canManage = (m) => menuItems(m).length > 0;
@@ -206,7 +206,12 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
               {!creator.isMember ? ' · left the group' : ''}
             </div>
           )}
-          {header?.locked && (
+          {header?.broadcast ? (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999,
+              background: 'var(--accent-soft)', color: 'var(--accent-strong)', fontSize: 12, fontWeight: 700,
+            }}><Megaphone size={13} /> Broadcast · everyone receives, admins send</div>
+          ) : header?.locked && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999,
               background: 'var(--amber-soft)', color: 'var(--amber)', fontSize: 12, fontWeight: 700,
@@ -214,8 +219,8 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
           )}
         </div>
 
-        {header?.isAdmin && (
-          // group admins: who may send
+        {header?.isAdmin && !header?.broadcast && (
+          // group admins: who may send (a broadcast group stays locked)
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={{
               display: 'flex', alignItems: 'center', gap: 12, minHeight: 52, padding: '8px 12px', borderRadius: 12,
@@ -238,7 +243,7 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
 
         <div style={{ height: 1, background: 'var(--border)' }} />
 
-        {header?.isAdmin && (
+        {header?.isAdmin && !header?.broadcast && (
           <button onClick={() => setAdding(true)} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, borderRadius: 10,
             border: '1px dashed var(--accent-line)', background: 'var(--accent-soft)', color: 'var(--accent-strong)',
@@ -305,7 +310,7 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
           {section('Members', others)}
         </div>
 
-        {state.status === 'ready' && (
+        {state.status === 'ready' && !header?.broadcast && (
           <button onClick={() => { setConfirmError(''); setConfirm({ kind: 'leave' }); }} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, marginTop: 4, borderRadius: 10,
             border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--red)',

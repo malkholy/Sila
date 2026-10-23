@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — Reminder at the due time</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 760px; height: 520px; box-sizing: border-box; padding: 28px; background: #f1f5f9; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.5; display: flex; gap: 28px">
+
+  <!-- Web app: toast in the corner -->
+  <section aria-label="In the web app" style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+    <h2 style="margin: 0; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569">In the web app</h2>
+    <div style="flex: 1; position: relative; border-radius: 14px; background: #ffffff; border: 1px solid #e2e8f0; overflow: hidden">
+      <div style="position: absolute; inset: 0; padding: 18px; display: flex; flex-direction: column; gap: 10px; opacity: .35" aria-hidden="true">
+        <div style="height: 14px; width: 40%; border-radius: 7px; background: #cbd5e1"></div>
+        <div style="height: 44px; border-radius: 10px; background: #e2e8f0"></div>
+        <div style="height: 44px; border-radius: 10px; background: #e2e8f0"></div>
+        <div style="height: 44px; border-radius: 10px; background: #e2e8f0"></div>
+      </div>
+      <div role="alert" style="position: absolute; right: 14px; bottom: 14px; width: 300px; padding: 14px; border-radius: 14px; background: #ffffff; border: 1px solid #fdba74; box-shadow: 0 16px 36px rgba(15,23,42,.18); display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span style="width: 30px; height: 30px; border-radius: 9px; background: #fff7ed; color: #c2410c; display: flex; align-items: center; justify-content: center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10 21a2 2 0 0 0 4 0"></path></svg>
+          </span>
+          <span style="flex: 1; font-size: 12px; font-weight: 800; color: #c2410c">Reminder · 14:00</span>
+          <button aria-label="Dismiss" style="width: 26px; height: 26px; border-radius: 8px; border: none; background: transparent; color: #64748b; cursor: pointer">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+          </button>
+        </div>
+        <div style="font-weight: 800">Vendor code for the new supplier</div>
+        <div style="font-size: 13px; color: #475569">Follow up with Finance on the bank letter.</div>
+        <div style="font-size: 12px; color: #64748b"># Purchasing · Ticket #2301855</div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap">
+          <a href="Channels.dc.html" style="height: 32px; padding: 0 12px; border-radius: 8px; background: #c2410c; color: #ffffff; font-size: 12px; font-weight: 700; display: flex; align-items: center; text-decoration: none">Open ticket</a>
+          <button style="height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; font-size: 12px; font-weight: 700; cursor: pointer">In 1 hour</button>
+          <button style="height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #e2e8f0; background: #ffffff; color: #15803d; font-size: 12px; font-weight: 700; cursor: pointer">Done</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Phone: push notification -->
+  <section aria-label="On the phone" style="flex: 0 0 250px; display: flex; flex-direction: column; gap: 10px">
+    <h2 style="margin: 0; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #475569">On the phone (push)</h2>
+    <div style="flex: 1; border-radius: 34px; background: #1a2332; padding: 10px; box-sizing: border-box">
+      <div style="height: 100%; border-radius: 26px; background: #334155; padding: 54px 12px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px">
+        <div style="text-align: center; color: #e2e8f0; font-size: 40px; font-weight: 300; line-height: 1">14:00</div>
+        <div style="text-align: center; color: #cbd5e1; font-size: 12px; margin-bottom: 14px">Saturday, 24 October</div>
+        <div style="padding: 10px 12px; border-radius: 16px; background: rgba(255,255,255,.92); display: flex; flex-direction: column; gap: 2px">
+          <div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569">
+            <span style="width: 16px; height: 16px; border-radius: 4px; background: #c2410c; color: #ffffff; font-size: 9px; font-weight: 800; display: flex; align-items: center; justify-content: center">S</span>
+            SILA · Reminder<span style="flex: 1"></span>now
+          </div>
+          <div style="font-size: 13px; font-weight: 800; color: #0f172a">Vendor code for the new supplier</div>
+          <div style="font-size: 12px; color: #334155">Follow up with Finance on the bank letter.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":520}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

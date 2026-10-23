@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — My Day calendar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#c2410c}a:hover{color:#9a3412}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="position: relative; height: 100vh; min-height: 640px; display: flex; flex-wrap: wrap; overflow-y: auto; background: #f1f5f9; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <nav aria-label="Main" style="flex: 0 0 84px; background: #1a2332; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 0">
+    <div style="width: 44px; height: 44px; border-radius: 13px; background: #c2410c; color: #ffffff; font-weight: 800; font-size: 18px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px">S</div>
+    <a href="Home.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path><path d="M10 20v-6h4v6"></path></svg>
+      Home
+    </a>
+    <a href="Main.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg>
+      Chats
+    </a>
+    <a href="Groups.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"></circle><path d="M2.5 20a6.5 6.5 0 0 1 13 0"></path><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"></path><path d="M18 14.5a6.5 6.5 0 0 1 3.5 5.5"></path></svg>
+      Groups
+    </a>
+    <a href="Channels.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+      Channels
+    </a>
+    <a href="MyDay.dc.html" aria-current="page" style="width: 68px; min-height: 60px; border-radius: 12px; background: #c2410c; color: #ffffff; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700; position: relative">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path><path d="m9 15 2 2 4-4"></path></svg>
+      My Day
+      <span style="position: absolute; top: 6px; right: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ffffff; color: #c2410c; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">5</span>
+    </a>
+  </nav>
+
+  <main style="flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; min-height: 0; background: #ffffff; border-right: 1px solid #e2e8f0">
+    <header style="padding: 20px 28px 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; border-bottom: 1px solid #e2e8f0">
+      <div style="flex: 1 1 220px; min-width: 0; display: flex; align-items: center; gap: 10px">
+        <h1 style="margin: 0; font-size: 22px; font-weight: 800">October 2026</h1>
+        <button aria-label="Previous month" style="width: 36px; height: 36px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"></path></svg>
+        </button>
+        <button aria-label="Next month" style="width: 36px; height: 36px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"></path></svg>
+        </button>
+        <button onClick="{{goToday}}" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 12px; cursor: pointer">Today</button>
+      </div>
+      <div role="group" aria-label="View" style="display: flex; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden">
+        <a href="MyDay.dc.html" style="height: 40px; padding: 0 14px; display: flex; align-items: center; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; text-decoration: none">List</a>
+        <a href="MyDayCalendar.dc.html" aria-current="page" style="height: 40px; padding: 0 14px; display: flex; align-items: center; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; text-decoration: none">Calendar</a>
+      </div>
+      <a href="ReminderDialog.dc.html" style="height: 40px; padding: 0 14px; border-radius: 12px; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; text-decoration: none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+        New reminder
+      </a>
+    </header>
+
+    <div style="flex: 1; min-height: 0; overflow: auto; padding: 14px 20px 20px">
+      <div style="min-width: 640px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px">
+        <sc-for list="{{weekdays}}" as="w" hint-placeholder-count="7">
+          <div style="padding: 0 8px 4px; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: {{w.color}}">{{w.label}}</div>
+        </sc-for>
+        <sc-for list="{{cells}}" as="c" hint-placeholder-count="42">
+          <button onClick="{{c.pick}}" aria-pressed="{{c.pressed}}" aria-label="{{c.aria}}" style="min-height: 104px; padding: 6px 8px; border-radius: 12px; border: {{c.border}}; background: {{c.bg}}; color: {{c.fg}}; text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 4px; align-items: stretch">
+            <span style="display: flex; align-items: center; justify-content: space-between">
+              <span style="width: 26px; height: 26px; border-radius: 13px; background: {{c.numBg}}; color: {{c.numFg}}; font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{c.day}}</span>
+              <sc-if value="{{c.hasMore}}" hint-placeholder-val="{{false}}"><span style="font-size: 11px; font-weight: 700; color: #64748b">+{{c.more}}</span></sc-if>
+            </span>
+            <sc-for list="{{c.chips}}" as="e" hint-placeholder-count="1">
+              <span style="padding: 2px 6px; border-radius: 6px; background: {{e.bg}}; color: {{e.fg}}; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: {{e.strike}}">{{e.label}}</span>
+            </sc-for>
+          </button>
+        </sc-for>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 14px; padding: 12px 4px 0; font-size: 12px; color: #475569">
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #fed7aa"></span>Ticket flag</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #bfdbfe"></span>Personal note</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #bbf7d0"></span>Message reminder</span>
+        <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 3px; background: #e2e8f0"></span>Friday · weekend</span>
+      </div>
+    </div>
+  </main>
+
+  <aside aria-label="Selected day" style="flex: 1 1 320px; max-width: 100%; min-width: 0; background: #f8fafc; display: flex; flex-direction: column; gap: 12px; padding: 22px 24px">
+    <div style="font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: #c2410c">{{dayTag}}</div>
+    <h2 style="margin: 0; font-size: 18px; font-weight: 800">{{dayTitle}}</h2>
+    <sc-if value="{{dayEmpty}}" hint-placeholder-val="{{false}}">
+      <div style="padding: 16px; border-radius: 12px; border: 1px dashed #cbd5e1; color: #64748b; font-size: 13px">Nothing on this day. Add a reminder or a note for it.</div>
+    </sc-if>
+    <sc-for list="{{agenda}}" as="a" hint-placeholder-count="3">
+      <a href="MyDay.dc.html" style="display: flex; gap: 12px; padding: 12px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; color: #0f172a; text-decoration: none">
+        <span style="flex: 0 0 52px; font-size: 12px; font-weight: 800; color: {{a.timeColor}}">{{a.time}}</span>
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+          <span style="font-weight: 700; text-decoration: {{a.strike}}">{{a.title}}</span>
+          <span style="font-size: 12px; color: #64748b">{{a.source}}</span>
+        </span>
+        <span style="align-self: flex-start; padding: 1px 8px; border-radius: 999px; background: {{a.bg}}; color: {{a.fg}}; font-size: 10px; font-weight: 800; text-transform: uppercase">{{a.kind}}</span>
+      </a>
+    </sc-for>
+    <a href="ReminderDialog.dc.html" style="align-self: flex-start; height: 38px; padding: 0 14px; border-radius: 12px; border: 1px dashed #fdba74; background: #fff7ed; color: #9a3412; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; text-decoration: none">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+      Add on this day
+    </a>
+  </aside>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { sel: '2026-10-24' };
+  }
+  renderVals() {
+    const TODAY = '2026-10-24';
+    const KIND = {
+      ticket: { bg: '#ffedd5', fg: '#9a3412', label: 'Ticket' },
+      note: { bg: '#dbeafe', fg: '#1d4ed8', label: 'Note' },
+      message: { bg: '#dcfce7', fg: '#15803d', label: 'Message' }
+    };
+    // Demo reminders (date, time, kind, title, source, done)
+    const EV = [
+      ['2026-10-15', '10:00', 'note', 'Supplier visit', 'Personal note', true],
+      ['2026-10-20', '', 'ticket', 'Toner order', '# IT Support · #2301820', true],
+      ['2026-10-22', '', 'ticket', 'Laptop request', '# IT Support · #2301841', false],
+      ['2026-10-23', '16:00', 'note', 'Freight report', 'Personal note', false],
+      ['2026-10-24', '11:00', 'message', 'Order 4512 delivery', 'Chat with Ahmed Ali', false],
+      ['2026-10-24', '14:00', 'ticket', 'Vendor code', '# Purchasing · #2301855', false],
+      ['2026-10-24', '15:30', 'note', 'Call Alexandria warehouse', 'Personal note', false],
+      ['2026-10-25', '09:00', 'message', 'Q4 targets agenda', 'Group Sales Team', false],
+      ['2026-10-27', '', 'ticket', 'Printer, 2nd floor', '# IT Support · #2301862', false],
+      ['2026-10-29', '', 'note', 'Antivirus licences', 'Personal note', false],
+      ['2026-11-05', '', 'note', 'Access review', 'Personal note', false]
+    ].map(([date, time, kind, title, source, done]) => ({ date, time, kind, title, source, done }));
+    // Saturday-first weeks (work week Saturday to Thursday); 1 Oct 2026 is a Thursday
+    const start = new Date(2026, 8, 26);
+    const pad = (n) => String(n).padStart(2, '0');
+    const iso = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    const cells = [];
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      const key = iso(d);
+      const inMonth = d.getMonth() === 9;
+      const friday = d.getDay() === 5;
+      const evs = EV.filter(e => e.date === key);
+      const isToday = key === TODAY, isSel = key === this.state.sel;
+      const late = (e) => !e.done && e.date < TODAY;
+      cells.push({
+        day: d.getDate(), pressed: isSel ? 'true' : 'false',
+        aria: d.toDateString() + ': ' + evs.length + ' reminders',
+        bg: isSel ? '#fff7ed' : friday ? '#f1f5f9' : '#ffffff',
+        border: isSel ? '2px solid #c2410c' : '1px solid #e2e8f0',
+        fg: inMonth ? '#0f172a' : '#94a3b8',
+        numBg: isToday ? '#c2410c' : 'transparent', numFg: isToday ? '#ffffff' : inMonth ? '#0f172a' : '#94a3b8',
+        chips: evs.slice(0, 2).map(e => ({
+          label: (e.time ? e.time + ' ' : '') + e.title,
+          bg: late(e) ? '#fee2e2' : KIND[e.kind].bg, fg: late(e) ? '#b91c1c' : KIND[e.kind].fg,
+          strike: e.done ? 'line-through' : 'none'
+        })),
+        hasMore: evs.length > 2, more: evs.length - 2,
+        pick: () => this.setState({ sel: key })
+      });
+    }
+    const sel = this.state.sel;
+    const sd = new Date(sel + 'T00:00:00');
+    const list = EV.filter(e => e.date === sel).sort((a, b) => (a.time || '99').localeCompare(b.time || '99'));
+    return {
+      weekdays: ['Sat', 'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map(l => ({ label: l, color: l === 'Fri' ? '#94a3b8' : '#475569' })),
+      cells,
+      dayTag: sel === TODAY ? 'Today' : sel < TODAY ? 'Past day' : 'Coming up',
+      dayTitle: sd.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }),
+      dayEmpty: list.length === 0,
+      agenda: list.map(e => ({
+        time: e.time || 'All day', title: e.title, source: e.source, kind: KIND[e.kind].label,
+        bg: KIND[e.kind].bg, fg: KIND[e.kind].fg, strike: e.done ? 'line-through' : 'none',
+        timeColor: !e.done && e.date < TODAY ? '#b91c1c' : '#c2410c'
+      })),
+      goToday: () => this.setState({ sel: TODAY })
+    };
+  }
+}
+</script>
+</body>
+</html>

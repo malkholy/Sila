@@ -63,7 +63,7 @@ const saved = (res, me) => {
 //   load(before, after) -> { header, messages (oldest first), hasMore }  after: delta since that ChatID
 //   markRead()          -> cleared count
 //   send / edit / del   -> the saved message (an edit / delete takes the original's place: same sortId)
-// header: { me, title, photoUrl, username, jobTitle, isGroup, locked, isAdmin, memberCount }
+// header: { me, title, photoUrl, username, jobTitle, isGroup, locked, isAdmin, memberCount, broadcast }
 //         tickets add { isTicket, ticketId, state, stateLabel, channel, createdBy, can: {...} }
 export function chatApi(item) {
   const group = item.kind === 'group';
@@ -87,6 +87,7 @@ export function chatApi(item) {
       const header = !h ? null : ticket ? ticketHeader(h, item) : group ? {
         me, isGroup: true, title: h.GroupName || item.title, photoUrl: h.GroupPhotoURL || '',
         locked: Number(h.ChatIsLocked) > 0, isAdmin: Number(h.IsAdmin) > 0, memberCount: Number(h.MemberCount) || 0,
+        broadcast: Number(h.IsBroadcast) > 0,   // every active user is in it; admins send
       } : {
         me, isGroup: false, title: h.OtherName || h.OtherUsername || item.title, photoUrl: h.OtherPhotoURL || '',
         username: String(h.OtherUsername || '').toLowerCase(),
@@ -278,7 +279,7 @@ export async function loadTicketMembers(ticketId) {
   const res = await apiExec(TICKET_PROC, 'Ticket members', { TicketID: ticketId });
   return (res?.data?.List0 || []).map(r => ({
     id: r.UserID, username: String(r.Username || '').toLowerCase(), name: r.FullName || r.Username || 'Unknown user',
-    photoUrl: r.PhotoURL || '', jobTitle: [r.JobName, r.DepartmentName].filter(Boolean).join(' · '),
+    photoUrl: r.PhotoURL || '', jobTitle: r.JobName || '',
     admin: Number(r.IsAdmin) > 0, leader: Number(r.IsTeamLeader) > 0, cc: Number(r.IsCC) > 0,
     creator: Number(r.IsCreator) > 0, me: Number(r.IsMe) > 0,
   }));
@@ -287,8 +288,12 @@ export async function loadTicketMembers(ticketId) {
 // Ticket membership (the SP enforces: admins / team leaders invite and
 // remove, not the creator; anyone leaves but not the last admin / team leader
 // of an open ticket; roles of invited people come from the channel).
-export async function inviteTicketMembers(ticketId, userIds) {
-  await apiExec(TICKET_PROC, 'Invite ticket members', { TicketID: ticketId, Members: userIds.map(id => ({ UserID: id, IsCC: 0 })) });
+// adminIds: the invitees to make ticket admins (managers only; the SP checks)
+export async function inviteTicketMembers(ticketId, userIds, adminIds = []) {
+  const admins = new Set(adminIds);
+  await apiExec(TICKET_PROC, 'Invite ticket members', {
+    TicketID: ticketId, Members: userIds.map(id => ({ UserID: id, IsCC: 0, IsAdmin: admins.has(id) ? 1 : 0 })),
+  });
 }
 export async function removeTicketMember(ticketId, userId) {
   await apiExec(TICKET_PROC, 'Remove ticket member', { TicketID: ticketId, UserID: userId });

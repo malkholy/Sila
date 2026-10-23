@@ -76,6 +76,12 @@ GO
 --   Save user group  { GroupID? (0 = new), GroupName }  create / rename (mhd only); returns { GroupID }
 --   Delete user group { GroupID }  only an empty group (mhd only)
 --   Set users group  { GroupID, UserIDs: [int] }  move users into the group (mhd only)
+--   Settings chat groups {}  group master: chat groups + type (Group / Broadcast); List1 ActiveUsers (mhd only)
+--   Settings chat group { GroupID }  List0 the group, List1 its members (mhd only)
+--   Save chat group  { GroupID? (0 = new), Name, Broadcast: 1|0, AdminIDs?: [int] (new only) }
+--                    Broadcast = every active user is a member, only admins send
+--                    (dbo.SilaGroupType, SQLScript/SilaBroadcastGroup.sql; mhd only)
+--   Set chat group admin { GroupID, UserID, Admin: 1|0 }  (mhd only)
 --   Settings users / Settings user groups / Settings channels   {}  read-only master
 --                    lists for the web System Settings screen -- user 'mhd' ONLY
 --                    (checked here; the app only hides the button). No password hash.
@@ -135,6 +141,10 @@ BEGIN
         IF @Operation = N'Left side'
         BEGIN
             DECLARE @MaxSeq INT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.MaxSeq') AS INT), 0);
+            -- broadcast groups (dbo.SilaGroupType): the caller joins any he is not in yet;
+            -- never blocks the Home list
+            IF EXISTS (SELECT 1 FROM dbo.SilaGroupType)
+                BEGIN TRY EXEC dbo.SilaSyncBroadcastGroup @UserID = @UserID; END TRY BEGIN CATCH END CATCH
 
             SELECT
                 a.SilaID,
@@ -150,6 +160,7 @@ BEGIN
                 oj.JobName AS FromJobName, oj.DepartmentName AS FromDepartmentName, op.FileURL AS FromPhotoURL,
                 -- group
                 a.GroupID, gm.Name AS GroupName,
+                CASE WHEN bt.GroupID IS NULL THEN 0 ELSE 1 END AS IsBroadcast,   -- dbo.SilaGroupType
                 -- ticket
                 a.TicketID, a.ChannelID, cm.Name AS ChannelName, a.TicketSubject, a.TicketState,
                 ts.StateDescription AS TicketStateDescription, tc.FullName AS TicketCreatedBy,
@@ -168,6 +179,7 @@ BEGIN
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = ou.AttachmentID AND ou.AttachmentID <> 0 ORDER BY x.ID DESC) op
             LEFT JOIN grp.GroupMaster gm          ON gm.GroupID = a.GroupID AND RTRIM(a.RecordType) = 'G'
+            LEFT JOIN dbo.SilaGroupType bt        ON bt.GroupID = gm.GroupID
             LEFT JOIN cha.ChannelMaster cm        ON cm.ChannelID = a.ChannelID AND RTRIM(a.RecordType) = 'C'
             LEFT JOIN cha.TicketState ts          ON ts.StateID = a.TicketState AND RTRIM(a.RecordType) = 'C'
             LEFT JOIN dbo.SilaTicketFlag tf       ON tf.TicketID = a.TicketID AND tf.UserID = a.UserID AND RTRIM(a.RecordType) = 'C'
@@ -477,6 +489,17 @@ BEGIN
                 RETURN;
             END
             SELECT @GLocked = ISNULL(ChatIsLocked, 0) FROM GRP.GroupMaster WHERE GroupID = @GroupID;
+            -- a broadcast group: every active user is in it, only its admins send
+            DECLARE @GBroadcast BIT = CASE WHEN EXISTS (SELECT 1 FROM dbo.SilaGroupType WHERE GroupID = @GroupID AND GroupType = 'Broadcast')
+                                           THEN 1 ELSE 0 END;
+            IF @GBroadcast = 1 SET @GLocked = 1;
+            IF @GBroadcast = 1 AND @Operation IN (N'Add group members', N'Remove group member', N'Leave group')
+            BEGIN SET @State = 1; SET @Message = N'Everyone is in a broadcast group: people can''t be added, removed or leave.'; RETURN; END
+            IF @GBroadcast = 1 AND @Operation = N'Lock group chat' AND ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.Locked') AS INT), 0) <> 1
+            BEGIN SET @State = 1; SET @Message = N'A broadcast group stays locked: only its admins send.'; RETURN; END
+            -- before an admin sends: everyone active is in, so the message reaches them all
+            IF @GBroadcast = 1 AND @GIsAdmin = 1 AND @Operation IN (N'Send group chat', N'Send group chat file')
+                EXEC dbo.SilaSyncBroadcastGroup @GroupID = @GroupID;
         END
 
         -- -----------------------------------------------------------------
@@ -492,7 +515,7 @@ BEGIN
 
             SELECT g.GroupID, g.Name AS GroupName, ISNULL(g.ChatIsLocked, 0) AS ChatIsLocked, @UserID AS MeUserID,
                    @GIsAdmin AS IsAdmin, (SELECT COUNT(*) FROM GRP.GroupMembers x WHERE x.GroupID = g.GroupID) AS MemberCount,
-                   gp.FileURL AS GroupPhotoURL
+                   gp.FileURL AS GroupPhotoURL, CAST(@GBroadcast AS INT) AS IsBroadcast
             FROM GRP.GroupMaster g
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = g.AttachmentID AND g.AttachmentID <> 0 ORDER BY x.ID DESC) gp
@@ -914,7 +937,8 @@ BEGIN
                           N'Save channel purpose', N'Settings channel categories', N'Save channel',
                           N'Add channel members', N'Set channel member', N'Remove channel member',
                           N'Settings user group', N'Save user group', N'Delete user group', N'Set users group',
-                          N'Save channel sla')
+                          N'Save channel sla', N'Settings chat groups', N'Settings chat group', N'Save chat group',
+                          N'Set chat group admin')
         BEGIN
             IF LOWER(@User) <> N'mhd'
             BEGIN SET @State = 403; SET @Message = N'System settings are not available for this user.'; RETURN; END
@@ -950,6 +974,170 @@ BEGIN
                        COUNT(DISTINCT u.GroupID) AS OrphanGroupIDs
                 FROM dbo.UserMaster u
                 WHERE NOT EXISTS (SELECT 1 FROM dbo.UserGroupMaster g WHERE g.GroupID = u.GroupID);
+                RETURN;
+            END
+
+            -- -------------------------------------------------------------
+            -- Group master: the chat groups (GRP.GroupMaster) with their type
+            -- (dbo.SilaGroupType: Broadcast = every active user, admins send).
+            -- -------------------------------------------------------------
+            IF @Operation = N'Settings chat groups'
+            BEGIN
+                SELECT g.GroupID, g.Name, ISNULL(g.Inactive, 0) AS Inactive, ISNULL(g.ChatIsLocked, 0) AS ChatIsLocked,
+                       CASE WHEN t.GroupID IS NULL THEN 'Group' ELSE t.GroupType END AS GroupType,
+                       g.CreatedBy, g.CreatedDate, g.LastMaintDate, ISNULL(mc.Members, 0) AS Members, ISNULL(mc.Admins, 0) AS Admins
+                FROM GRP.GroupMaster g
+                LEFT JOIN dbo.SilaGroupType t ON t.GroupID = g.GroupID
+                LEFT JOIN (SELECT GroupID, COUNT(*) AS Members, SUM(CASE WHEN IsAdmin = 1 THEN 1 ELSE 0 END) AS Admins
+                           FROM GRP.GroupMembers GROUP BY GroupID) mc ON mc.GroupID = g.GroupID
+                ORDER BY CASE WHEN t.GroupID IS NULL THEN 1 ELSE 0 END, g.Name;
+                SELECT COUNT(*) AS ActiveUsers FROM dbo.UserMaster WHERE IsNotActive = 0;
+                RETURN;
+            END
+
+            IF @Operation = N'Settings chat group'
+            BEGIN
+                DECLARE @SCGId INT = TRY_CAST(JSON_VALUE(@LineData, '$.GroupID') AS INT);
+                IF NOT EXISTS (SELECT 1 FROM GRP.GroupMaster WHERE GroupID = @SCGId)
+                BEGIN SET @State = 404; SET @Message = N'Group not found.'; RETURN; END
+                SELECT g.GroupID, g.Name, ISNULL(g.ChatIsLocked, 0) AS ChatIsLocked,
+                       CASE WHEN t.GroupID IS NULL THEN 'Group' ELSE t.GroupType END AS GroupType,
+                       g.CreatedBy, cu.FullName AS CreatedByName, g.CreatedDate, g.LastMaintDate,
+                       (SELECT COUNT(*) FROM dbo.UserMaster WHERE IsNotActive = 0) AS ActiveUsers,
+                       (SELECT COUNT(*) FROM GRP.GroupMembers m JOIN dbo.UserMaster u ON u.UserID = m.UserID
+                        WHERE m.GroupID = g.GroupID AND u.IsNotActive = 0) AS ActiveMembers
+                FROM GRP.GroupMaster g
+                LEFT JOIN dbo.SilaGroupType t ON t.GroupID = g.GroupID
+                LEFT JOIN dbo.UserMaster cu ON cu.Username = g.CreatedBy
+                WHERE g.GroupID = @SCGId;
+                SELECT gm.UserID, u.Username, u.FullName, j.JobName, j.DepartmentName, p.FileURL AS PhotoURL,
+                       ISNULL(gm.IsAdmin, 0) AS IsAdmin, u.IsNotActive,
+                       CASE WHEN ISNULL(gm.IsCreated, 0) = 1 OR u.Username = g.CreatedBy THEN 1 ELSE 0 END AS IsCreator
+                FROM GRP.GroupMembers gm
+                JOIN GRP.GroupMaster g ON g.GroupID = gm.GroupID
+                JOIN dbo.UserMaster u ON u.UserID = gm.UserID
+                LEFT JOIN dbo.V_SilaUserTitle j ON j.UserID = u.UserID
+                OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
+                             WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
+                WHERE gm.GroupID = @SCGId
+                ORDER BY ISNULL(gm.IsAdmin, 0) DESC, u.IsNotActive, u.FullName;
+                RETURN;
+            END
+
+            -- new group (GroupID 0) or edit one: Name, Broadcast (0/1); a new one also
+            -- AdminIDs (the caller is always creator + admin). Making it a broadcast group
+            -- locks it and adds every active user; making it a normal group again unlocks
+            -- it and keeps its members. Posts a system line (not an unread message).
+            IF @Operation = N'Save chat group'
+            BEGIN
+                DECLARE @SCId INT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.GroupID') AS INT), 0);
+                DECLARE @SCName NVARCHAR(MAX) = LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.Name'), N'')));
+                DECLARE @SCBroadcast BIT = CASE WHEN TRY_CAST(JSON_VALUE(@LineData, '$.Broadcast') AS INT) = 1 THEN 1 ELSE 0 END;
+                IF @SCName = N'' BEGIN SET @State = 1; SET @Message = N'Give the group a name.'; RETURN; END
+                IF LEN(@SCName) > 50 BEGIN SET @State = 1; SET @Message = N'The group name can be at most 50 characters.'; RETURN; END
+                IF @SCId <> 0 AND NOT EXISTS (SELECT 1 FROM GRP.GroupMaster WHERE GroupID = @SCId)
+                BEGIN SET @State = 404; SET @Message = N'Group not found.'; RETURN; END
+
+                -- a new group: a retried request (lost answer) returns the group it already
+                -- created (same creator + name, last 10 minutes); broadcast names are unique
+                IF @SCId = 0
+                BEGIN
+                    DECLARE @SCDup INT = (SELECT TOP (1) GroupID FROM GRP.GroupMaster
+                                          WHERE CreatedBy = @User AND Name = @SCName AND CreatedDate >= DATEADD(MINUTE, -10, GETDATE())
+                                          ORDER BY GroupID DESC);
+                    IF @SCDup IS NOT NULL
+                    BEGIN
+                        SELECT @SCDup AS GroupID, 0 AS Added, 0 AS Removed,
+                               (SELECT COUNT(*) FROM GRP.GroupMembers WHERE GroupID = @SCDup) AS MemberCount;
+                        RETURN;
+                    END
+                END
+                IF @SCBroadcast = 1 AND EXISTS (SELECT 1 FROM GRP.GroupMaster g JOIN dbo.SilaGroupType t ON t.GroupID = g.GroupID
+                                                WHERE LTRIM(RTRIM(g.Name)) = @SCName AND g.GroupID <> @SCId)
+                BEGIN SET @State = 1; SET @Message = N'A broadcast group with this name already exists.'; RETURN; END
+                DECLARE @SCWas BIT = CASE WHEN EXISTS (SELECT 1 FROM dbo.SilaGroupType WHERE GroupID = @SCId) THEN 1 ELSE 0 END;
+                DECLARE @SCOldName NVARCHAR(MAX) = (SELECT Name FROM GRP.GroupMaster WHERE GroupID = @SCId);
+                DECLARE @SCMe NVARCHAR(MAX) = N'@' + ISNULL((SELECT FullName FROM dbo.UserMaster WHERE UserID = @UserID), @User);
+                DECLARE @SCText NVARCHAR(MAX) = CASE
+                    WHEN @SCId = 0 AND @SCBroadcast = 1 THEN @SCMe + N' created the broadcast group "' + @SCName + N'": only admins send, everyone receives'
+                    WHEN @SCId = 0 THEN @SCMe + N' created the group "' + @SCName + N'"'
+                    WHEN @SCBroadcast = 1 AND @SCWas = 0 THEN @SCMe + N' made this a broadcast group: only admins send, everyone receives'
+                    WHEN @SCBroadcast = 0 AND @SCWas = 1 THEN @SCMe + N' made this a normal group: everyone can send messages'
+                    WHEN @SCName <> @SCOldName THEN @SCMe + N' renamed the group to "' + @SCName + N'"'
+                    END;
+                DECLARE @SCSysID INT;
+                BEGIN TRANSACTION;
+                IF @SCId = 0
+                BEGIN
+                    INSERT INTO GRP.GroupMaster (Name, Inactive, ChatIsLocked, AttachmentID, CreatedBy, CreatedDate, LastMaintBy, LastMaintDate)
+                    VALUES (@SCName, 0, @SCBroadcast, 0, @User, GETDATE(), @User, GETDATE());
+                    SET @SCId = SCOPE_IDENTITY();
+                    INSERT INTO GRP.GroupMembers (GroupID, UserID, IsAdmin, IsCreated, CreatedDate, UnreadCount)
+                    SELECT @SCId, @UserID, 1, 1, GETDATE(), 0
+                    UNION ALL
+                    SELECT DISTINCT @SCId, u.UserID, 1, 0, GETDATE(), 0
+                    FROM OPENJSON(@LineData, '$.AdminIDs') j
+                    JOIN dbo.UserMaster u ON u.UserID = TRY_CAST(j.[value] AS INT) AND u.IsNotActive = 0
+                    WHERE u.UserID <> @UserID;
+                END
+                ELSE
+                    UPDATE GRP.GroupMaster SET Name = @SCName, LastMaintBy = @User, LastMaintDate = GETDATE(),
+                           ChatIsLocked = CASE WHEN @SCBroadcast = 1 THEN 1 WHEN @SCWas = 1 THEN 0 ELSE ChatIsLocked END
+                    WHERE GroupID = @SCId;
+                IF @SCBroadcast = 1 AND @SCWas = 0
+                    INSERT INTO dbo.SilaGroupType (GroupID, GroupType, LastMaintBy) VALUES (@SCId, 'Broadcast', @User);
+                IF @SCBroadcast = 0 AND @SCWas = 1
+                    DELETE FROM dbo.SilaGroupType WHERE GroupID = @SCId;
+                IF @SCText IS NOT NULL
+                BEGIN
+                    SET @SCSysID = NEXT VALUE FOR dbo.ChatGroup;
+                    INSERT INTO GRP.GroupChatHistory
+                        (ChatID, GroupID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,
+                         CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem)
+                    VALUES (@SCSysID, @SCId, @UserID, @User, @SCText, @SCText, 0, 0,
+                            @User, GETDATE(), @User, GETDATE(), 0, 0, 0, 0, 1);
+                    DELETE FROM GRP.GroupUnreadChat WHERE ChatID = @SCSysID AND GroupID = @SCId;
+                END
+                COMMIT TRANSACTION;
+                -- everyone active joins (after the commit: hundreds of member rows)
+                DECLARE @SCAdded INT = 0, @SCRemoved INT = 0;
+                IF @SCBroadcast = 1
+                    EXEC dbo.SilaSyncBroadcastGroup @GroupID = @SCId, @Added = @SCAdded OUTPUT, @Removed = @SCRemoved OUTPUT;
+                SELECT @SCId AS GroupID, @SCAdded AS Added, @SCRemoved AS Removed,
+                       (SELECT COUNT(*) FROM GRP.GroupMembers WHERE GroupID = @SCId) AS MemberCount;
+                RETURN;
+            END
+
+            -- make a member a group admin or not; a group keeps at least one admin
+            IF @Operation = N'Set chat group admin'
+            BEGIN
+                DECLARE @SAGId INT = TRY_CAST(JSON_VALUE(@LineData, '$.GroupID') AS INT);
+                DECLARE @SAUser INT = TRY_CAST(JSON_VALUE(@LineData, '$.UserID') AS INT);
+                DECLARE @SAMake INT = CASE WHEN TRY_CAST(JSON_VALUE(@LineData, '$.Admin') AS INT) = 1 THEN 1 ELSE 0 END;
+                DECLARE @SANow INT, @SAName NVARCHAR(MAX);
+                SELECT @SANow = ISNULL(gm.IsAdmin, 0), @SAName = ISNULL(u.FullName, u.Username)
+                FROM GRP.GroupMembers gm JOIN dbo.UserMaster u ON u.UserID = gm.UserID
+                WHERE gm.GroupID = @SAGId AND gm.UserID = @SAUser;
+                IF @SANow IS NULL BEGIN SET @State = 1; SET @Message = N'That person is not in this group.'; RETURN; END
+                IF @SAMake = 0 AND @SANow = 1
+                   AND (SELECT COUNT(*) FROM GRP.GroupMembers WHERE GroupID = @SAGId AND ISNULL(IsAdmin, 0) = 1) <= 1
+                BEGIN SET @State = 1; SET @Message = N'A group needs at least one admin.'; RETURN; END
+                IF @SANow <> @SAMake
+                BEGIN
+                    DECLARE @SAText NVARCHAR(MAX) = N'@' + ISNULL((SELECT FullName FROM dbo.UserMaster WHERE UserID = @UserID), @User)
+                        + CASE WHEN @SAMake = 1 THEN N' made @' + @SAName + N' an admin' ELSE N' dismissed @' + @SAName + N' as admin' END;
+                    DECLARE @SASysID INT = NEXT VALUE FOR dbo.ChatGroup;
+                    BEGIN TRANSACTION;
+                    UPDATE GRP.GroupMembers SET IsAdmin = @SAMake WHERE GroupID = @SAGId AND UserID = @SAUser;
+                    INSERT INTO GRP.GroupChatHistory
+                        (ChatID, GroupID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,
+                         CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem)
+                    VALUES (@SASysID, @SAGId, @UserID, @User, @SAText, @SAText, 0, 0,
+                            @User, GETDATE(), @User, GETDATE(), 0, 0, 0, 0, 1);
+                    DELETE FROM GRP.GroupUnreadChat WHERE ChatID = @SASysID AND GroupID = @SAGId;
+                    COMMIT TRANSACTION;
+                END
+                SELECT @SAGId AS GroupID, @SAUser AS UserID, @SAMake AS IsAdmin;
                 RETURN;
             END
 
@@ -1384,6 +1572,10 @@ USING (VALUES
     (N'dbo.APISilaWebOperation', N'Save user group',       N'System Settings (mhd only, checked in the SP): create or rename a Sila user group'),
     (N'dbo.APISilaWebOperation', N'Delete user group',     N'System Settings (mhd only, checked in the SP): delete an empty Sila user group'),
     (N'dbo.APISilaWebOperation', N'Set users group',       N'System Settings (mhd only, checked in the SP): move users into a Sila user group'),
+    (N'dbo.APISilaWebOperation', N'Settings chat groups',  N'System Settings (mhd only, checked in the SP): group master -- chat groups with their type'),
+    (N'dbo.APISilaWebOperation', N'Settings chat group',   N'System Settings (mhd only, checked in the SP): one chat group and its members'),
+    (N'dbo.APISilaWebOperation', N'Save chat group',       N'System Settings (mhd only, checked in the SP): create / rename a chat group, normal or broadcast'),
+    (N'dbo.APISilaWebOperation', N'Set chat group admin',  N'System Settings (mhd only, checked in the SP): a chat group member''s admin role'),
     (N'dbo.APISilaWebOperation', N'Create group',      N'Groups: create a group, the caller is creator + admin, posts a system line'),
     (N'dbo.APISilaWebOperation', N'Mark group read',   N'Groups: clear the caller''s unread rows for a group'),
     (N'dbo.APISilaWebOperation', N'Send group chat',   N'Groups: send a text message (members; locked groups: admins only)'),

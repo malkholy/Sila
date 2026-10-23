@@ -71,13 +71,14 @@ GO
 --   Forward ticket        { TicketID, ToChannelID, Members?: [ { UserID, IsCC } ] }
 --   Answer forward        { TicketID (the forwarded copy), Accept: 1|0 }
 --   Cancel forward        { TicketID (the original) }
---   Invite ticket members { TicketID, Members: [ { UserID, IsCC } ] }   admins / team leaders only
+--   Invite ticket members { TicketID, Members: [ { UserID, IsCC, IsAdmin? } ] }   admins / team leaders
+--                            only; IsAdmin = 1 makes the invitee a ticket admin (else the channel's role)
 --   Remove ticket member  { TicketID, UserID }   managers, or yourself (leave)
 --   Leave ticket          { TicketID }   any member; not the last admin / team leader of an
 --                            open ticket
 --   Assign ticket / Take ticket / Unassign ticket  { TicketID, UserID (Assign) }  the ticket's
---                            owner (dbo.SilaTicketAssignment): managers assign anyone in it, a
---                            non-CC member takes it while unassigned, the assignee or a manager
+--                            owner (dbo.SilaTicketAssignment): managers assign anyone in it and
+--                            take it while unassigned, the assignee or a manager
 --                            unassigns. Rows / header carry AssignedUserID / AssignedName; the
 --                            header also CanAssign / CanTake / CanUnassign.
 --   Ticket report         { From?, To? }  per channel / per assignee times for the channels the
@@ -480,7 +481,7 @@ BEGIN
         -- -----------------------------------------------------------------
         -- Assignment (dbo.SilaTicketAssignment): who owns the ticket.
         --   Assign ticket   { TicketID, UserID }  admins / team leaders; anyone in the ticket
-        --   Take ticket     { TicketID }          any non-CC member, while nobody has it
+        --   Take ticket     { TicketID }          admins / team leaders, while nobody has it
         --   Unassign ticket { TicketID }          the assignee or a manager
         -- Open tickets only (state < 50). A system line each time; returns the ticket row.
         -- -----------------------------------------------------------------
@@ -498,8 +499,8 @@ BEGIN
             END
             ELSE IF @Operation = N'Take ticket'
             BEGIN
-                IF @TIsCC = 1
-                BEGIN SET @State = 403; SET @Message = N'People in CC can''t take a ticket.'; RETURN; END
+                IF @TIsManager = 0
+                BEGIN SET @State = 403; SET @Message = N'Only ticket admins and team leaders can take a ticket.'; RETURN; END
                 IF @AsCurrent IS NOT NULL AND @AsCurrent <> @UserID
                 BEGIN SET @State = 1; SET @Message = N'Someone already has this ticket.'; RETURN; END
                 SET @AsTarget = @UserID;
@@ -589,7 +590,7 @@ BEGIN
                          AND (SELECT COUNT(*) FROM CHA.TicketMembers x WHERE x.TicketID = th.TicketID AND x.IsLeft = 0
                               AND (x.IsAdmin = 1 OR x.IsTeamLeader = 1)) <= 1 THEN 0 ELSE 1 END AS CanLeave,
                    CASE WHEN @TIsManager = 1 AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanAssign,
-                   CASE WHEN ta.TicketID IS NULL AND @TIsCC = 0 AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanTake,
+                   CASE WHEN ta.TicketID IS NULL AND @TIsManager = 1 AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanTake,
                    CASE WHEN ta.TicketID IS NOT NULL AND (@TIsManager = 1 OR ta.UserID = @UserID) AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanUnassign,
                    CASE WHEN tf.TicketID IS NULL THEN 0 ELSE 1 END AS MyFlagged, tf.DueDate AS MyFlagDue, tf.Note AS MyFlagNote,
                    ta.UserID AS AssignedUserID, au.Username AS AssignedUsername, ISNULL(NULLIF(au.FullName, N''), au.Username) AS AssignedName,
@@ -1033,12 +1034,16 @@ BEGIN
             BEGIN SET @State = 403; SET @Message = N'Only ticket admins and team leaders can invite people.'; RETURN; END
             IF @TState >= 50
             BEGIN SET @State = 1; SET @Message = N'This ticket is closed.'; RETURN; END
+            -- roles from the channel; the inviting manager may also make someone a TICKET
+            -- admin (Members[].IsAdmin = 1) -- only managers get this far
             DECLARE @IList TABLE (UserID INT PRIMARY KEY, IsAdmin INT, IsTeamLeader INT, IsCC INT, FullName NVARCHAR(MAX), Existing INT);
             INSERT INTO @IList (UserID, IsAdmin, IsTeamLeader, IsCC, FullName, Existing)
-            SELECT x.UserID, ISNULL(MAX(cm.IsAdmin), 0), ISNULL(MAX(cm.IsTeamLeader), 0), MAX(CASE WHEN x.IsCC = 1 THEN 1 ELSE 0 END),
+            SELECT x.UserID,
+                   CASE WHEN MAX(CASE WHEN x.IsAdmin = 1 THEN 1 ELSE 0 END) = 1 THEN 1 ELSE ISNULL(MAX(cm.IsAdmin), 0) END,
+                   ISNULL(MAX(cm.IsTeamLeader), 0), MAX(CASE WHEN x.IsCC = 1 THEN 1 ELSE 0 END),
                    MAX(ISNULL(NULLIF(u.FullName, N''), u.Username)),
                    MAX(CASE WHEN tm.UserID IS NULL THEN 0 WHEN tm.IsLeft = 1 THEN 1 ELSE 2 END)
-            FROM OPENJSON(@LineData, '$.Members') WITH (UserID INT '$.UserID', IsCC INT '$.IsCC') x
+            FROM OPENJSON(@LineData, '$.Members') WITH (UserID INT '$.UserID', IsCC INT '$.IsCC', IsAdmin INT '$.IsAdmin') x
             JOIN dbo.UserMaster u ON u.UserID = x.UserID AND u.IsNotActive = 0
             LEFT JOIN CHA.ChannelMembers cm ON cm.ChannelID = @TChannel AND cm.UserID = x.UserID
             LEFT JOIN CHA.TicketMembers tm ON tm.TicketID = @TicketID AND tm.UserID = x.UserID
@@ -1050,7 +1055,8 @@ BEGIN
             BEGIN TRANSACTION;
             INSERT INTO CHA.TicketMembers (ChannelID, TicketID, UserID, IsAdmin, IsTeamLeader, IsCreatedBy, IsCC, IsMuted, IsInvited)
             SELECT @TChannel, @TicketID, UserID, IsAdmin, IsTeamLeader, 0, IsCC, 0, 1 FROM @IList WHERE Existing = 0;
-            UPDATE tm SET tm.IsLeft = 0, tm.IsInvited = 1, tm.IsCC = i.IsCC
+            UPDATE tm SET tm.IsLeft = 0, tm.IsInvited = 1, tm.IsCC = i.IsCC,
+                   tm.IsAdmin = i.IsAdmin   -- coming back: the role picked now (or the channel's), not the old one
             FROM CHA.TicketMembers tm JOIN @IList i ON i.UserID = tm.UserID AND i.Existing = 1
             WHERE tm.TicketID = @TicketID;
             -- Home rows for everyone invited (the insert trigger may have added them already)
@@ -1068,8 +1074,8 @@ BEGIN
                 (ChatID, ChannelID, TicketID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,
                  CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem, IsAdmin)
             SELECT NEXT VALUE FOR dbo.ChatTicket, @TChannel, @TicketID, @UserID, @User,
-                   N'@' + i.FullName + N' has been invited to Ticket #' + CAST(@TicketID AS NVARCHAR(20)),
-                   N'@' + i.FullName + N' has been invited to Ticket #' + CAST(@TicketID AS NVARCHAR(20)),
+                   N'@' + i.FullName + N' has been invited to Ticket #' + CAST(@TicketID AS NVARCHAR(20)) + CASE WHEN i.IsAdmin = 1 THEN N' as admin' ELSE N'' END,
+                   N'@' + i.FullName + N' has been invited to Ticket #' + CAST(@TicketID AS NVARCHAR(20)) + CASE WHEN i.IsAdmin = 1 THEN N' as admin' ELSE N'' END,
                    0, 0, @User, GETDATE(), @User, GETDATE(), 0, 0, 0, 0, 1, 0
             FROM @IList i;
             COMMIT TRANSACTION;
@@ -1283,7 +1289,7 @@ USING (VALUES
     (N'CHA.APISilaWebTicketOperation', N'Set ticket flag',       N'The caller''s own follow-up flag on a ticket he is in (due date, note)'),
     (N'CHA.APISilaWebTicketOperation', N'Assign ticket',         N'Managers assign the ticket to someone in it'),
     (N'CHA.APISilaWebTicketOperation', N'Ticket report',         N'Times per channel / assignee for the channels the caller manages (all for mhd)'),
-    (N'CHA.APISilaWebTicketOperation', N'Take ticket',           N'A non-CC member takes an unassigned ticket'),
+    (N'CHA.APISilaWebTicketOperation', N'Take ticket',           N'A ticket admin / team leader takes an unassigned ticket'),
     (N'CHA.APISilaWebTicketOperation', N'Unassign ticket',       N'The assignee or a manager unassigns the ticket')
 ) AS s (ProcedureName, OperationName, Notes)
 ON t.ProcedureName = s.ProcedureName AND t.OperationName = s.OperationName

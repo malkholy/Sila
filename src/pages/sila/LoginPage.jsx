@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
 import { login } from '../../shared/auth.js';
+import silaLogo from '../../Assets/sila_logo.png';
 
 const REMEMBER_KEY = 'sila.rememberUser';
 
@@ -47,13 +48,18 @@ export default function LoginPage({ onSignedIn }) {
         display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 220,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 13, background: 'var(--accent)', fontWeight: 800, fontSize: 18,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>S</div>
+          <img src={silaLogo} alt="" width={40} height={40} style={{ display: 'block' }} />
           <span style={{ fontSize: 20, fontWeight: 800 }}>Sila</span>
         </div>
         <div style={{ maxWidth: 420 }}>
+          {/* the logo on a soft ring, as on the app's splash */}
+          <div style={{
+            width: 132, height: 132, borderRadius: '50%', background: 'var(--rail-hover)', marginBottom: 28,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 0 80px 10px var(--rail-hover)',
+          }}>
+            <img src={silaLogo} alt="Sila" width={96} height={96} style={{ display: 'block' }} />
+          </div>
           <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.2, fontWeight: 800 }}>Chats, groups and tickets in one place.</h1>
           <p style={{ margin: '12px 0 0', color: 'var(--rail-text)', fontSize: 15 }}>
             Sign in with your Sila account to pick up where you left off.

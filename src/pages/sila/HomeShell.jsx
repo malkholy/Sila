@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Home, MessageCircle, Users, Hash, Settings, Search, LogOut, Wifi, WifiOff, RefreshCw, Mail, CheckSquare,
-  ListChecks, User, LayoutList, Columns3, ChevronLeft, ChevronRight, GripVertical, Bell, BellOff, X, Plus, Flag, UserCheck, BarChart3,
+  ListChecks, User, LayoutList, Columns3, GripVertical, Bell, BellOff, X, Plus, Flag, UserCheck, BarChart3, Megaphone,
 } from 'lucide-react';
 import { useLive, retryLiveNow, onLive } from '../../shared/live.js';
 import { loadLeftSide, mergeLeftSide, formatWhen } from '../../shared/leftSide.js';
 import { notifyMessage, useNotifyState, enableNotify, disableNotify } from '../../shared/notify.js';
-import { isSelectingText } from '../../shared/textSelection.js';
+import { isSelectingText, noWordSelect } from '../../shared/textSelection.js';
 import { moveRowFocus } from '../../shared/rowNav.js';
 import { loadDirectory, startDirectory, loadChannels } from '../../shared/chat.js';
 import Avatar from './Avatar.jsx';
@@ -20,6 +20,7 @@ import Reports from './Reports.jsx';
 import { FlagMark } from './TicketFlag.jsx';
 import { AssigneeTag } from './TicketAssign.jsx';
 import SlaBadge from './SlaBadge.jsx';
+import silaLogo from '../../Assets/sila_logo.png';
 import { setTicketFlag } from '../../shared/ticketFlag.js';
 import { toBoardTicket } from '../../shared/chat.js';
 
@@ -70,18 +71,29 @@ const KIND_ICON = { group: Users, ticket: Hash, mail: Mail, task: CheckSquare, o
 
 // Square badge for non-person conversations (group / ticket / mail / task);
 // a ticket's badge takes its state colour (tone = [fg, bg]) when it has one
-function KindBadge({ kind, size = 46, tone }) {
-  const Icon = KIND_ICON[kind] || MessageCircle;
+// broadcast: an announcement group -- megaphone, accent colours and a "B" tag
+function KindBadge({ kind, size = 46, tone, broadcast = false }) {
+  const Icon = broadcast ? Megaphone : KIND_ICON[kind] || MessageCircle;
   const ticket = kind === 'ticket';
   const toned = ticket && tone && tone[0] !== 'var(--text2)';
   return (
     <span style={{
       flex: `0 0 ${size}px`, width: size, height: size, borderRadius: 13, display: 'flex', alignItems: 'center',
-      justifyContent: 'center',
-      background: toned ? tone[1] : ticket ? 'var(--accent-soft)' : 'var(--soft)',
-      border: `1.5px solid ${toned ? tone[0] : ticket ? 'var(--accent-line)' : 'var(--border)'}`,
-      color: toned ? tone[0] : ticket ? 'var(--accent-strong)' : 'var(--text2)',
-    }}><Icon size={22} strokeWidth={1.8} /></span>
+      justifyContent: 'center', position: 'relative',
+      background: toned ? tone[1] : ticket || broadcast ? 'var(--accent-soft)' : 'var(--soft)',
+      border: `1.5px solid ${toned ? tone[0] : ticket || broadcast ? 'var(--accent-line)' : 'var(--border)'}`,
+      color: toned ? tone[0] : ticket || broadcast ? 'var(--accent-strong)' : 'var(--text2)',
+    }}>
+      <Icon size={22} strokeWidth={1.8} />
+      {/* a group's "G" tag ("B" for broadcast), so groups stand out from people and tickets */}
+      {kind === 'group' && (
+        <span aria-hidden="true" style={{
+          position: 'absolute', right: -4, bottom: -4, minWidth: 18, height: 18, borderRadius: 9, padding: '0 4px',
+          background: 'var(--accent)', color: 'var(--on-accent)', border: '2px solid var(--bg)',
+          fontSize: 10, fontWeight: 800, lineHeight: '14px', textAlign: 'center',
+        }}>{broadcast ? 'B' : 'G'}</span>
+      )}
+    </span>
   );
 }
 
@@ -125,7 +137,7 @@ function ConversationRow({ item, active, online, onPick, dbl = false, terms, onT
   );
   return (
     <button data-row onClick={(e) => { e.currentTarget.focus(); if (dbl && e.detail !== 0) return; if (!isSelectingText()) onPick(); }}
-      onDoubleClick={dbl ? () => { if (!isSelectingText()) onPick(); } : undefined}
+      onMouseDown={dbl ? noWordSelect : undefined} onDoubleClick={dbl ? onPick : undefined}
       onKeyDown={(e) => {
         if ((e.key === 'f' || e.key === 'F') && ticket && onToggleFlag && !e.ctrlKey && !e.metaKey && !e.altKey) {
           e.preventDefault(); onToggleFlag(item); return;
@@ -140,7 +152,7 @@ function ConversationRow({ item, active, online, onPick, dbl = false, terms, onT
       color: 'var(--text)', fontFamily: 'var(--font)',
     }}>
       {item.kind === 'chat' ? <Avatar name={item.title} size={46} online={online} photoUrl={item.photoUrl} />
-        : <KindBadge kind={item.kind} tone={item.tone} />}
+        : <KindBadge kind={item.kind} tone={item.tone} broadcast={item.broadcast} />}
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
           <span style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto"><Mark text={item.title} terms={terms} /></span>
@@ -517,10 +529,7 @@ export default function HomeShell({ user, onSignOut }) {
       flex: '0 0 84px', background: 'var(--rail)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '16px 0',
     }}>
       {!narrow && (
-        <div style={{
-          width: 44, height: 44, borderRadius: 13, background: 'var(--accent)', color: 'var(--on-accent)', fontWeight: 800,
-          fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-        }}>S</div>
+        <img src={silaLogo} alt="Sila" width={40} height={40} style={{ display: 'block', margin: '2px 0 16px' }} />
       )}
       {/* the quick New ticket button, on every screen */}
       <button onClick={() => setNewTicket(true)} aria-label="New ticket" title="New ticket" style={{
@@ -774,17 +783,15 @@ export default function HomeShell({ user, onSignOut }) {
       </div>
       {homeView === 'panels' && (
         <>
-          <div style={{ flex: '1 1 220px', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <label htmlFor="panels-search" style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>Search</label>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '0 12px', borderRadius: 8,
-              border: '1px solid var(--border2)', background: 'var(--surface)', color: 'var(--muted)',
-            }}>
-              <Search size={15} />
-              <input id="panels-search" value={query} onChange={e => setQuery(e.target.value)} placeholder="People, groups, tickets"
-                style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
-              <ClearSearch value={query} onClear={() => setQuery('')} size={24} style={{ marginRight: -6 }} />
-            </div>
+          <div style={{
+            flex: '1 1 220px', maxWidth: 420, display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '0 12px', borderRadius: 8,
+            border: '1px solid var(--border2)', background: 'var(--surface)', color: 'var(--muted)',
+          }}>
+            <Search size={15} />
+            <input id="panels-search" value={query} onChange={e => setQuery(e.target.value)} placeholder="People, groups, tickets"
+              aria-label="Search people, groups, tickets"
+              style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
+            <ClearSearch value={query} onClear={() => setQuery('')} size={24} style={{ marginRight: -6 }} />
           </div>
           <button onClick={refreshAll} disabled={left.status === 'loading' || left.status === 'refreshing'}
             aria-label="Refresh conversations" title="Refresh" style={{
@@ -871,17 +878,6 @@ export default function HomeShell({ user, onSignOut }) {
                 </select>
               )}
               <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>{matching.length}</span>
-              <span style={{ display: 'flex' }}>
-                {[[ChevronLeft, -1, 'left'], [ChevronRight, 1, 'right']].map(([Arrow, step, side]) => (
-                  <button key={side} onClick={() => movePanel(p.key, index + step)}
-                    disabled={index + step < 0 || index + step >= panelOrder.length}
-                    aria-label={`Move ${p.title} ${side}`} title={`Move ${side}`} style={{
-                      width: 26, height: 26, border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--text2)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                      opacity: index + step < 0 || index + step >= panelOrder.length ? 0.3 : 1,
-                    }}><Arrow size={15} /></button>
-                ))}
-              </span>
               <button onClick={() => toggleUnread(p.key)} aria-pressed={onlyUnread}
                 title={onlyUnread ? `Show all ${p.title.toLowerCase()}` : `Show unread ${p.title.toLowerCase()} only`} style={{
                   height: 28, padding: '0 10px', borderRadius: 999, cursor: 'pointer', fontFamily: 'var(--font)',
@@ -984,7 +980,7 @@ export default function HomeShell({ user, onSignOut }) {
         {selected.kind === 'chat'
           ? <Avatar name={selected.title} size={44} photoUrl={selected.photoUrl}
               online={!!selected.username && live.online.has(selected.username)} />
-          : <KindBadge kind={selected.kind} size={44} />}
+          : <KindBadge kind={selected.kind} size={44} broadcast={selected.broadcast} />}
         <div style={{ minWidth: 0 }}>
           {selected.sub && <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)' }} dir="auto">{selected.sub}</div>}
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text)' }} dir="auto">{selected.title}</h2>

@@ -10,13 +10,13 @@ import { DATABASE, getAccessToken } from './auth.js';
 export const FILES_BASE = import.meta.env.VITE_SILA_FILES ?? (import.meta.env.DEV ? '' : 'https://sila.glcpaints.com:7500');
 
 // What the Files API accepts (SilaApi/Plus.Api/Attachments/FileTypePolicy.cs) and its size limit.
-export const ACCEPT = '.pdf,.png,.jpg,.jpeg,.docx,.xlsx,.pptx,.txt,.csv';
+export const ACCEPT = '.pdf,.png,.jpg,.jpeg,.docx,.xlsx,.pptx,.txt,.csv,.m4a,.aac,.mp3,.ogg,.opus,.wav,.webm';
 export const MAX_BYTES = 50 * 1024 * 1024;
 
 const EXT = new Set(ACCEPT.split(','));
 export function checkFile(file) {
   const ext = (file.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
-  if (!EXT.has(ext)) return `“${file.name}” can't be sent: allowed are PDF, images (PNG, JPG), Word, Excel, PowerPoint, TXT and CSV.`;
+  if (!EXT.has(ext)) return `“${file.name}” can't be sent: allowed are PDF, images (PNG, JPG), Word, Excel, PowerPoint, TXT, CSV and audio (M4A, AAC, MP3, OGG, OPUS, WAV, WEBM).`;
   if (file.size > MAX_BYTES) return `“${file.name}” is larger than 50 MB.`;
   if (file.size === 0) return `“${file.name}” is empty.`;
   return '';

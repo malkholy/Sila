@@ -33,3 +33,7 @@ SilaApi/IIS Publish/
 
 # web app IIS package (build output)
 IIS Publish/
+
+# Firebase service account keys: server App_Data only, never in git
+*firebase*service-account*.json
+*firebase-sa*.json

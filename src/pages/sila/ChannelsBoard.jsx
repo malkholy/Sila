@@ -4,7 +4,7 @@ import { loadTickets } from '../../shared/chat.js';
 import { formatWhen, preview } from '../../shared/leftSide.js';
 import { onLive } from '../../shared/live.js';
 import Avatar from './Avatar.jsx';
-import { isSelectingText } from '../../shared/textSelection.js';
+import { noWordSelect } from '../../shared/textSelection.js';
 import { moveRowFocus } from '../../shared/rowNav.js';
 import ChatPane from './ChatPane.jsx';
 import ClearSearch from './ClearSearch.jsx';
@@ -210,7 +210,7 @@ function TicketTable({ rows, show, onOpen, onPerson, onToggleFlag, me }) {
         <tbody>
           {rows.map(t => (
             <tr key={t.id} data-row tabIndex={0} aria-selected={sel === t.id}
-              onDoubleClick={() => { if (!isSelectingText()) onOpen(t); }}
+              onMouseDown={noWordSelect} onDoubleClick={() => onOpen(t)}
               onKeyDown={e => {
                 if (e.target !== e.currentTarget) return;
                 if (e.key === 'Enter') { e.preventDefault(); onOpen(t); }

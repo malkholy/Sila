@@ -1,20 +1,20 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Check, CheckCheck, FileText, Ban, Paperclip, Send, Mic, MoreHorizontal, Reply, Copy, Pencil, Trash2, X, Clock, AlertCircle,
-  Users, Lock, Hash, ShieldAlert, Play, Pause, Flag, RotateCcw, Archive, Type, Download, Forward, CheckCircle2, XCircle, Undo2,
+  Users, Megaphone, Lock, Hash, LogOut, ShieldAlert, Play, Pause, Flag, RotateCcw, Archive, Type, Download, Forward, CheckCircle2, XCircle, Undo2,
 } from 'lucide-react';
 import RichComposer from './RichComposer.jsx';
 import { sanitizeForSend, sanitizeForShow, hasFormatting, toPlainText } from '../../shared/richText.js';
 import { ACCEPT, checkFile, downloadFile, fileBlobUrl, fileEntity, isFilesApiUrl, saveAttachment, uploadFile } from '../../shared/files.js';
 import Avatar from './Avatar.jsx';
-import { chatApi, formatSize, newLocalId, PAGE_SIZE, changeTicketState, answerForward, cancelForward } from '../../shared/chat.js';
+import { chatApi, formatSize, newLocalId, PAGE_SIZE, changeTicketState, answerForward, cancelForward, leaveTicket } from '../../shared/chat.js';
 import ForwardDialog from './ForwardDialog.jsx';
 import { cacheKey, getCached, putCached, syncAnchor, applyDelta } from '../../shared/chatCache.js';
 import GroupInfoPanel from './GroupInfoPanel.jsx';
 import TicketInfoPanel from './TicketInfoPanel.jsx';
 import { isSelectingText } from '../../shared/textSelection.js';
 import { onLive } from '../../shared/live.js';
-import { FlagButton } from './TicketFlag.jsx';
+import { FlagButton, FlagPin } from './TicketFlag.jsx';
 import { AssignButton } from './TicketAssign.jsx';
 import SlaBadge from './SlaBadge.jsx';
 
@@ -35,7 +35,8 @@ const TICKET_TONE = {
 };
 // can: the header's Can* flag that shows the button (default: key); confirm: asked
 // first, in the panel. kind: 'state' (Change ticket state), 'forward' (the dialog),
-// 'accept' / 'reject' (Answer forward, on the waiting copy), 'cancel' (Cancel forward).
+// 'accept' / 'reject' (Answer forward, on the waiting copy), 'cancel' (Cancel forward),
+// 'leave' (Leave ticket: header.can.leave -- not the last admin / team leader of an open ticket).
 const TICKET_ACTIONS = [
   { key: 'start', action: 'Start', label: 'Start', icon: Play, primary: true },
   { key: 'accept', can: 'answerForward', kind: 'accept', label: 'Accept forward', icon: CheckCircle2, primary: true },
@@ -48,6 +49,8 @@ const TICKET_ACTIONS = [
   { key: 'reopen', action: 'Reopen', label: 'Reopen', icon: RotateCcw, primary: true },
   { key: 'end', action: 'End', label: 'End', icon: Flag },
   { key: 'close', action: 'Close', label: 'Close', icon: Archive, confirm: 'Close this ticket for good?', confirmLabel: 'Close' },
+  { key: 'leave', kind: 'leave', label: 'Leave ticket', icon: LogOut,
+    confirm: 'Leave this ticket? You stop getting its messages and it leaves your lists.', confirmLabel: 'Leave' },
 ];
 
 function dayLabel(d) {
@@ -72,21 +75,40 @@ function onAudioStop(e) {
   if (playingAudio === e.currentTarget) playingAudio = null;
 }
 
-function VoiceNote({ file, mine }) {
+// entity: a voice note stored by the Files API -- its link needs the user's token,
+// so it is fetched (once, on the first press of Play) and played from memory
+function VoiceNote({ file, mine, entity }) {
   const [failed, setFailed] = useState(false);
+  const [src, setSrc] = useState(entity ? '' : file.url);
+  const [loading, setLoading] = useState(false);
+  const load = () => {
+    setLoading(true);
+    fileBlobUrl({ attachmentId: file.id, ...entity })
+      .then(url => setSrc(url))
+      .catch(() => setFailed(true))
+      .finally(() => setLoading(false));
+  };
   return (
     <span style={{
       display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 12, minWidth: 0,
       background: mine ? 'rgba(255,255,255,.55)' : 'var(--soft)',
     }}>
       <Mic size={18} aria-hidden="true" style={{ color: 'var(--accent-strong)', flexShrink: 0 }} />
-      {failed ? (
+      {failed ? (entity ? <FileCard file={file} mine={mine} entity={entity} /> : (
         <a href={file.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600 }}>
           Voice message · open
         </a>
+      )) : !src ? (
+        <button type="button" onClick={load} disabled={loading} aria-label="Play voice message" style={{
+          display: 'flex', alignItems: 'center', gap: 6, height: 36, padding: '0 12px', borderRadius: 18,
+          border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)',
+          fontFamily: 'var(--font)', fontSize: 13, fontWeight: 600, cursor: loading ? 'progress' : 'pointer',
+        }}>
+          <Play size={14} /> {loading ? 'Loading…' : 'Voice message'}
+        </button>
       ) : (
-        // preload="none": nothing downloads until the user presses play
-        <audio controls preload="none" src={file.url} onError={() => setFailed(true)}
+        // preload="none": nothing downloads until the user presses play; a fetched note starts at once
+        <audio controls preload="none" autoPlay={!!entity} src={src} onError={() => setFailed(true)}
           onPlay={onAudioPlay} onPause={onAudioStop} onEnded={onAudioStop}
           aria-label="Voice message" style={{ height: 36, width: 240, maxWidth: '100%' }} />
       )}
@@ -226,7 +248,7 @@ export function DownloadButton({ file, entity, size = 26 }) {
 
 function Attachment({ file, mine, entity, onView }) {
   const ours = isFilesApiUrl(file.url) && file.id && entity;
-  const body = file.audio && !ours ? <VoiceNote file={file} mine={mine} />
+  const body = file.audio ? <VoiceNote file={file} mine={mine} entity={ours ? entity : null} />
     : file.image ? (ours ? <ProtectedImage file={file} mine={mine} entity={entity} onView={onView} />
       : <ImageAttachment file={file} mine={mine} onView={onView} />)
       : <FileCard file={file} mine={mine} entity={ours ? entity : null} />;
@@ -556,6 +578,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const richRef = useRef(null);
   const [actionBusy, setActionBusy] = useState(null);  // ticket action key
   const [confirmAction, setConfirmAction] = useState(null);
+  const [flagPanel, setFlagPanel] = useState(0);   // bumped by the pinned flag note: opens the flag panel
   const [forwarding, setForwarding] = useState(false);   // the Forward dialog
 
   const flash = useCallback((text) => {
@@ -846,10 +869,11 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
       if (a.kind === 'accept') await answerForward(header.ticketId, true);
       else if (a.kind === 'reject') await answerForward(header.ticketId, false);
       else if (a.kind === 'cancel') await cancelForward(header.ticketId);
+      else if (a.kind === 'leave') await leaveTicket(header.ticketId);
       else await changeTicketState(header.ticketId, a.action);
       onTicketChange?.(item.id);
-      // a rejected copy is deleted: the caller is no longer in it
-      if (a.kind === 'reject') { if (onLeave) onLeave(item.id); else onClose?.(); return; }
+      // a rejected copy is deleted, or the caller left: he is no longer in it
+      if (a.kind === 'reject' || a.kind === 'leave') { if (onLeave) onLeave(item.id); else onClose?.(); return; }
       stickBottom.current = true;
       fullLoad(true);
     } catch (err) { flash(err.message || 'Could not change the ticket.'); }
@@ -922,7 +946,8 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const photoUrl = header?.photoUrl || item.photoUrl;
   const headerOnline = !isGroup && isOnline(header?.username || item.username);
   const subLine = isGroup
-    ? [header ? `${header.memberCount} member${header.memberCount === 1 ? '' : 's'}` : null, header?.locked ? 'Only admins can send' : null]
+    ? [header?.broadcast ? 'Broadcast · everyone' : header ? `${header.memberCount} member${header.memberCount === 1 ? '' : 's'}` : null,
+       header?.locked ? 'Only admins can send' : null]
     // job · department (UserJobMaster / UserDepartmentMaster); @username until a job is set
     : [header?.jobTitle || item.jobTitle || (header?.username ? `@${header.username}` : null), headerOnline ? 'Online' : null];
 
@@ -1012,7 +1037,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
       <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }} dir="auto">{otherName}</span>
         <span style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-          {isGroup && (header?.locked ? <Lock size={12} /> : <Users size={12} />)}
+          {isGroup && (header?.broadcast ? <Megaphone size={12} /> : header?.locked ? <Lock size={12} /> : <Users size={12} />)}
           {subLine.filter(Boolean).join(' · ') || '\u00a0'}
           {isGroup && <span style={{ color: 'var(--accent-strong)', fontWeight: 600 }}>· {showInfo ? 'hide info' : 'group info'}</span>}
         </span>
@@ -1048,7 +1073,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
                 fullLoad(true);              // the system line + the new Take / Unassign rights
                 onTicketChange?.(item.id);   // lists show the new owner
               }} />
-            <FlagButton ticketId={header.ticketId} flag={header.flag} onChange={(flag) => {
+            <FlagButton ticketId={header.ticketId} flag={header.flag} openSignal={flagPanel} onChange={(flag) => {
               setState(s => ({ ...s, header: s.header ? { ...s.header, flag } : s.header }));
               onFlagChange?.(item.id, flag);
             }} />
@@ -1063,6 +1088,8 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
         )}
       </header>
 
+      {/* the caller's own flag note, pinned like a message (only he sees it) */}
+      {isTicket && header?.flag && <FlagPin flag={header.flag} onEdit={() => setFlagPanel(n => n + 1)} />}
       {isTicket && header?.state === 3 && header.originalTicketId > 0 && (
         // a forwarded copy waiting for approval: the messages below are the original's (read-only)
         <div role="note" style={{
@@ -1256,8 +1283,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
     {isTicket && showInfo && (
       <TicketInfoPanel ticketId={item.raw?.TicketID} header={header} isOnline={isOnline} actions={ticketActionsNode}
         entity={entity} onView={setViewing} onClose={() => setShowInfo(false)}
-        onMembersChange={() => { stickBottom.current = true; fullLoad(true); onTicketChange?.(item.id); }}
-        onLeft={() => { onTicketChange?.(item.id); if (onLeave) onLeave(item.id); else onClose?.(); }} />
+        onMembersChange={() => { stickBottom.current = true; fullLoad(true); onTicketChange?.(item.id); }} />
     )}
     {isGroup && showInfo && (
       <GroupInfoPanel groupId={item.raw?.GroupID} header={header} isOnline={isOnline} onClose={() => setShowInfo(false)}

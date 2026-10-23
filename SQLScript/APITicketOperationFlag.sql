@@ -15,13 +15,16 @@ GO
 --     IsFlagged, FlagDueDate, FlagNote.
 -- (3) ticket assignment (dbo.SilaTicketAssignment, SQLScript/SilaTicketAssignment.sql):
 --   * new operations 'Assign Ticket' / 'Take Ticket' / 'Unassign Ticket' (@TicketID,
---     @LineData = UserID for Assign); Left Member drops the leaver's assignment;
+--     @LineData = UserID for Assign; Assign and Take: ticket admins / team leaders);
+--     Left Member drops the leaver's assignment;
 --   * AssignedUserID, AssignedName after the flag columns on every ticket row.
 -- (2) the forward operations ('Forward Ticket', 'Accept Forward', 'Reject Forward',
 --     'Cancel Ticket') rewritten with the web's rules -- see the comment above them:
 --     role checks, the ticket's own channel and category, the target's admins /
 --     team leaders + the creator always in the copy, every row on the target
 --     channel, system lines, transactions, unread recount, Home-row clean-up.
+-- (4) 'Invite Member': ticket admins / team leaders only; IsAdmin in @LineMember
+--     also applies to someone brought back; the system line says "as admin".
 -- Every other operation, column and result set is as before.
 -- Not the rewrite in SQLScript/APITicketOperation.sql (that one still waits for
 -- the app owner's go-ahead).
@@ -153,7 +156,7 @@ begin
 		-- the same rules as the web. @TicketID = the ticket.
 		--   'Assign Ticket'   @LineData = the UserID; ticket admins / team leaders,
 		--                     anyone in the ticket
-		--   'Take Ticket'     any non-CC member, while nobody has it
+		--   'Take Ticket'     ticket admins / team leaders, while nobody has it
 		--   'Unassign Ticket' the assignee or a ticket admin / team leader
 		-- Open tickets only; a system line each time; returns the ticket row.
 		-- ---------------------------------------------------------------
@@ -177,7 +180,7 @@ begin
 			end
 			else if @Operation = 'Take Ticket'
 			begin
-				if @AsCC = 1 begin set @State = 1 ; set @Message = 'People in CC can not take a ticket' ; return ; end
+				if @AsManager = 0 begin set @State = 1 ; set @Message = 'Only ticket admins and team leaders can take a ticket' ; return ; end
 				if @AsCurrent is not null and @AsCurrent <> @UserID begin set @State = 1 ; set @Message = 'Someone already has this ticket' ; return ; end
 				set @AsTarget = @UserID
 			end
@@ -743,6 +746,14 @@ begin
 
 		if @operation='Invite Member'
 		begin
+			-- (4) only the ticket's admins / team leaders invite, and they may make the
+			-- person a ticket admin (IsAdmin = 1, also when bringing back someone
+			-- who had left); added 2026-10-23
+			if not exists ( select 1 from cha.TicketMembers where TicketID=@TicketID and UserID=@UserID and IsLeft=0 and ( IsAdmin=1 or IsTeamLeader=1 ) )
+			begin
+				set @State = 1 ; set @Message = 'Only ticket admins and team leaders can invite people' ;
+				return ;
+			end
 			create table  #TempInv (UserID  int , IsAdmin int  ) 
 			insert into #TempInv select * from openjson(@LineMember) 
 			with ( UserID int , IsAdmin int  );
@@ -770,7 +781,9 @@ begin
 					select @Cnt= count(*) from CHA.TicketMembers where TicketID=@TicketID and UserID=@InvUserID and IsLeft=1
 					if @cnt<>0
 					begin
-						 update CHA.TicketMembers set isleft=0 where TicketID=@TicketID and UserID=@InvUserID and IsLeft=1
+						 update CHA.TicketMembers set isleft=0 ,
+								IsAdmin = case when ( select top 1 IsAdmin from #TempInv where UserID=@InvUserID ) = 1 then 1 else 0 end
+						 where TicketID=@TicketID and UserID=@InvUserID and IsLeft=1
 						 set @Flag=1 
 					end
 				end 
@@ -779,6 +792,7 @@ begin
 					select @FullName=fullname from UserMaster where UserID=@InvUserID
 					set @ChatID=NEXT VALUE FOR dbo.ChatTicket
 					set @Text='@'+ @FullName+ ' has been invited to Ticket #'+convert ( nvarchar , @TicketID) 
+						+ case when ( select top 1 IsAdmin from #TempInv where UserID=@InvUserID ) = 1 then ' as admin' else '' end
 					set @TextStyle=@Text
 					insert into cha.TicketChatHistory 
 					( ChatID , TicketID  , FromUserID , FromUserName ,  Text , TextStyle ,  ReplayMsgID , CreatedDate ,AttachmentID ,LocalChatID , ChannelID , IsSystem ) 

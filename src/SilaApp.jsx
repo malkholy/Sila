@@ -7,6 +7,7 @@ import { clearBoardCache } from './pages/sila/ChannelsBoard.jsx';
 import LoginPage from './pages/sila/LoginPage.jsx';
 import HomeShell from './pages/sila/HomeShell.jsx';
 import UpdateGate from './pages/sila/UpdateGate.jsx';
+import silaLogo from './Assets/sila_logo.png';
 
 // Sila web app: sign-in (SilaApi /api/v2/auth) -> Home shell. A stored session
 // is restored on reload; the live socket runs while signed in. UpdateGate
@@ -66,7 +67,7 @@ function Screens({ onSignedInChange }) {
         <div style={{
           width: 52, height: 52, borderRadius: 15, background: 'var(--accent)', color: 'var(--on-accent)', fontWeight: 800,
           fontSize: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>S</div>
+        }}><img src={silaLogo} alt="Sila" width={36} height={36} style={{ display: 'block' }} /></div>
         {phase === 'restoring' ? 'Loading Sila…' : (
           <>
             <div>Can't reach the Sila server. Check your connection.</div>

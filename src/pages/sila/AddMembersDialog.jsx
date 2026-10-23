@@ -9,12 +9,15 @@ import ClearSearch from './ClearSearch.jsx';
 // ticket. Search by name / username / user group, or narrow to one user group;
 // people already in it are left out. onAdd(userIds, users) does the work (the SP
 // checks the caller's role). where / verb word the dialog ('group' / 'Add').
-export default function AddMembersDialog({ existingIds, onAdd, onClose, where = 'group', verb = 'Add', title = 'Add members' }) {
+// adminLabel (e.g. 'Ticket admin'): each picked person gets that switch; onAdd's
+// third argument is the ids switched on.
+export default function AddMembersDialog({ existingIds, onAdd, onClose, where = 'group', verb = 'Add', title = 'Add members', adminLabel = '' }) {
   const [q, setQ] = useState('');
   const [groupId, setGroupId] = useState(0);
   const [groups, setGroups] = useState([]);
   const [found, setFound] = useState({ status: 'loading', users: [], error: '' });
   const [picked, setPicked] = useState(() => new Map());   // id -> user
+  const [admins, setAdmins] = useState(() => new Set());   // ids picked as admins (adminLabel)
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef(null);
@@ -43,7 +46,7 @@ export default function AddMembersDialog({ existingIds, onAdd, onClose, where = 
   const add = async () => {
     if (!picked.size || busy) return;
     setBusy(true); setError('');
-    try { await onAdd([...picked.keys()], [...picked.values()]); onClose(); }
+    try { await onAdd([...picked.keys()], [...picked.values()], [...admins].filter(id => picked.has(id))); onClose(); }
     catch (err) { setError(err.message || `Could not ${verb.toLowerCase()} them.`); setBusy(false); }
   };
 
@@ -104,6 +107,16 @@ export default function AddMembersDialog({ existingIds, onAdd, onClose, where = 
                   width: 22, height: 22, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
                   border: `2px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'transparent', color: 'var(--on-accent)',
                 }}>{on && <Check size={14} strokeWidth={3} />}</span>
+                {adminLabel && on && (
+                  <span role="switch" aria-checked={admins.has(u.id)} tabIndex={0} title={`Make ${u.name} ${adminLabel.toLowerCase()}`}
+                    onClick={(e) => { e.stopPropagation(); setAdmins(s => { const n = new Set(s); if (n.has(u.id)) n.delete(u.id); else n.add(u.id); return n; }); }}
+                    onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); e.currentTarget.click(); } }}
+                    style={{
+                      flexShrink: 0, padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+                      border: `1px solid ${admins.has(u.id) ? 'transparent' : 'var(--border)'}`,
+                      background: admins.has(u.id) ? 'var(--accent-soft)' : 'var(--surface)', color: admins.has(u.id) ? 'var(--accent-strong)' : 'var(--muted)',
+                    }}>{adminLabel}</span>
+                )}
               </button>
             );
           })}

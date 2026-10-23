@@ -21,6 +21,14 @@ const filesAgent = new https.Agent({ keepAlive: true, maxSockets: 16 })
 // It also writes version.json ({ "version": "<n>" }) beside index.html: the
 // running app compares it with its own number (src/shared/appUpdate.js) and
 // makes users reload once a newer build is published.
+// Proxy hook: drop the Origin header. A request whose headers are already on
+// the wire (a WebSocket reconnect after a timeout) can't be changed; removing
+// one then throws ERR_HTTP_HEADERS_SENT, which used to crash the dev server.
+function dropOrigin(proxyReq) {
+  if (proxyReq.headersSent) return
+  try { proxyReq.removeHeader('origin') } catch { /* already sent */ }
+}
+
 function appVersionBumpPlugin() {
   const apiFile = path.resolve(__dirname, 'src/shared/api.js')
   let version = ''
@@ -54,6 +62,8 @@ export default defineConfig({
   base: './',
   plugins: [react(), appVersionBumpPlugin()],
   server: {
+    // release packages and the API are built in this folder: not part of the dev app
+    watch: { ignored: ['**/IIS Publish/**', '**/SilaApi/**'] },
     proxy: {
       // Sila Files API (SilaApi, "Files" role on :7500): uploads and downloads.
       // Listed first: more specific than '/api/v2'.
@@ -65,7 +75,7 @@ export default defineConfig({
         // (uploads: 5 min for large files)
         timeout: 300_000, proxyTimeout: 300_000,
         configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
+          proxy.on('proxyReq', dropOrigin)
         }
       },
       // Profile photos, through the Files API too (SilaApi Photos/PhotoEndpoints.cs).
@@ -75,7 +85,7 @@ export default defineConfig({
         agent: filesAgent,
         timeout: 60_000, proxyTimeout: 60_000,
         configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
+          proxy.on('proxyReq', dropOrigin)
         }
       },
       // Sila API (SilaApi): login, /exec and the live socket. Listed before
@@ -89,8 +99,8 @@ export default defineConfig({
         // a hung connection fails after 60 s instead of blocking the dev server
         timeout: 60_000, proxyTimeout: 60_000,
         configure: (proxy) => {
-          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
-          proxy.on('proxyReqWs', (proxyReq) => proxyReq.removeHeader('origin'))
+          proxy.on('proxyReq', dropOrigin)
+          proxy.on('proxyReqWs', dropOrigin)
         }
       },
       '/api': {

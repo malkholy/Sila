@@ -4,10 +4,10 @@ namespace Plus.Api.Attachments;
 
 // One allowed upload type. ContentType is what the gateway stores and serves --
 // never the browser-supplied Content-Type. Inline = may be opened in the
-// browser (PDF / images); everything else is always downloaded.
+// browser (PDF / images / audio); everything else is always downloaded.
 public sealed record FileTypeRule(string Extension, string ContentType, bool Inline, FileKind Kind);
 
-public enum FileKind { Pdf, Png, Jpeg, OfficeWord, OfficeExcel, OfficePowerPoint, Text }
+public enum FileKind { Pdf, Png, Jpeg, OfficeWord, OfficeExcel, OfficePowerPoint, Text, Mp4Audio, Aac, Mp3, Ogg, Wav, WebM }
 
 // Allowlist of upload types + a content check that the bytes really are that
 // type (a renamed .exe fails). Office files must be macro-free OOXML.
@@ -24,6 +24,14 @@ public static class FileTypePolicy
         [".pptx"] = new(".pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", false, FileKind.OfficePowerPoint),
         [".txt"] = new(".txt", "text/plain", false, FileKind.Text),
         [".csv"] = new(".csv", "text/csv", false, FileKind.Text),
+        // voice notes: what the mobile app records (.m4a) and the other common recorders
+        [".m4a"] = new(".m4a", "audio/mp4", true, FileKind.Mp4Audio),
+        [".aac"] = new(".aac", "audio/aac", true, FileKind.Aac),
+        [".mp3"] = new(".mp3", "audio/mpeg", true, FileKind.Mp3),
+        [".ogg"] = new(".ogg", "audio/ogg", true, FileKind.Ogg),
+        [".opus"] = new(".opus", "audio/ogg", true, FileKind.Ogg),
+        [".wav"] = new(".wav", "audio/wav", true, FileKind.Wav),
+        [".webm"] = new(".webm", "audio/webm", true, FileKind.WebM),
     };
 
     public static string AllowedList => string.Join(", ", Rules.Keys.Order());
@@ -35,7 +43,7 @@ public static class FileTypePolicy
     public static string? Validate(string path, FileTypeRule rule)
     {
         using var stream = File.OpenRead(path);
-        var head = new byte[8];
+        var head = new byte[12];
         var read = stream.Read(head, 0, head.Length);
         stream.Position = 0;
         return rule.Kind switch
@@ -47,6 +55,17 @@ public static class FileTypePolicy
             FileKind.OfficeExcel => ValidateOffice(stream, head, read, "xl/workbook.xml"),
             FileKind.OfficePowerPoint => ValidateOffice(stream, head, read, "ppt/presentation.xml"),
             FileKind.Text => ValidateText(stream),
+            // MP4 container: a box whose type (bytes 4-7) is "ftyp"
+            FileKind.Mp4Audio => read >= 8 && head.AsSpan(4, 4).SequenceEqual("ftyp"u8) ? null : "not an M4A audio file",
+            // ADTS frame sync: 12 bits set, layer 00
+            FileKind.Aac => read >= 2 && head[0] == 0xFF && (head[1] & 0xF6) == 0xF0 ? null : "not an AAC audio file",
+            // an ID3 tag, or an MPEG audio frame sync (11 bits set)
+            FileKind.Mp3 => StartsWith(head, read, "ID3"u8) || read >= 2 && head[0] == 0xFF && (head[1] & 0xE0) == 0xE0
+                ? null : "not an MP3 audio file",
+            FileKind.Ogg => StartsWith(head, read, "OggS"u8) ? null : "not an Ogg audio file",
+            FileKind.Wav => StartsWith(head, read, "RIFF"u8) && read >= 12 && head.AsSpan(8, 4).SequenceEqual("WAVE"u8)
+                ? null : "not a WAV audio file",
+            FileKind.WebM => StartsWith(head, read, [0x1A, 0x45, 0xDF, 0xA3]) ? null : "not a WebM audio file",
             _ => "unsupported type",
         };
     }

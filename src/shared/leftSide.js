@@ -60,7 +60,7 @@ function toItem(r) {
     item.jobTitle = r.FromJobName || '';
     item.sub = item.jobTitle;
   }
-  if (kind === 'group') item.title = r.GroupName || 'Group';
+  if (kind === 'group') { item.title = r.GroupName || 'Group'; item.broadcast = Number(r.IsBroadcast) > 0; }
   if (kind === 'ticket') {
     item.title = r.TicketSubject || `Ticket #${r.TicketID}`;
     item.sub = [r.ChannelName && `# ${r.ChannelName}`, r.TicketID && `#${r.TicketID}`].filter(Boolean).join(' · ');
