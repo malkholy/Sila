@@ -1,17 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Search, Lock, Users, MoreVertical, ShieldCheck, ShieldOff } from 'lucide-react';
+import { X, Search, Lock, Users, MoreVertical, ShieldCheck, ShieldOff, UserPlus, UserMinus, LogOut } from 'lucide-react';
 import Avatar from './Avatar.jsx';
-import { loadGroupMembers, setGroupLock, setGroupAdmin } from '../../shared/chat.js';
+import { loadGroupMembers, setGroupLock, setGroupAdmin, addGroupMembers, removeGroupMember, leaveGroup } from '../../shared/chat.js';
+import AddMembersDialog from './AddMembersDialog.jsx';
+import ClearSearch from './ClearSearch.jsx';
 
 // The group details panel (opens from the group header): photo, name, member
 // count, lock state, who created it and when (GroupMaster.CreatedBy), then the
 // Admins and the other Members -- photo, online dot, job title (or @username),
 // Admin / Creator badges. Group admins also get Lock chat and, per member,
-// Make group admin / Dismiss as admin (Step down for themselves) -- the SP
-// enforces the rules (admins only, creator protected, at least one admin).
-// Adding / removing members comes with group management.
+// Make group admin / Dismiss as admin (Step down for themselves), Add members
+// and Remove from group; every member can Leave group. The SP enforces the
+// rules (admins only, creator protected, at least one admin, the last admin
+// can't leave); remove / leave ask first, in the panel (no browser dialogs).
 
-function MemberMenu({ m, onPick, onClose }) {
+function MemberMenu({ m, items, onClose }) {
   const ref = useRef(null);
   useEffect(() => {
     const away = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
@@ -21,8 +24,8 @@ function MemberMenu({ m, onPick, onClose }) {
     ref.current?.querySelector('button')?.focus();
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
   }, [onClose]);
-  const item = (label, Icon, admin, danger) => (
-    <button role="menuitem" onClick={() => { onClose(); onPick(m, admin); }} style={{
+  const item = ({ label, Icon, danger, run }) => (
+    <button key={label} role="menuitem" onClick={() => { onClose(); run(); }} style={{
       display: 'flex', alignItems: 'center', gap: 10, width: '100%', minHeight: 38, padding: '0 10px', border: 'none',
       borderRadius: 8, background: 'transparent', color: danger ? 'var(--red)' : 'var(--text)', fontFamily: 'var(--font)',
       fontSize: 13, fontWeight: 600, textAlign: 'left', cursor: 'pointer', whiteSpace: 'nowrap',
@@ -33,9 +36,7 @@ function MemberMenu({ m, onPick, onClose }) {
       position: 'absolute', right: 0, top: 36, zIndex: 30, padding: 6, borderRadius: 12, background: 'var(--surface)',
       border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)',
     }}>
-      {!m.admin && item('Make group admin', ShieldCheck, true)}
-      {m.admin && !m.me && item('Dismiss as admin', ShieldOff, false, true)}
-      {m.admin && m.me && item('Step down as admin', ShieldOff, false, true)}
+      {items.map(item)}
     </div>
   );
 }
@@ -50,7 +51,11 @@ function Badge({ children, tone }) {
   );
 }
 
-export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onLockChange, onAdminChange }) {
+export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onLockChange, onAdminChange, onMembersChange, onLeft }) {
+  const [adding, setAdding] = useState(false);
+  const [confirm, setConfirm] = useState(null);   // { kind: 'remove', m } | { kind: 'leave' }
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
   const [menuFor, setMenuFor] = useState(null);       // member id
   const [adminBusy, setAdminBusy] = useState(null);   // member id
   const [adminError, setAdminError] = useState('');
@@ -94,8 +99,40 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
     } catch (err) { setAdminError(err.message || 'Could not change the admin.'); }
     finally { setAdminBusy(null); }
   };
-  // a creator can only step down himself; the server checks the rest too
-  const canManage = (m) => header?.isAdmin && (m.me ? m.admin : !(m.admin && m.creator));
+  // what an admin may do to a member (the server checks it all again): a creator
+  // can't be dismissed or removed by others; yourself: step down only (Leave is below)
+  const menuItems = (m) => {
+    if (!header?.isAdmin) return [];
+    if (m.me) return m.admin ? [{ label: 'Step down as admin', Icon: ShieldOff, danger: true, run: () => changeAdmin(m, false) }] : [];
+    const list = [];
+    if (!m.admin) list.push({ label: 'Make group admin', Icon: ShieldCheck, run: () => changeAdmin(m, true) });
+    if (m.admin && !m.creator) list.push({ label: 'Dismiss as admin', Icon: ShieldOff, danger: true, run: () => changeAdmin(m, false) });
+    if (!m.creator) list.push({ label: 'Remove from group', Icon: UserMinus, danger: true, run: () => { setConfirmError(''); setConfirm({ kind: 'remove', m }); } });
+    return list;
+  };
+  const canManage = (m) => menuItems(m).length > 0;
+
+  const addMembers = async (ids) => {
+    const r = await addGroupMembers(groupId, ids);   // errors are shown by the dialog
+    onMembersChange?.(r);
+    load();
+  };
+  const runConfirm = async () => {
+    setConfirmBusy(true); setConfirmError('');
+    try {
+      if (confirm.kind === 'remove') {
+        const r = await removeGroupMember(groupId, confirm.m.id);
+        setState(st => ({ ...st, members: st.members.filter(x => x.id !== confirm.m.id) }));
+        onMembersChange?.(r);
+        setConfirm(null);
+      } else {
+        await leaveGroup(groupId);
+        setConfirm(null);
+        onLeft?.();
+      }
+    } catch (err) { setConfirmError(err.message || 'Could not complete that.'); }
+    finally { setConfirmBusy(false); }
+  };
   const admins = shown.filter(m => m.admin);
   const others = shown.filter(m => !m.admin);
   const creator = state.creator;
@@ -123,7 +160,7 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
                 background: menuFor === m.id ? 'var(--border)' : 'transparent', color: 'var(--muted)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}><MoreVertical size={16} /></button>
-            {menuFor === m.id && <MemberMenu m={m} onPick={changeAdmin} onClose={() => setMenuFor(null)} />}
+            {menuFor === m.id && <MemberMenu m={m} items={menuItems(m)} onClose={() => setMenuFor(null)} />}
           </span>
         )}
       </span>
@@ -201,6 +238,35 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
 
         <div style={{ height: 1, background: 'var(--border)' }} />
 
+        {header?.isAdmin && (
+          <button onClick={() => setAdding(true)} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, borderRadius: 10,
+            border: '1px dashed var(--accent-line)', background: 'var(--accent-soft)', color: 'var(--accent-strong)',
+            fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font)',
+          }}><UserPlus size={16} /> Add members</button>
+        )}
+
+        {confirm && (
+          <div role="alertdialog" aria-label="Confirm" style={{
+            display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRadius: 12, background: 'var(--red-soft)',
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)' }}>
+              {confirm.kind === 'remove' ? <>Remove <span dir="auto">{confirm.m.name}</span> from the group?</> : 'Leave this group? You will stop getting its messages.'}
+            </span>
+            {confirmError && <span style={{ fontSize: 12, color: 'var(--red)' }}>{confirmError}</span>}
+            <span style={{ display: 'flex', gap: 8 }}>
+              <button onClick={runConfirm} disabled={confirmBusy} style={{
+                height: 34, padding: '0 14px', borderRadius: 8, border: 'none', background: 'var(--red)', color: '#fff',
+                fontWeight: 700, fontSize: 13, cursor: confirmBusy ? 'wait' : 'pointer', fontFamily: 'var(--font)',
+              }}>{confirmBusy ? 'Working…' : confirm.kind === 'remove' ? 'Remove' : 'Leave'}</button>
+              <button onClick={() => setConfirm(null)} disabled={confirmBusy} style={{
+                height: 34, padding: '0 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)',
+                color: 'var(--text)', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font)',
+              }}>Cancel</button>
+            </span>
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {state.members.length > 8 && (
             <>
@@ -214,6 +280,7 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
                   flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13,
                   color: 'var(--text)', fontFamily: 'var(--font)',
                 }} />
+                <ClearSearch value={q} onClear={() => setQ('')} size={24} style={{ marginRight: -6 }} />
               </div>
             </>
           )}
@@ -237,7 +304,16 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
           {section('Admins', admins)}
           {section('Members', others)}
         </div>
+
+        {state.status === 'ready' && (
+          <button onClick={() => { setConfirmError(''); setConfirm({ kind: 'leave' }); }} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 40, marginTop: 4, borderRadius: 10,
+            border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--red)',
+            fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font)',
+          }}><LogOut size={16} /> Leave group</button>
+        )}
       </div>
+      {adding && <AddMembersDialog existingIds={state.members.map(m => m.id)} onAdd={addMembers} onClose={() => setAdding(false)} />}
     </aside>
   );
 }

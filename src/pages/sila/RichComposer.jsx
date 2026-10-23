@@ -1,10 +1,13 @@
 import React, { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { Bold, Italic, Underline, List, ListOrdered, Quote, RemoveFormatting } from 'lucide-react';
+import { asImageFile, clipboardImage, hasTable, tableToPng } from '../../shared/pasteTable.js';
 
 // The formatted-text editor (shown in the composer's pop-up): a small toolbar over a contentEditable box.
 // Enter adds a line; Ctrl / Cmd + Enter sends (onSubmit). The parent reads
 // the HTML through the ref (getHtml / setHtml / clear / focus) and is told
 // when it becomes empty or not (onEmptyChange) to enable the Send button.
+// onPasteImage(file): a pasted table (Excel ...) or picture, as an image file
+// for the parent to preview and send (pasteTable.js); without it, text only.
 // Commands use document.execCommand: deprecated, but every browser still
 // supports this basic set, and it keeps the undo stack working.
 
@@ -19,7 +22,7 @@ const TOOLS = [
 ];
 
 const RichComposer = forwardRef(function RichComposer({
-  placeholder, disabled, accent, onSubmit, onEscape, onEmptyChange, minHeight = 64, maxHeight = 220, hint = true,
+  placeholder, disabled, accent, onSubmit, onEscape, onEmptyChange, onPasteImage, minHeight = 64, maxHeight = 220, hint = true,
 }, ref) {
   const box = useRef(null);
   const emptyRef = useRef(true);
@@ -60,11 +63,23 @@ const RichComposer = forwardRef(function RichComposer({
     if (e.key === 'Escape') { onEscape?.(e); }
   };
 
-  // pasting keeps only the text: formatting is applied with the toolbar
+  // pasting keeps only the text: formatting is applied with the toolbar. A
+  // table or a picture goes to onPasteImage instead (the text if the table
+  // can't be drawn).
+  const insertText = (text) => { box.current?.focus(); document.execCommand('insertText', false, text); checkEmpty(); };
   const onPaste = (e) => {
     e.preventDefault();
-    const text = e.clipboardData.getData('text/plain');
-    document.execCommand('insertText', false, text);
+    const dt = e.clipboardData;
+    const text = dt.getData('text/plain');
+    const html = dt.getData('text/html');
+    const table = hasTable(html);
+    const image = clipboardImage(dt);
+    if (onPasteImage && (table || image)) {
+      if (image) onPasteImage(asImageFile(image, table ? 'Table' : 'Image'));
+      else tableToPng(html).then(onPasteImage).catch(() => insertText(text));
+      return;
+    }
+    insertText(text);
   };
 
   return (

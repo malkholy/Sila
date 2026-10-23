@@ -37,9 +37,18 @@ export function clearChatCache() {
   cache.clear();
 }
 
-// The newest server row we hold: the AfterChatID of the next delta.
-export const newestId = (messages) =>
-  messages.reduce((max, m) => (typeof m.id === 'number' && m.id > max ? m.id : max), 0);
+// Where a delta starts: SYNC_OVERLAP messages back from the newest held, not
+// the newest itself. The newest held is often the user's own send, which can
+// get a higher ChatID than a message from the other side still on its way
+// (sent a moment earlier, or committed a little later); asking only for what
+// is newer than it would skip that message for good. The overlap is merged
+// by id (applyDelta), so re-reading it changes nothing.
+export const SYNC_OVERLAP = 20;
+export function syncAnchor(messages) {
+  const ids = (messages || []).filter(m => m.id > 0).map(m => m.id).sort((a, b) => b - a);
+  if (!ids.length) return 0;
+  return ids[Math.min(SYNC_OVERLAP, ids.length) - 1] - 1;
+}
 
 // Applies newer rows in ChatID order: a new message is added; an edit /
 // delete copy replaces the row it points at (original), so A -> B -> C

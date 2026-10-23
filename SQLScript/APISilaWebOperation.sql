@@ -54,7 +54,31 @@ GO
 --   Group members    LineData { GroupID }  members only; admins first (photo, job, IsAdmin, IsCreator).
 --   Lock group chat  LineData { GroupID, Locked: 1|0 }  group admins only; posts a system line.
 --   Set group admin  LineData { GroupID, UserID, Admin: 1|0 }  group admins only.
---   Find users       LineData { Search?, UserGroupID?, Top? (default 30; max 100, 300 with a group) }
+--   Add group members   LineData { GroupID, UserIDs: [int] }  group admins only (max 300).
+--   Remove group member LineData { GroupID, UserID }  group admins only; not the creator / self.
+--   Leave group         LineData { GroupID }  any member; not the last admin while others remain.
+--   Find users       LineData { Search?, UserGroupID?, Top? (default 30; max 100, 300 with a group),
+--                    All?: 1 (max 2000: every active user, the app's cached people directory) }
+--   Settings channel { ChannelID }  one channel for the details drawer: List0 the channel,
+--                    List1 members, List2 tickets per state, List3 the 20 newest tickets;
+--                    List0 also has the channel's Purpose / Examples / OfferInAssistant
+--   Save channel purpose { ChannelID, Purpose, Examples, OfferInAssistant: 1|0 }  user 'mhd'
+--                    only: what the channel handles (dbo.SilaChannelPurpose)
+--   Settings channel categories {}  CHA.ChannelCategory for the channel form (mhd only)
+--   Save channel sla { ChannelID, FirstReplyMinutes, FinishMinutes }  working minutes, 0 = no
+--                    target (dbo.SilaChannelSla; mhd only). Settings channel returns both.
+--   Save channel     { ChannelID? (0 = new), Name, CategoryID, IsPrivate, InActive, Purpose?, Examples? }
+--                    create or edit a channel (mhd only); returns { ChannelID }
+--   Add channel members   { ChannelID, Members: [ { UserID, IsAdmin, IsTeamLeader } ] }  (mhd only)
+--   Set channel member    { ChannelID, UserID, IsAdmin, IsTeamLeader }  (mhd only)
+--   Remove channel member { ChannelID, UserID }  (mhd only). Existing tickets keep their roles.
+--   Settings user group { GroupID }  List0 the Sila user group, List1 its users (mhd only)
+--   Save user group  { GroupID? (0 = new), GroupName }  create / rename (mhd only); returns { GroupID }
+--   Delete user group { GroupID }  only an empty group (mhd only)
+--   Set users group  { GroupID, UserIDs: [int] }  move users into the group (mhd only)
+--   Settings users / Settings user groups / Settings channels   {}  read-only master
+--                    lists for the web System Settings screen -- user 'mhd' ONLY
+--                    (checked here; the app only hides the button). No password hash.
 --                    active users, not the caller; Search also matches the user group name.
 --   User groups      user groups with their active user counts (picker filter).
 --   Create group     LineData { Name, Members: [ { UserID, IsAdmin } ] }  caller = creator + admin.
@@ -123,12 +147,16 @@ BEGIN
                      THEN 1 ELSE 0 END AS IsHidden,
                 -- one-to-one: the other person
                 a.SessionID, a.OtherUserID AS FromUserID, ou.Username AS FromUsername, ou.FullName AS FromName,
-                oj.JobName AS FromJobName, od.DepartmentName AS FromDepartmentName, op.FileURL AS FromPhotoURL,
+                oj.JobName AS FromJobName, oj.DepartmentName AS FromDepartmentName, op.FileURL AS FromPhotoURL,
                 -- group
                 a.GroupID, gm.Name AS GroupName,
                 -- ticket
                 a.TicketID, a.ChannelID, cm.Name AS ChannelName, a.TicketSubject, a.TicketState,
                 ts.StateDescription AS TicketStateDescription, tc.FullName AS TicketCreatedBy,
+                CASE WHEN tf.TicketID IS NULL THEN 0 ELSE 1 END AS MyFlagged, tf.DueDate AS MyFlagDue, tf.Note AS MyFlagNote,
+                ta.UserID AS AssignedUserID, au.Username AS AssignedUsername, ISNULL(NULLIF(au.FullName, N''), au.Username) AS AssignedName,
+                sla.FirstReplyDate, sla.ReplyMinutes, sla.ReplyTarget, sla.ReplyState,
+                sla.FinishMinutes AS FinishWorkMinutes, sla.FinishTarget, sla.FinishState,
                 -- mail
                 a.MailID, a.MailSubject, a.MailState, ms.StateDescription AS MailStateDescription,
                 mc.FullName AS MailCreatedBy,
@@ -136,13 +164,16 @@ BEGIN
                 a.TaskID, a.TaskSubject, a.TaskState, ks.StateDescription AS TaskStateDescription
             FROM dbo.SilaHistory a
             LEFT JOIN dbo.UserMaster ou           ON ou.UserID = a.OtherUserID AND RTRIM(a.RecordType) = 'O'
-            LEFT JOIN dbo.UserJobMaster oj        ON oj.JobID = ou.JobID
-            LEFT JOIN dbo.UserDepartmentMaster od ON od.DepartmentID = ou.DepartmentID
+            LEFT JOIN dbo.V_SilaUserTitle oj        ON oj.UserID = ou.UserID
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = ou.AttachmentID AND ou.AttachmentID <> 0 ORDER BY x.ID DESC) op
             LEFT JOIN grp.GroupMaster gm          ON gm.GroupID = a.GroupID AND RTRIM(a.RecordType) = 'G'
             LEFT JOIN cha.ChannelMaster cm        ON cm.ChannelID = a.ChannelID AND RTRIM(a.RecordType) = 'C'
             LEFT JOIN cha.TicketState ts          ON ts.StateID = a.TicketState AND RTRIM(a.RecordType) = 'C'
+            LEFT JOIN dbo.SilaTicketFlag tf       ON tf.TicketID = a.TicketID AND tf.UserID = a.UserID AND RTRIM(a.RecordType) = 'C'
+            LEFT JOIN dbo.SilaTicketAssignment ta ON ta.TicketID = a.TicketID AND RTRIM(a.RecordType) = 'C'
+            LEFT JOIN dbo.UserMaster au           ON au.UserID = ta.UserID
+            OUTER APPLY (SELECT x.* FROM dbo.fnSilaTicketSla(a.TicketID) x WHERE RTRIM(a.RecordType) = 'C') sla
             OUTER APPLY (SELECT TOP (1) u.FullName FROM cha.TicketHistory x
                          LEFT JOIN dbo.UserMaster u ON u.Username = x.CreatedByUser
                          WHERE RTRIM(a.RecordType) = 'C' AND x.TicketID = a.TicketID) tc
@@ -189,10 +220,9 @@ BEGIN
 
             SELECT @SessionID AS SessionID, @UserID AS MeUserID,
                    ou.UserID AS OtherUserID, ou.Username AS OtherUsername, ou.FullName AS OtherName,
-                   oj.JobName AS OtherJobName, od.DepartmentName AS OtherDepartmentName, op.FileURL AS OtherPhotoURL
+                   oj.JobName AS OtherJobName, oj.DepartmentName AS OtherDepartmentName, op.FileURL AS OtherPhotoURL
             FROM dbo.UserMaster ou
-            LEFT JOIN dbo.UserJobMaster oj        ON oj.JobID = ou.JobID
-            LEFT JOIN dbo.UserDepartmentMaster od ON od.DepartmentID = ou.DepartmentID
+            LEFT JOIN dbo.V_SilaUserTitle oj        ON oj.UserID = ou.UserID
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = ou.AttachmentID AND ou.AttachmentID <> 0 ORDER BY x.ID DESC) op
             WHERE ou.UserID = @OtherUserID;
@@ -435,7 +465,8 @@ BEGIN
         -- from its admins only; edit / delete your own, non-system messages.
         -- =================================================================
         DECLARE @GroupID INT, @GIsAdmin INT, @GLocked INT, @GRet INT = NULL;
-        IF @Operation IN (N'Group messages', N'Mark group read', N'Send group chat', N'Send group chat file', N'Group members', N'Lock group chat', N'Set group admin')
+        IF @Operation IN (N'Group messages', N'Mark group read', N'Send group chat', N'Send group chat file', N'Group members', N'Lock group chat', N'Set group admin',
+                          N'Add group members', N'Remove group member', N'Leave group')
         BEGIN
             SET @GroupID = TRY_CAST(JSON_VALUE(@LineData, '$.GroupID') AS INT);
             SELECT @GIsAdmin = ISNULL(gm.IsAdmin, 0) FROM GRP.GroupMembers gm WHERE gm.GroupID = @GroupID AND gm.UserID = @UserID;
@@ -482,7 +513,7 @@ BEGIN
                        WHERE n.GroupID = @GroupID AND n.OrginalChatID > 0) sup ON sup.OrginalChatID = m.ChatID
             LEFT JOIN dbo.AttachmentHistory t  ON t.AttachmentID = m.AttachmentID AND m.AttachmentID <> 0
             LEFT JOIN dbo.UserMaster fu        ON fu.UserID = m.FromUserID
-            LEFT JOIN dbo.UserJobMaster fj     ON fj.JobID = fu.JobID
+            LEFT JOIN dbo.V_SilaUserTitle fj     ON fj.UserID = fu.UserID
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = fu.AttachmentID AND fu.AttachmentID <> 0 ORDER BY x.ID DESC) fp
             -- TOP 1: the old mobile 'Delete Chat' took ChatIDs from the one-to-one sequence, so a group ChatID may repeat
@@ -507,15 +538,14 @@ BEGIN
             DECLARE @GCreatedBy NVARCHAR(50), @GCreatedDate DATETIME;
             SELECT @GCreatedBy = CreatedBy, @GCreatedDate = CreatedDate FROM GRP.GroupMaster WHERE GroupID = @GroupID;
 
-            SELECT gm.UserID, u.Username, u.FullName, j.JobName, d.DepartmentName, p.FileURL AS PhotoURL,
+            SELECT gm.UserID, u.Username, u.FullName, j.JobName, j.DepartmentName, p.FileURL AS PhotoURL,
                    ISNULL(gm.IsAdmin, 0) AS IsAdmin,
                    CASE WHEN ISNULL(gm.IsCreated, 0) = 1 OR u.Username = @GCreatedBy THEN 1 ELSE 0 END AS IsCreator,
                    gm.CreatedDate AS JoinedDate,
                    CASE WHEN gm.UserID = @UserID THEN 1 ELSE 0 END AS IsMe
             FROM GRP.GroupMembers gm
             JOIN dbo.UserMaster u                ON u.UserID = gm.UserID
-            LEFT JOIN dbo.UserJobMaster j        ON j.JobID = u.JobID
-            LEFT JOIN dbo.UserDepartmentMaster d ON d.DepartmentID = u.DepartmentID
+            LEFT JOIN dbo.V_SilaUserTitle j        ON j.UserID = u.UserID
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
             WHERE gm.GroupID = @GroupID
@@ -619,6 +649,92 @@ BEGIN
             END
             SELECT @GATarget AS UserID, @GAMake AS IsAdmin, @GASysID AS SystemChatID,
                    (SELECT Text FROM GRP.GroupChatHistory WHERE ChatID = @GASysID AND GroupID = @GroupID) AS SystemText;
+            RETURN;
+        END
+
+        -- -----------------------------------------------------------------
+        -- Group membership. Admins add members (active users, not yet in) and
+        -- remove them (not the creator, not themselves -- that is Leave); any
+        -- member leaves, except the last admin while others remain (make
+        -- someone admin first). The mobile app's 'add members' / 'remove member'
+        -- / 'Left Group' checked nobody. Each change posts one system line (not
+        -- an unread message). GRP.GroupMembers triggers keep SilaHistory 'G'
+        -- rows: the insert trigger is set-based, the delete trigger handles ONE
+        -- row per statement -- so members are removed one row at a time.
+        -- -----------------------------------------------------------------
+        IF @Operation IN (N'Add group members', N'Remove group member', N'Leave group')
+        BEGIN
+            DECLARE @MSysID INT = NULL, @MSysText NVARCHAR(MAX), @MCount INT = 0;
+            DECLARE @MMe NVARCHAR(MAX) = N'@' + ISNULL((SELECT FullName FROM dbo.UserMaster WHERE UserID = @UserID), @User);
+            DECLARE @MCreator NVARCHAR(50) = (SELECT CreatedBy FROM GRP.GroupMaster WHERE GroupID = @GroupID);
+
+            IF @Operation = N'Add group members'
+            BEGIN
+                IF @GIsAdmin = 0
+                BEGIN SET @State = 403; SET @Message = N'Only group admins can add members.'; RETURN; END
+                DECLARE @MAdd TABLE (UserID INT PRIMARY KEY, Name NVARCHAR(MAX));
+                INSERT INTO @MAdd (UserID, Name)
+                SELECT DISTINCT u.UserID, ISNULL(u.FullName, u.Username)
+                FROM OPENJSON(@LineData, '$.UserIDs') j
+                JOIN dbo.UserMaster u ON u.UserID = TRY_CAST(j.[value] AS INT) AND u.IsNotActive = 0
+                WHERE NOT EXISTS (SELECT 1 FROM GRP.GroupMembers gm WHERE gm.GroupID = @GroupID AND gm.UserID = u.UserID);
+                SET @MCount = (SELECT COUNT(*) FROM @MAdd);
+                IF @MCount = 0
+                BEGIN SET @State = 1; SET @Message = N'Pick people who are not in the group yet.'; RETURN; END
+                IF @MCount > 300
+                BEGIN SET @State = 1; SET @Message = N'Add at most 300 people at a time.'; RETURN; END
+                SET @MSysText = @MMe + N' added ' + CASE WHEN @MCount <= 5
+                    THEN (SELECT STRING_AGG(N'@' + Name, N', ') FROM @MAdd)
+                    ELSE CAST(@MCount AS NVARCHAR(10)) + N' members' END;
+                BEGIN TRANSACTION;
+                INSERT INTO GRP.GroupMembers (GroupID, UserID, IsAdmin, IsCreated, CreatedDate, UnreadCount)
+                SELECT @GroupID, UserID, 0, 0, GETDATE(), 0 FROM @MAdd;
+            END
+            ELSE
+            BEGIN
+                DECLARE @MTarget INT = CASE WHEN @Operation = N'Leave group' THEN @UserID ELSE TRY_CAST(JSON_VALUE(@LineData, '$.UserID') AS INT) END;
+                DECLARE @MTIsAdmin INT, @MTName NVARCHAR(MAX), @MTIsCreator INT;
+                SELECT @MTIsAdmin = ISNULL(gm.IsAdmin, 0), @MTName = ISNULL(u.FullName, u.Username),
+                       @MTIsCreator = CASE WHEN ISNULL(gm.IsCreated, 0) = 1 OR u.Username = @MCreator THEN 1 ELSE 0 END
+                FROM GRP.GroupMembers gm JOIN dbo.UserMaster u ON u.UserID = gm.UserID
+                WHERE gm.GroupID = @GroupID AND gm.UserID = @MTarget;
+                IF @MTIsAdmin IS NULL
+                BEGIN SET @State = 1; SET @Message = N'That person is not a member of this group.'; RETURN; END
+
+                IF @Operation = N'Remove group member'
+                BEGIN
+                    IF @GIsAdmin = 0
+                    BEGIN SET @State = 403; SET @Message = N'Only group admins can remove members.'; RETURN; END
+                    IF @MTarget = @UserID
+                    BEGIN SET @State = 1; SET @Message = N'Use Leave group to leave it yourself.'; RETURN; END
+                    IF @MTIsCreator = 1
+                    BEGIN SET @State = 403; SET @Message = N'The group creator can''t be removed.'; RETURN; END
+                    SET @MSysText = @MMe + N' removed @' + @MTName;
+                END
+                ELSE
+                BEGIN
+                    IF @MTIsAdmin = 1
+                       AND (SELECT COUNT(*) FROM GRP.GroupMembers WHERE GroupID = @GroupID AND ISNULL(IsAdmin, 0) = 1) <= 1
+                       AND (SELECT COUNT(*) FROM GRP.GroupMembers WHERE GroupID = @GroupID) > 1
+                    BEGIN SET @State = 1; SET @Message = N'You are the only admin. Make someone else an admin before you leave.'; RETURN; END
+                    SET @MSysText = @MMe + N' left the group';
+                END
+                SET @MCount = 1;
+                BEGIN TRANSACTION;
+                -- one row per statement (the delete trigger reads one row)
+                DELETE FROM GRP.GroupMembers WHERE GroupID = @GroupID AND UserID = @MTarget;
+            END
+
+            SET @MSysID = NEXT VALUE FOR dbo.ChatGroup;
+            INSERT INTO GRP.GroupChatHistory
+                (ChatID, GroupID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,
+                 CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem)
+            VALUES (@MSysID, @GroupID, @UserID, @User, @MSysText, @MSysText, 0, 0,
+                    @User, GETDATE(), @User, GETDATE(), 0, 0, 0, 0, 1);
+            DELETE FROM GRP.GroupUnreadChat WHERE ChatID = @MSysID AND GroupID = @GroupID;
+            COMMIT TRANSACTION;
+            SELECT @GroupID AS GroupID, @MCount AS Changed, @MSysID AS SystemChatID, @MSysText AS SystemText,
+                   (SELECT COUNT(*) FROM GRP.GroupMembers WHERE GroupID = @GroupID) AS MemberCount;
             RETURN;
         END
 
@@ -766,41 +882,368 @@ BEGIN
         -- -----------------------------------------------------------------
         IF @Operation = N'Find users'
         BEGIN
-            -- Search matches name, username or user group (UserGroupMaster.GroupName);
-            -- UserGroupID narrows to one user group (then up to 300, for "add all").
+            -- Search matches name, username or user group; UserGroupID narrows to one
+            -- user group (then up to 300, for "add all"). User groups, jobs and
+            -- departments come from quick / HR through dbo.V_SilaUserTitle.
             DECLARE @FUSearch NVARCHAR(100) = LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.Search'), N'')));
             DECLARE @FUGroup INT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.UserGroupID') AS INT), 0);
             DECLARE @FUTop INT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.Top') AS INT), 30);
+            DECLARE @FUMax INT = CASE WHEN TRY_CAST(JSON_VALUE(@LineData, '$.All') AS INT) = 1 THEN 2000
+                                      WHEN @FUGroup <> 0 THEN 300 ELSE 100 END;
             IF @FUTop < 1 SET @FUTop = 1;
-            IF @FUTop > CASE WHEN @FUGroup <> 0 THEN 300 ELSE 100 END SET @FUTop = CASE WHEN @FUGroup <> 0 THEN 300 ELSE 100 END;
-            SELECT TOP (@FUTop) u.UserID, u.Username, u.FullName, j.JobName, d.DepartmentName, p.FileURL AS PhotoURL,
-                   u.GroupID AS UserGroupID, ug.GroupName AS UserGroupName
+            IF @FUTop > @FUMax SET @FUTop = @FUMax;
+            SELECT TOP (@FUTop) u.UserID, u.Username, u.FullName, j.JobName, j.DepartmentName, p.FileURL AS PhotoURL,
+                   j.UserGroupID, j.UserGroupName
             FROM dbo.UserMaster u
-            LEFT JOIN dbo.UserGroupMaster ug     ON ug.GroupID = u.GroupID
-            LEFT JOIN dbo.UserJobMaster j        ON j.JobID = u.JobID
-            LEFT JOIN dbo.UserDepartmentMaster d ON d.DepartmentID = u.DepartmentID
+            LEFT JOIN dbo.V_SilaUserTitle j        ON j.UserID = u.UserID
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
             WHERE u.IsNotActive = 0 AND u.UserID <> @UserID
-              AND (@FUGroup = 0 OR u.GroupID = @FUGroup)
+              AND (@FUGroup = 0 OR j.UserGroupID = @FUGroup)
               AND (@FUSearch = N'' OR u.FullName LIKE N'%' + @FUSearch + N'%' OR u.Username LIKE N'%' + @FUSearch + N'%'
-                   OR ug.GroupName LIKE N'%' + @FUSearch + N'%')
+                   OR j.UserGroupName LIKE N'%' + @FUSearch + N'%')
             ORDER BY CASE WHEN u.FullName LIKE @FUSearch + N'%' OR u.Username LIKE @FUSearch + N'%' THEN 0 ELSE 1 END, u.FullName;
             RETURN;
         END
 
         -- -----------------------------------------------------------------
-        -- User groups (read-only): UserGroupMaster with how many active users
-        -- (other than the caller) are in each -- the picker's filter list.
+        -- System settings (read-only): user master, Sila's user group master and
+        -- the channel master. Only the user 'mhd' -- enforced here, not by the app.
+        -- -----------------------------------------------------------------
+        IF @Operation IN (N'Settings users', N'Settings user groups', N'Settings channels', N'Settings channel',
+                          N'Save channel purpose', N'Settings channel categories', N'Save channel',
+                          N'Add channel members', N'Set channel member', N'Remove channel member',
+                          N'Settings user group', N'Save user group', N'Delete user group', N'Set users group',
+                          N'Save channel sla')
+        BEGIN
+            IF LOWER(@User) <> N'mhd'
+            BEGIN SET @State = 403; SET @Message = N'System settings are not available for this user.'; RETURN; END
+
+            IF @Operation = N'Settings users'
+            BEGIN
+                -- never the Hash column
+                SELECT u.UserID, u.Username, u.FullName, t.JobName, t.DepartmentName, t.UserGroupName AS QuickGroupName,
+                       u.GroupID AS SilaGroupID, g.GroupName AS SilaGroupName, u.MobileNumber, u.LocalNumber,
+                       u.IsAdmin, u.IsDeveloper, u.IsNotActive, u.ForceLogout, u.CreatedDate, u.CreatedBy,
+                       u.ChangePasswordDate, p.FileURL AS PhotoURL
+                FROM dbo.UserMaster u
+                LEFT JOIN dbo.V_SilaUserTitle t  ON t.UserID = u.UserID
+                LEFT JOIN dbo.UserGroupMaster g  ON g.GroupID = u.GroupID
+                OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
+                             WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
+                ORDER BY u.IsNotActive, u.FullName;
+                RETURN;
+            END
+
+            IF @Operation = N'Settings user groups'
+            BEGIN
+                SELECT g.GroupID, g.GroupName, g.CreatedBy, g.CreatedDate, g.LastMintBy, g.LastMintDate,
+                       SUM(CASE WHEN u.UserID IS NOT NULL AND u.IsNotActive = 0 THEN 1 ELSE 0 END) AS ActiveUsers,
+                       COUNT(u.UserID) AS AllUsers
+                FROM dbo.UserGroupMaster g
+                LEFT JOIN dbo.UserMaster u ON u.GroupID = g.GroupID
+                GROUP BY g.GroupID, g.GroupName, g.CreatedBy, g.CreatedDate, g.LastMintBy, g.LastMintDate
+                ORDER BY g.GroupName;
+                -- users whose GroupID points at no group in this table
+                SELECT COUNT(*) AS OrphanUsers,
+                       SUM(CASE WHEN u.IsNotActive = 0 THEN 1 ELSE 0 END) AS OrphanActiveUsers,
+                       COUNT(DISTINCT u.GroupID) AS OrphanGroupIDs
+                FROM dbo.UserMaster u
+                WHERE NOT EXISTS (SELECT 1 FROM dbo.UserGroupMaster g WHERE g.GroupID = u.GroupID);
+                RETURN;
+            END
+
+            -- -------------------------------------------------------------
+            -- Sila user groups (dbo.UserGroupMaster; a user's group is
+            -- UserMaster.GroupID -- the mobile control panel uses the same).
+            -- -------------------------------------------------------------
+            IF @Operation = N'Settings user group'
+            BEGIN
+                DECLARE @UGId INT = TRY_CAST(JSON_VALUE(@LineData, '$.GroupID') AS INT);
+                IF NOT EXISTS (SELECT 1 FROM dbo.UserGroupMaster WHERE GroupID = @UGId)
+                BEGIN SET @State = 404; SET @Message = N'Group not found.'; RETURN; END
+                SELECT g.GroupID, g.GroupName, g.CreatedBy, g.CreatedDate, g.LastMintBy, g.LastMintDate
+                FROM dbo.UserGroupMaster g WHERE g.GroupID = @UGId;
+                SELECT u.UserID, u.Username, u.FullName, t.JobName, t.DepartmentName, p.FileURL AS PhotoURL, u.IsNotActive
+                FROM dbo.UserMaster u
+                LEFT JOIN dbo.V_SilaUserTitle t ON t.UserID = u.UserID
+                OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
+                             WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
+                WHERE u.GroupID = @UGId
+                ORDER BY u.IsNotActive, u.FullName;
+                RETURN;
+            END
+
+            -- new group (GroupID 0 / missing) or rename one; names are unique
+            IF @Operation = N'Save user group'
+            BEGIN
+                DECLARE @SGId INT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.GroupID') AS INT), 0);
+                DECLARE @SGName NVARCHAR(MAX) = LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.GroupName'), N'')));
+                IF @SGName = N'' BEGIN SET @State = 1; SET @Message = N'Give the group a name.'; RETURN; END
+                IF LEN(@SGName) > 100 BEGIN SET @State = 1; SET @Message = N'The name can be at most 100 characters.'; RETURN; END
+                IF @SGId <> 0 AND NOT EXISTS (SELECT 1 FROM dbo.UserGroupMaster WHERE GroupID = @SGId)
+                BEGIN SET @State = 404; SET @Message = N'Group not found.'; RETURN; END
+                IF EXISTS (SELECT 1 FROM dbo.UserGroupMaster WHERE LTRIM(RTRIM(GroupName)) = @SGName AND GroupID <> @SGId)
+                BEGIN SET @State = 1; SET @Message = N'Another group already has this name.'; RETURN; END
+                IF @SGId = 0
+                BEGIN
+                    INSERT INTO dbo.UserGroupMaster (GroupName, CreatedBy, CreatedDate, LastMintBy, LastMintDate)
+                    VALUES (@SGName, @User, GETDATE(), @User, GETDATE());
+                    SET @SGId = SCOPE_IDENTITY();
+                END
+                ELSE
+                    UPDATE dbo.UserGroupMaster SET GroupName = @SGName, LastMintBy = @User, LastMintDate = GETDATE()
+                    WHERE GroupID = @SGId;
+                SELECT @SGId AS GroupID;
+                RETURN;
+            END
+
+            -- only an empty group (no user, active or not, points at it)
+            IF @Operation = N'Delete user group'
+            BEGIN
+                DECLARE @DGId INT = TRY_CAST(JSON_VALUE(@LineData, '$.GroupID') AS INT);
+                IF NOT EXISTS (SELECT 1 FROM dbo.UserGroupMaster WHERE GroupID = @DGId)
+                BEGIN SET @State = 404; SET @Message = N'Group not found.'; RETURN; END
+                IF EXISTS (SELECT 1 FROM dbo.UserMaster WHERE GroupID = @DGId)
+                BEGIN SET @State = 1; SET @Message = N'Move its users to another group first.'; RETURN; END
+                DELETE FROM dbo.UserGroupMaster WHERE GroupID = @DGId;
+                SELECT @@ROWCOUNT AS Deleted;
+                RETURN;
+            END
+
+            -- move users into a group (their UserMaster.GroupID)
+            IF @Operation = N'Set users group'
+            BEGIN
+                DECLARE @MGId INT = TRY_CAST(JSON_VALUE(@LineData, '$.GroupID') AS INT);
+                IF NOT EXISTS (SELECT 1 FROM dbo.UserGroupMaster WHERE GroupID = @MGId)
+                BEGIN SET @State = 404; SET @Message = N'Group not found.'; RETURN; END
+                UPDATE u SET u.GroupID = @MGId
+                FROM dbo.UserMaster u
+                JOIN (SELECT DISTINCT CAST([value] AS INT) AS UserID FROM OPENJSON(@LineData, '$.UserIDs')
+                      WHERE TRY_CAST([value] AS INT) IS NOT NULL) x ON x.UserID = u.UserID
+                WHERE ISNULL(u.GroupID, 0) <> @MGId;
+                SELECT @@ROWCOUNT AS Moved;
+                RETURN;
+            END
+
+            -- the categories a channel can be in (the New channel / Edit channel form)
+            IF @Operation = N'Settings channel categories'
+            BEGIN
+                SELECT cc.ChannelCategoryID, cc.CategoryDescription,
+                       (SELECT COUNT(*) FROM CHA.ChannelMaster c WHERE c.CategoryID = cc.ChannelCategoryID) AS Channels
+                FROM CHA.ChannelCategory cc
+                ORDER BY cc.CategoryDescription;
+                RETURN;
+            END
+
+            -- New channel (ChannelID 0 / missing) or edit one: name (unique, at most 100
+            -- characters), category, private, inactive. A new channel may come with its
+            -- purpose. Members are added afterwards ('Add channel members').
+            IF @Operation = N'Save channel'
+            BEGIN
+                DECLARE @CHId INT, @CHName NVARCHAR(MAX), @CHCat INT, @CHPriv INT, @CHInactive INT,
+                        @CHPurpose NVARCHAR(MAX), @CHExamples NVARCHAR(MAX);
+                SELECT @CHId = ISNULL(ChannelID, 0), @CHName = LTRIM(RTRIM(ISNULL(Name, N''))), @CHCat = CategoryID,
+                       @CHPriv = CASE WHEN IsPrivate = 1 THEN 1 ELSE 0 END, @CHInactive = CASE WHEN InActive = 1 THEN 1 ELSE 0 END,
+                       @CHPurpose = LTRIM(RTRIM(ISNULL(Purpose, N''))), @CHExamples = LTRIM(RTRIM(ISNULL(Examples, N'')))
+                FROM OPENJSON(@LineData) WITH (ChannelID INT '$.ChannelID', Name NVARCHAR(MAX) '$.Name', CategoryID INT '$.CategoryID',
+                     IsPrivate INT '$.IsPrivate', InActive INT '$.InActive', Purpose NVARCHAR(MAX) '$.Purpose',
+                     Examples NVARCHAR(MAX) '$.Examples');
+                IF @CHName = N'' BEGIN SET @State = 1; SET @Message = N'Give the channel a name.'; RETURN; END
+                IF LEN(@CHName) > 100 BEGIN SET @State = 1; SET @Message = N'The name can be at most 100 characters.'; RETURN; END
+                IF NOT EXISTS (SELECT 1 FROM CHA.ChannelCategory WHERE ChannelCategoryID = @CHCat)
+                BEGIN SET @State = 1; SET @Message = N'Pick a category.'; RETURN; END
+                IF @CHId <> 0 AND NOT EXISTS (SELECT 1 FROM CHA.ChannelMaster WHERE ChannelID = @CHId)
+                BEGIN SET @State = 404; SET @Message = N'Channel not found.'; RETURN; END
+                IF EXISTS (SELECT 1 FROM CHA.ChannelMaster WHERE LTRIM(RTRIM(Name)) = @CHName AND ChannelID <> @CHId)
+                BEGIN SET @State = 1; SET @Message = N'Another channel already has this name.'; RETURN; END
+                IF LEN(@CHPurpose) > 1000 OR LEN(@CHExamples) > 1000
+                BEGIN SET @State = 1; SET @Message = N'Purpose and examples can be at most 1000 characters each.'; RETURN; END
+
+                BEGIN TRANSACTION;
+                IF @CHId = 0
+                BEGIN
+                    INSERT INTO CHA.ChannelMaster (Name, CategoryID, InActive, IsPrivate, CreatedDate, CreatedBy, LastMaintDate, LastMaintBy)
+                    VALUES (@CHName, @CHCat, @CHInactive, CASE WHEN @CHPriv = 1 THEN N'1' ELSE N'0' END, GETDATE(), @User, GETDATE(), @User);
+                    SET @CHId = SCOPE_IDENTITY();
+                    IF @CHPurpose <> N''
+                        INSERT INTO dbo.SilaChannelPurpose (ChannelID, Purpose, Examples, OfferInAssistant, LastMaintBy)
+                        VALUES (@CHId, @CHPurpose, @CHExamples, 1, @User);
+                END
+                ELSE
+                    UPDATE CHA.ChannelMaster SET Name = @CHName, CategoryID = @CHCat, InActive = @CHInactive,
+                           IsPrivate = CASE WHEN @CHPriv = 1 THEN N'1' ELSE N'0' END, LastMaintDate = GETDATE(), LastMaintBy = @User
+                    WHERE ChannelID = @CHId;
+                COMMIT TRANSACTION;
+                SELECT @CHId AS ChannelID;
+                RETURN;
+            END
+
+            -- Channel members: add (active users, not already in), change roles, remove.
+            -- New tickets copy roles from here; existing tickets keep theirs.
+            IF @Operation IN (N'Add channel members', N'Set channel member', N'Remove channel member')
+            BEGIN
+                DECLARE @MChannel INT = TRY_CAST(JSON_VALUE(@LineData, '$.ChannelID') AS INT);
+                IF NOT EXISTS (SELECT 1 FROM CHA.ChannelMaster WHERE ChannelID = @MChannel)
+                BEGIN SET @State = 404; SET @Message = N'Channel not found.'; RETURN; END
+
+                IF @Operation = N'Add channel members'
+                BEGIN
+                    INSERT INTO CHA.ChannelMembers (ChannelID, UserID, IsTeamLeader, IsAdmin, CreatedDate)
+                    SELECT @MChannel, x.UserID, MAX(CASE WHEN x.IsTeamLeader = 1 THEN 1 ELSE 0 END),
+                           MAX(CASE WHEN x.IsAdmin = 1 THEN 1 ELSE 0 END), GETDATE()
+                    FROM OPENJSON(@LineData, '$.Members') WITH (UserID INT '$.UserID', IsAdmin INT '$.IsAdmin', IsTeamLeader INT '$.IsTeamLeader') x
+                    JOIN dbo.UserMaster u ON u.UserID = x.UserID AND u.IsNotActive = 0
+                    WHERE NOT EXISTS (SELECT 1 FROM CHA.ChannelMembers m WHERE m.ChannelID = @MChannel AND m.UserID = x.UserID)
+                    GROUP BY x.UserID;
+                    SELECT @@ROWCOUNT AS Added;
+                    RETURN;
+                END
+
+                DECLARE @MUser INT = TRY_CAST(JSON_VALUE(@LineData, '$.UserID') AS INT);
+                IF NOT EXISTS (SELECT 1 FROM CHA.ChannelMembers WHERE ChannelID = @MChannel AND UserID = @MUser)
+                BEGIN SET @State = 1; SET @Message = N'That person is not in this channel.'; RETURN; END
+                IF @Operation = N'Set channel member'
+                BEGIN
+                    UPDATE CHA.ChannelMembers
+                    SET IsAdmin = CASE WHEN TRY_CAST(JSON_VALUE(@LineData, '$.IsAdmin') AS INT) = 1 THEN 1 ELSE 0 END,
+                        IsTeamLeader = CASE WHEN TRY_CAST(JSON_VALUE(@LineData, '$.IsTeamLeader') AS INT) = 1 THEN 1 ELSE 0 END
+                    WHERE ChannelID = @MChannel AND UserID = @MUser;
+                    SELECT UserID, IsAdmin, IsTeamLeader FROM CHA.ChannelMembers WHERE ChannelID = @MChannel AND UserID = @MUser;
+                    RETURN;
+                END
+                DELETE FROM CHA.ChannelMembers WHERE ChannelID = @MChannel AND UserID = @MUser;
+                SELECT @@ROWCOUNT AS Removed;
+                RETURN;
+            END
+
+            -- a channel's SLA targets (dbo.SilaChannelSla, SQLScript/SilaSla.sql), in WORKING
+            -- minutes (Sat-Thu 08:00-16:00; a working day = 480). NULL / 0 = no target.
+            IF @Operation = N'Save channel sla'
+            BEGIN
+                DECLARE @SlChannel INT = TRY_CAST(JSON_VALUE(@LineData, '$.ChannelID') AS INT);
+                DECLARE @SlReply INT = NULLIF(TRY_CAST(JSON_VALUE(@LineData, '$.FirstReplyMinutes') AS INT), 0);
+                DECLARE @SlFinish INT = NULLIF(TRY_CAST(JSON_VALUE(@LineData, '$.FinishMinutes') AS INT), 0);
+                IF NOT EXISTS (SELECT 1 FROM CHA.ChannelMaster WHERE ChannelID = @SlChannel)
+                BEGIN SET @State = 404; SET @Message = N'Channel not found.'; RETURN; END
+                IF @SlReply < 0 OR @SlFinish < 0 OR @SlReply > 480 * 60 OR @SlFinish > 480 * 120
+                BEGIN SET @State = 1; SET @Message = N'Targets must be between 1 minute and 60 working days (reply) / 120 (finish).'; RETURN; END
+                UPDATE dbo.SilaChannelSla SET FirstReplyMinutes = @SlReply, FinishMinutes = @SlFinish, LastMaintBy = @User, LastMaintDate = GETDATE()
+                WHERE ChannelID = @SlChannel;
+                IF @@ROWCOUNT = 0
+                    INSERT INTO dbo.SilaChannelSla (ChannelID, FirstReplyMinutes, FinishMinutes, LastMaintBy) VALUES (@SlChannel, @SlReply, @SlFinish, @User);
+                SELECT ChannelID, FirstReplyMinutes, FinishMinutes, LastMaintBy, LastMaintDate FROM dbo.SilaChannelSla WHERE ChannelID = @SlChannel;
+                RETURN;
+            END
+
+            -- what a channel handles (dbo.SilaChannelPurpose, SQLScript/SilaChannelPurpose.sql):
+            -- the one write in System Settings. Purpose required, at most 1000 characters each.
+            IF @Operation = N'Save channel purpose'
+            BEGIN
+                DECLARE @PChannel INT, @PPurpose NVARCHAR(MAX), @PExamples NVARCHAR(MAX), @POffer INT;
+                SELECT @PChannel = ChannelID, @PPurpose = LTRIM(RTRIM(ISNULL(Purpose, N''))),
+                       @PExamples = LTRIM(RTRIM(ISNULL(Examples, N''))), @POffer = CASE WHEN Offer = 0 THEN 0 ELSE 1 END
+                FROM OPENJSON(@LineData) WITH (ChannelID INT '$.ChannelID', Purpose NVARCHAR(MAX) '$.Purpose',
+                     Examples NVARCHAR(MAX) '$.Examples', Offer INT '$.OfferInAssistant');
+                IF NOT EXISTS (SELECT 1 FROM CHA.ChannelMaster WHERE ChannelID = @PChannel)
+                BEGIN SET @State = 404; SET @Message = N'Channel not found.'; RETURN; END
+                IF @PPurpose = N'' BEGIN SET @State = 1; SET @Message = N'Write what the channel handles.'; RETURN; END
+                IF LEN(@PPurpose) > 1000 OR LEN(@PExamples) > 1000
+                BEGIN SET @State = 1; SET @Message = N'Purpose and examples can be at most 1000 characters each.'; RETURN; END
+                UPDATE dbo.SilaChannelPurpose SET Purpose = @PPurpose, Examples = @PExamples, OfferInAssistant = @POffer,
+                       LastMaintBy = @User, LastMaintDate = GETDATE()
+                WHERE ChannelID = @PChannel;
+                IF @@ROWCOUNT = 0
+                    INSERT INTO dbo.SilaChannelPurpose (ChannelID, Purpose, Examples, OfferInAssistant, LastMaintBy)
+                    VALUES (@PChannel, @PPurpose, @PExamples, @POffer, @User);
+                SELECT p.ChannelID, p.Purpose, p.Examples, p.OfferInAssistant, p.LastMaintBy AS PurposeBy,
+                       p.LastMaintDate AS PurposeDate
+                FROM dbo.SilaChannelPurpose p WHERE p.ChannelID = @PChannel;
+                RETURN;
+            END
+
+            IF @Operation = N'Settings channel'
+            BEGIN
+                DECLARE @SChannel INT = TRY_CAST(JSON_VALUE(@LineData, '$.ChannelID') AS INT);
+                IF NOT EXISTS (SELECT 1 FROM CHA.ChannelMaster WHERE ChannelID = @SChannel)
+                BEGIN SET @State = 404; SET @Message = N'Channel not found.'; RETURN; END
+
+                SELECT c.ChannelID, c.Name, c.CategoryID, cc.CategoryDescription, c.InActive,
+                       CASE WHEN LTRIM(RTRIM(ISNULL(c.IsPrivate, N'0'))) = N'1' THEN 1 ELSE 0 END AS IsPrivate,
+                       c.CreatedDate, c.CreatedBy, cu.FullName AS CreatedByName, c.LastMaintDate, c.LastMaintBy,
+                       mu.FullName AS LastMaintByName,
+                       ISNULL(p.Purpose, N'') AS Purpose, ISNULL(p.Examples, N'') AS Examples,
+                       CAST(ISNULL(p.OfferInAssistant, 0) AS INT) AS OfferInAssistant,
+                       p.LastMaintBy AS PurposeBy, pu.FullName AS PurposeByName, p.LastMaintDate AS PurposeDate,
+                       sl.FirstReplyMinutes AS ReplyTarget, sl.FinishMinutes AS FinishTarget
+                FROM CHA.ChannelMaster c
+                LEFT JOIN dbo.SilaChannelSla sl ON sl.ChannelID = c.ChannelID
+                LEFT JOIN CHA.ChannelCategory cc ON cc.ChannelCategoryID = c.CategoryID
+                LEFT JOIN dbo.UserMaster cu      ON cu.Username = c.CreatedBy
+                LEFT JOIN dbo.UserMaster mu      ON mu.Username = c.LastMaintBy
+                LEFT JOIN dbo.SilaChannelPurpose p ON p.ChannelID = c.ChannelID
+                LEFT JOIN dbo.UserMaster pu      ON pu.Username = p.LastMaintBy
+                WHERE c.ChannelID = @SChannel;
+
+                SELECT m.UserID, u.Username, u.FullName, t.JobName, t.DepartmentName, p.FileURL AS PhotoURL,
+                       m.IsAdmin, m.IsTeamLeader, m.CreatedDate, u.IsNotActive
+                FROM CHA.ChannelMembers m
+                JOIN dbo.UserMaster u              ON u.UserID = m.UserID
+                LEFT JOIN dbo.V_SilaUserTitle t    ON t.UserID = u.UserID
+                OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
+                             WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
+                WHERE m.ChannelID = @SChannel
+                ORDER BY m.IsAdmin DESC, m.IsTeamLeader DESC, u.IsNotActive, u.FullName;
+
+                SELECT th.TicketState, ts.StateDescription, COUNT(*) AS Tickets, MAX(th.LastMaintDate) AS LastUpdate
+                FROM CHA.TicketHistory th
+                LEFT JOIN CHA.TicketState ts ON ts.StateID = th.TicketState
+                WHERE th.TicketChannelID = @SChannel
+                GROUP BY th.TicketState, ts.StateDescription
+                ORDER BY th.TicketState;
+
+                SELECT TOP (20) th.TicketID, th.TicketSubject, th.TicketState, ts.StateDescription, th.CreatedDate,
+                       th.CreatedByUser, cu.FullName AS CreatedByName, th.LastMaintDate
+                FROM CHA.TicketHistory th
+                LEFT JOIN CHA.TicketState ts ON ts.StateID = th.TicketState
+                LEFT JOIN dbo.UserMaster cu  ON cu.Username = th.CreatedByUser
+                WHERE th.TicketChannelID = @SChannel
+                ORDER BY th.TicketID DESC;
+                RETURN;
+            END
+
+            -- Settings channels
+            SELECT c.ChannelID, c.Name, c.CategoryID, cc.CategoryDescription, c.InActive,
+                   CASE WHEN LTRIM(RTRIM(ISNULL(c.IsPrivate, N'0'))) = N'1' THEN 1 ELSE 0 END AS IsPrivate,
+                   c.CreatedDate, c.CreatedBy, c.LastMaintDate, c.LastMaintBy,
+                   ISNULL(m.Members, 0) AS Members, ISNULL(m.Admins, 0) AS Admins, ISNULL(m.TeamLeaders, 0) AS TeamLeaders,
+                   ISNULL(t.OpenTickets, 0) AS OpenTickets, ISNULL(t.AllTickets, 0) AS AllTickets,
+                   ISNULL(p.Purpose, N'') AS Purpose, CAST(ISNULL(p.OfferInAssistant, 0) AS INT) AS OfferInAssistant
+            FROM CHA.ChannelMaster c
+            LEFT JOIN CHA.ChannelCategory cc ON cc.ChannelCategoryID = c.CategoryID
+            LEFT JOIN dbo.SilaChannelPurpose p ON p.ChannelID = c.ChannelID
+            LEFT JOIN (SELECT ChannelID, COUNT(*) AS Members, SUM(CASE WHEN IsAdmin = 1 THEN 1 ELSE 0 END) AS Admins,
+                              SUM(CASE WHEN IsTeamLeader = 1 THEN 1 ELSE 0 END) AS TeamLeaders
+                       FROM CHA.ChannelMembers GROUP BY ChannelID) m ON m.ChannelID = c.ChannelID
+            LEFT JOIN (SELECT TicketChannelID, SUM(CASE WHEN TicketState < 50 THEN 1 ELSE 0 END) AS OpenTickets, COUNT(*) AS AllTickets
+                       FROM CHA.TicketHistory GROUP BY TicketChannelID) t ON t.TicketChannelID = c.ChannelID
+            ORDER BY cc.CategoryDescription, c.Name;
+            RETURN;
+        END
+
+        -- -----------------------------------------------------------------
+        -- User groups (read-only): the user groups (quick.QUK.UserGroupMaster, through
+        -- dbo.V_SilaUserTitle) with how many active users (other than the caller)
+        -- are in each -- the picker's filter list.
         -- -----------------------------------------------------------------
         IF @Operation = N'User groups'
         BEGIN
-            SELECT ug.GroupID AS UserGroupID, ug.GroupName AS UserGroupName, COUNT(u.UserID) AS ActiveUsers
-            FROM dbo.UserGroupMaster ug
-            LEFT JOIN dbo.UserMaster u ON u.GroupID = ug.GroupID AND u.IsNotActive = 0 AND u.UserID <> @UserID
-            GROUP BY ug.GroupID, ug.GroupName
-            HAVING COUNT(u.UserID) > 0
-            ORDER BY ug.GroupName;
+            SELECT t.UserGroupID, MAX(t.UserGroupName) AS UserGroupName, COUNT(*) AS ActiveUsers
+            FROM dbo.UserMaster u
+            JOIN dbo.V_SilaUserTitle t ON t.UserID = u.UserID
+            WHERE u.IsNotActive = 0 AND u.UserID <> @UserID AND t.UserGroupID IS NOT NULL
+            GROUP BY t.UserGroupID
+            ORDER BY MAX(t.UserGroupName);
             RETURN;
         END
 
@@ -882,7 +1325,7 @@ BEGIN
             FROM GRP.GroupChatHistory m
             LEFT JOIN dbo.AttachmentHistory t  ON t.AttachmentID = m.AttachmentID AND m.AttachmentID <> 0
             LEFT JOIN dbo.UserMaster fu        ON fu.UserID = m.FromUserID
-            LEFT JOIN dbo.UserJobMaster fj     ON fj.JobID = fu.JobID
+            LEFT JOIN dbo.V_SilaUserTitle fj     ON fj.UserID = fu.UserID
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = fu.AttachmentID AND fu.AttachmentID <> 0 ORDER BY x.ID DESC) fp
             -- TOP 1: the old mobile 'Delete Chat' took ChatIDs from the one-to-one sequence, so a group ChatID may repeat
@@ -921,8 +1364,26 @@ USING (VALUES
     (N'dbo.APISilaWebOperation', N'Group members',     N'Groups: members of a group the caller belongs to (details panel)'),
     (N'dbo.APISilaWebOperation', N'Lock group chat',   N'Groups: admins lock / unlock sending (ChatIsLocked), posts a system line'),
     (N'dbo.APISilaWebOperation', N'Set group admin',   N'Groups: admins make / dismiss admins (creator protected, keeps one admin), posts a system line'),
+    (N'dbo.APISilaWebOperation', N'Add group members',   N'Groups: admins add active users (max 300), posts a system line'),
+    (N'dbo.APISilaWebOperation', N'Remove group member', N'Groups: admins remove a member (not the creator, not themselves), posts a system line'),
+    (N'dbo.APISilaWebOperation', N'Leave group',         N'Groups: a member leaves (not the last admin while others remain), posts a system line'),
     (N'dbo.APISilaWebOperation', N'Find users',        N'Pickers: active users by name / username / user group (photo, job)'),
-    (N'dbo.APISilaWebOperation', N'User groups',       N'Pickers: user groups (UserGroupMaster) with their active user counts'),
+    (N'dbo.APISilaWebOperation', N'User groups',       N'Pickers: user groups (quick, via V_SilaUserTitle) with their active user counts'),
+    (N'dbo.APISilaWebOperation', N'Settings users',       N'System Settings (mhd only, checked in the SP): user master, read-only, no hash'),
+    (N'dbo.APISilaWebOperation', N'Settings user groups', N'System Settings (mhd only, checked in the SP): dbo.UserGroupMaster, read-only'),
+    (N'dbo.APISilaWebOperation', N'Settings channels',    N'System Settings (mhd only, checked in the SP): channel master, read-only'),
+    (N'dbo.APISilaWebOperation', N'Settings channel',     N'System Settings (mhd only, checked in the SP): one channel''s details, members, tickets'),
+    (N'dbo.APISilaWebOperation', N'Save channel purpose', N'System Settings (mhd only, checked in the SP): what a channel handles (dbo.SilaChannelPurpose)'),
+    (N'dbo.APISilaWebOperation', N'Settings channel categories', N'System Settings (mhd only, checked in the SP): channel categories for the channel form'),
+    (N'dbo.APISilaWebOperation', N'Save channel sla',      N'System Settings (mhd only, checked in the SP): a channel''s first-reply / finish targets'),
+    (N'dbo.APISilaWebOperation', N'Save channel',          N'System Settings (mhd only, checked in the SP): create or edit a channel'),
+    (N'dbo.APISilaWebOperation', N'Add channel members',   N'System Settings (mhd only, checked in the SP): add active users to a channel'),
+    (N'dbo.APISilaWebOperation', N'Set channel member',    N'System Settings (mhd only, checked in the SP): a channel member''s admin / team leader roles'),
+    (N'dbo.APISilaWebOperation', N'Remove channel member', N'System Settings (mhd only, checked in the SP): remove a channel member'),
+    (N'dbo.APISilaWebOperation', N'Settings user group',   N'System Settings (mhd only, checked in the SP): one Sila user group and its users'),
+    (N'dbo.APISilaWebOperation', N'Save user group',       N'System Settings (mhd only, checked in the SP): create or rename a Sila user group'),
+    (N'dbo.APISilaWebOperation', N'Delete user group',     N'System Settings (mhd only, checked in the SP): delete an empty Sila user group'),
+    (N'dbo.APISilaWebOperation', N'Set users group',       N'System Settings (mhd only, checked in the SP): move users into a Sila user group'),
     (N'dbo.APISilaWebOperation', N'Create group',      N'Groups: create a group, the caller is creator + admin, posts a system line'),
     (N'dbo.APISilaWebOperation', N'Mark group read',   N'Groups: clear the caller''s unread rows for a group'),
     (N'dbo.APISilaWebOperation', N'Send group chat',   N'Groups: send a text message (members; locked groups: admins only)'),

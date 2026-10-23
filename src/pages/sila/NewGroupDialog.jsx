@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { X, Search, Check, Users, UserPlus } from 'lucide-react';
 import Avatar from './Avatar.jsx';
 import { findUsers, createGroup, loadUserGroups } from '../../shared/chat.js';
+import DirectoryRefresh, { useDirectoryVersion } from './DirectoryRefresh.jsx';
+import ClearSearch from './ClearSearch.jsx';
 
 // New group: a name, members picked from the user directory ('Find users') --
 // by name, username or user group, with a user-group filter and "Add all" --
@@ -23,7 +25,8 @@ export default function NewGroupDialog({ onClose, onCreated }) {
   const searchSeq = useRef(0);
 
   useEffect(() => { nameRef.current?.focus(); }, []);
-  useEffect(() => { loadUserGroups().then(setUserGroups).catch(() => setUserGroups([])); }, []);
+  const dirVersion = useDirectoryVersion();
+  useEffect(() => { loadUserGroups().then(setUserGroups).catch(() => setUserGroups([])); }, [dirVersion]);
   useEffect(() => {
     const esc = (e) => { if (e.key === 'Escape' && !busy) onClose(); };
     document.addEventListener('keydown', esc);
@@ -41,7 +44,7 @@ export default function NewGroupDialog({ onClose, onCreated }) {
         .catch(err => { if (seq === searchSeq.current) setResults({ status: 'error', users: [], error: err.message }); });
     }, q ? 250 : 0);
     return () => clearTimeout(t);
-  }, [q, userGroupId]);
+  }, [q, userGroupId, dirVersion]);
 
   const isPicked = (u) => picked.some(p => p.id === u.id);
   const toggle = (u) => setPicked(list => (list.some(p => p.id === u.id) ? list.filter(p => p.id !== u.id) : [...list, { ...u, admin: false }]));
@@ -141,6 +144,8 @@ export default function NewGroupDialog({ onClose, onCreated }) {
                   flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 14,
                   color: 'var(--text)', fontFamily: 'var(--font)',
                 }} />
+              <ClearSearch value={q} onClear={() => setQ('')} />
+              <DirectoryRefresh />
             </div>
 
             <div role="listbox" aria-multiselectable="true" aria-label="People" style={{ display: 'flex', flexDirection: 'column', gap: 2, minHeight: 120 }}>

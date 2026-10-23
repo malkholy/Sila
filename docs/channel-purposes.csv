@@ -1,0 +1,134 @@
+﻿ChannelID,Name,Category,Visibility,Status,Tickets,Tickets12m,LastTicket,Purpose (draft),Example requests,Offer in assistant
+32,Account Payable Support,Accounting,public,active,1430,180,2026-09-20,"Payments to suppliers against purchase orders, supplier returns and debit notes, VAT audit follow-up, vendor payment terms, supplier statements.",Pay PO 2611588; supplier return (Megapack); VAT inspection notes; new payment term,Y
+22,Accounting Recievable Support,Accounting,private,active,9427,1511,2026-09-21,"Customer credit and collections: credit limit approvals, customer account statements, bank deposits not yet on the system, daily loadings and delivery notes follow-up, shared freight.",Approve extra credit for a customer; customer statement; deposits not on the system,Y
+461,Banking Support,Accounting,public,low use,9,9,2026-09-19,"Bank operations: deposits, transfers, bank authorisations, bank accounts, unidentified amounts, refunds to the sending account.",Unidentified deposit; refund a transfer to its sender; bank authorisation,Y
+450,Customers Registration Support,Accounting,public,active,82,69,2026-09-15,"Registering new customers (coding) and updating customer documents: color-center customers, project customers, tax papers.",Code new project customer; new code for a color center; update tax documents,Y
+275,Export Accounting Support,Accounting,public,active,340,90,2026-09-20,"Export accounting: export invoices, e-invoices for export, Wirechoice, VAT notes on export.",Export invoices up to a date; export e-invoice,Y
+33,General Accounting Support,Accounting,public,active,4962,610,2026-09-21,"General accounting: supplier dues to transfer, cash payments, HR and branch petty-cash (custody) settlements, salary deductions, insurance refunds.",Supplier dues to pay today; cash for printers; HR custody settlement,Y
+31,Treasury Support,Accounting,public,active,1454,243,2026-09-21,"Treasury: cash deposits and transfers, custody (عهدة) top-ups for factory safes, long advances closing, cheques and guarantee-cheque returns, foreign-currency deposits.",Deposit for a supplier; transfer custody to Qena safe; return guarantee cheque,Y
+432,Vendor Coding Support,Accounting,public,active,203,92,2026-09-17,Creating and updating vendor (supplier) master data.,Code a new vendor; update vendor data,Y
+95,Call Center Support,Call Center,public,active,160,12,2026-08-12,"Call center: customer complaints received by phone, campaign follow-up calls, Fawry transfers, GLC Academy enquiries, job-application replies.",Customer complaint by phone; campaign follow-up; academy enquiry,Y
+434,Color Center  Product Complains,Color Centers,private,low use,131,1,2025-12-28,Product complaints raised by color centers (private).,Complaint from a color center about a product,Y
+435,Color Center Agent Request,Color Centers,private,active,251,89,2026-09-21,Requests to open a new color center (agent / tinting machine request) (private).,Request a new color center; request a tinting machine,Y
+438,Color Center Machine Support,Color Centers,public,active,164,126,2026-09-21,"Tinting-machine hardware: maintenance, calibration, shakers, tanks, colorant clotting, color differences, maintenance-contract add/remove.",Machine maintenance at a center; colorant clotting; remove center from maintenance contract,Y
+17,Color Center Software Support,Color Centers,private,active,693,70,2026-09-20,"Tinting software at color centers: activate / stop a center's system, sync problems, color database and trends, program pricing for export customers (private).",Activate tinting system for a center; sync problem; stop a center's system,Y
+143,Coloring Machines Accounting,Color Centers,private,active,273,53,2026-09-22,"Accounting for tinting machines: machine deposits and renewals, coding the center, machine exit/return, machine pricing (private).",Machine deposit for a center; code center for renewal; machine exit,Y
+381,New Color Center Machine,Color Centers,private,low use,35,7,2026-09-16,Setting up a brand-new color center / showroom: new device and center setup (private).,New showroom at a center; prepare device for a new center,Y
+15,Customer Service Support,Customer Service,public,active,21970,5742,2026-09-22,"Customer orders: entering, editing, approving or cancelling customer orders, promotions on orders, item exceptions.",Customer order needs editing; cancel an order; apply promotion,Y
+264,Customer Transportation Fees,Customer Service,public,active,674,136,2026-09-21,"Freight (نولون) for customer orders: calculating, approving or changing a customer's transport fee.",Freight for a customer's order; approve freight,Y
+428,Customer Zone and Route Support,Customer Service,public,active,77,73,2026-09-20,Customer delivery zones and routes: setting the freight zone/route for a customer.,Set freight zone for a customer,Y
+447,Export Order Logistics,Customer Service,public,low use,32,8,2025-12-24,"Export order logistics: export orders by country, proformas, container counts.",New export order (Yemen); proforma for a new country; containers for Syria,Y
+29,Sales Logistics,Customer Service,public,active,5419,1291,2026-09-22,"Sales logistics: daily orders dispatch, changing the carrier, loading customer orders, changing delivery contact.",Change the carrier; today's orders; load a customer order,Y
+237,ERP Operations,ERP,public,active,4743,1405,2026-10-23,"ERP operations requests: bills of material, BOM packing / shop orders, new item codes, item planning, e-invoice items, reopening documents.",New BOM; add new item codes; open item on e-invoice,Y
+11,ERP Support,ERP,public,active,4714,508,2026-10-22,"ERP system support: errors and changes in the ERP (journal entries, reports, driver data, loans, leave balances, new line types).",Error opening a journal entry; new report; edit driver data,Y
+452,Client verification Operation,Express,private,active,3289,3289,2026-09-21,Customer account verification for Express (private).,Verify account 24071404,Y
+269,Express Cards,Express,private,active,694,120,2026-09-21,"Express cards: ordering Express / Storm Shield cards, card transfers, serial errors (private).",Order Express cards; transfer cards,Y
+283,Express Complains,Express,private,dormant,0,0,,"Express complaints (no tickets yet, private).",,N
+459,Express Fawry,Express,public,active,16,16,2026-09-20,"Express Fawry: Fawry gifts and balances not received, card registration, pending Fawry orders.",Fawry gift delayed; cancel pending Fawry orders,Y
+420,Express Finance,Express,private,dormant,16,0,2025-01-12,"Express finance / Loynova reports (dormant since Jan 2025, private).",,N
+446,Express Redemption Request,Express,private,active,217,104,2026-09-17,"Express redemptions: recharge card or balance not received, school-bag gift complaints (private).",Recharge card not received; balance not transferred,Y
+460,Express Technical Support,Express,public,active,17,17,2026-09-14,"Express technical: compensation points, card serial batches, Storm Shield card recharge issues, campaign notifications.",Add compensation points; recharge issue,Y
+405,Bank Accounting,Finance,public,low use,14,4,2026-09-15,"Bank accounting: bank transfer refunds, deposit confirmation, bank commissions and reconciliation.",Confirm a customer deposit; bank commission,Y
+402,Covenant Cash Accounting,Finance,public,active,756,275,2026-09-21,"Petty cash (custody / عهدة) requests and expense settlements for factories, HR and direct sales.",Request a custody; settle expenses for Qena factory,Y
+429,E-Invoice Accounting,Finance,public,active,277,99,2026-09-20,"E-invoice accounting for company expenses: hotel, flights, utilities, telecom invoices.",Hotel e-invoice for a mission; Etisalat invoice,Y
+403,Suppliers Creditors Accounting,Finance,public,active,1541,689,2026-09-22,"Supplier and creditor payments: supplier disbursements, advance payments, contract review, transfer approvals.",Pay supplier X; advance payment; review a contract,Y
+404,Transportation Accounting,Finance,public,active,1188,401,2026-09-22,"Transportation accounting: drivers' trip bonuses, transfer-truck requests, fleet expenses, trip reviews.",Trip bonus for Qena trucks; transfer truck for raw materials,Y
+132,1GL Damaged Finish Goods,Finish Goods,public,active,1040,182,2026-09-19,Damaged finished goods at plant 1 (1GL): damages found on customer trucks or returned.,Damaged goods on a customer's truck,Y
+25,1GL FG Warehouse Support,Finish Goods,public,active,10070,2030,2026-09-22,"Finished-goods warehouse plant 1 (1GL): daily loading requests, transfers to Shabab, shortages or excess in customer orders, project samples, management gifts.",Shortage in a customer order; samples for a project; today's loading,Y
+131,1GL Return Finished Goods,Finish Goods,public,active,3418,983,2026-09-21,"Customer returns of finished goods (1GL): returns with the next order, damaged returns approval.",Return from a customer; damaged return,Y
+75,2GL FG Warehouse Support,Finish Goods,public,active,2772,445,2026-09-21,"Finished-goods warehouse plant 2 (2GL): loading requests and additions, returns from color centers, coloring orders and samples, transfers.",Loading additions today; return from a color center,Y
+398,3GL Damaged Finish Goods,Finish Goods,public,low use,37,6,2026-08-18,"Damaged / defective finished goods at plant 3 (3GL): varnishes and hardeners, expired hardeners, product replacement.",Replace defective hardener; return varnish,Y
+426,3GL Product Complaint,Finish Goods,private,active,78,23,2026-09-21,"Product complaints for plant 3 products (putty, Woodguard, varnish, nitrocellulose) (private).",Complaint about Icon putty; varnish thickening,Y
+397,3GL Return Finished Goods,Finish Goods,public,active,216,17,2026-09-09,Customer returns of plant 3 (3GL) products and their approval.,Approve a customer return (3GL),Y
+106,4GL FG Warehouse Support,Finish Goods,public,low use,28,7,2026-06-09,"Plant 4 (4GL) finished-goods warehouse: receipts, office supplies, small returns (low volume).",,Y
+455,Libya Export,Finish Goods,public,dormant,0,0,,Libya export (no tickets yet).,,N
+135,Loading Support,Finish Goods,public,active,308,63,2026-09-16,"Loading support: moving materials/parcels to color centers with customer trucks, arranging a pickup truck.",Send supplies to a center with a customer truck,Y
+407,Storm Shield Technical Support,Finish Goods,private,active,119,28,2026-09-21,"Storm Shield technical support for projects: site visits, samples, training, center support (private).",Storm Shield samples for a project; site visit,Y
+454,Syria Export,Finish Goods,public,dormant,0,0,,Syria export (no tickets yet).,,N
+69,1GL Security Gate,Gates,public,active,459,313,2026-09-21,"Plant 1 security gate: shared daily orders list, vehicle in/out.",,N
+94,2GL Security Gate,Gates,public,low use,16,3,2026-07-15,Plant 2 security gate (low volume).,,N
+107,3GL Security Gate,Gates,public,active,972,65,2026-06-01,Plant 3 security gate: visitor and supplier visits.,Supplier visit to the factory,N
+441,HR -  Recruitment,HR,public,active,172,90,2026-09-22,"Recruitment: new-hire requirements, interview schedules, hiring requests, meeting-room booking (HR).",New hire requirements; interview appointment,Y
+442,HR -  Renewals Documents and contracts,HR,public,active,221,135,2026-09-09,Renewal of employment contracts and HR documents.,Renew contracts for a department,Y
+443,HR - Complaints and investigations,HR,public,active,67,47,2026-09-08,Employee complaints and investigations.,Open an investigation; disciplinary memo,Y
+13,HR Support,HR,public,active,11468,2505,2026-09-22,"HR support: attendance, deductions, HR letters, salary details, allowances, leaves, penalties.",HR letter; attendance correction; salary details,Y
+236,KPI's,HR,public,active,438,89,2026-08-04,KPIs and employee performance evaluations.,Quarterly evaluation; KPI correction,Y
+154,Payroll & Bonus,HR,private,active,360,100,2026-09-09,Payroll and bonuses processing (private).,Monthly payroll; school-year grant,Y
+408,Payroll Support,HR,public,low use,17,4,2026-04-28,"Employee payroll questions: deductions, payslip, bank transfer of salary.",Salary deduction question; payslip,Y
+387,IT Camera,IT,public,active,573,197,2026-09-21,"CCTV cameras: camera not working, footage review, moving cameras.",Review camera footage; camera down,Y
+437,IT Infrastructure,IT,private,low use,59,5,2025-12-21,"Network infrastructure: network issues, ports, landlines, microwave links (private).",Network down; landline fault,Y
+61,IT Operations,IT,public,active,1093,251,2026-09-21,"IT operations: mobile lines and packages, phone replacement, telecom bills, leavers' accounts, API access.",Phone replacement; upgrade internet package,Y
+141,IT Purchasing,IT,private,low use,117,2,2025-11-10,"IT purchasing: buying IT equipment, toner, printer maintenance invoices (private, rarely used).",Buy toner; IT equipment invoice,Y
+10,IT Support,IT,public,active,13110,2500,2026-10-22,"IT help desk: laptops and PCs, printers, email, flash drives, internal phones, software problems.",Laptop request; printer not working; email problem,Y
+343,IT Support - MEA,IT,private,dormant,68,0,2025-01-04,"IT support for MEA (dormant since Jan 2025, private).",,N
+449,New Hire IT Setup,IT,private,active,36,26,2026-08-19,"IT setup for new hires: PC, phone, accounts (private).",New hire IT requirements,Y
+257,Radiophone Support,IT,private,low use,52,8,2026-08-17,Radio (walkie-talkie) devices: faults and maintenance (private).,Radio device fault,Y
+457,Souq Support,IT,public,active,104,104,2026-09-21,"Souq app support: app update/install problems, customer quotas, center accounts.",Souq app won't update; customer quota wrong,Y
+456,omar test channelllll,IT,public,inactive,1,1,2026-03-30,Test channel (inactive).,,N
+89,1GL Lab Support,Labs,private,active,553,103,2026-09-16,"Plant 1 lab: test results, TDS, sample codes, raw-material shelf-life extension (private).",Test result for code 170; extend raw-material expiry,Y
+108,2GL Lab Support,Labs,private,active,363,41,2026-09-02,"Plant 2 lab: test results, COA approval, samples (private).",COA approval for code 70,Y
+105,3GL Lab Support,Labs,private,active,563,172,2026-09-20,"Plant 3 lab: test results, raw-material requests and expiry (private).",Test result for code 70,Y
+458,Automotive Lab Support,Labs,public,active,16,16,2026-09-21,Automotive lab: issuing samples.,Issue sample code 1575,Y
+83,Color Lab Support,Labs,public,active,830,154,2026-09-19,"Color lab: color formula requests (RAL / customer colors), colorant complaints at color centers.",Color formula request (RAL); colorant clotting at a center,Y
+140,R&D Support,Labs,public,dormant,6,0,2025-05-29,R&D (dormant since May 2025).,,N
+35,Logistics Support,Logistics,private,active,280,49,2026-09-20,"Logistics (imports / courier): DHL, customs clearing, supplier shipment documents, analysis certificates (private).",DHL invoices; shipment documents,Y
+110,Branding Support,Marketing,public,active,429,135,2026-09-20,"Branding: logo, signage design, catalogues, business cards, stickers, SDS/EPD certificates, giveaways.",Design a showroom sign; business cards; SDS certificate,Y
+451,Digital Marketing,Marketing,public,active,76,76,2026-09-20,"Digital marketing: website, social media videos, campaigns, agency invoices.",TikTok videos; campaign shoot,Y
+65,Express Operations,Marketing,public,active,1284,751,2026-09-21,"Express operations: Express loyalty complaints (cards, school bags, gifts, couriers).",School bag missing items; damaged card,Y
+133,GLC Academy Support,Marketing,public,active,252,93,2026-09-16,"GLC Academy: painter training requests for color centers, academy points.",Academy training for a center's painters,Y
+73,Marketing Support,Marketing,private,dormant,746,0,2025-06-25,"Marketing support (dormant since Jun 2025, private).",,N
+445,Product & Management Research,Marketing,public,low use,9,3,2026-07-19,"Product and market research: market studies, website products, product training.",Market study for a governorate,Y
+453,Projects Marketing Support,Marketing,public,low use,5,5,2026-04-30,"Projects marketing: LinkedIn content, engineers' events (low volume).",,Y
+118,Retail Field Support,Marketing,private,active,139,88,2026-09-10,"Retail field: shop signs, display stands, opening gifts for centers (private).",Sign for a dealer's shop; display stand,Y
+433,Showroom Support - Retail ( Local - Export ),Marketing,public,active,544,145,2026-09-21,Showrooms (local and export): showroom works for color centers.,Showroom for a center,Y
+144,Accounting Recievable MEA,Other,private,dormant,66,0,2024-09-29,"AR for MEA (dormant since 2024, private).",,N
+130,Alex Support,Other,public,active,142,34,2026-08-17,"Alexandria branch: receipts, supplies, warehouse rent.",,Y
+114,All About Projects,Other,public,active,1503,308,2026-09-21,Projects: requests for project samples.,Samples for a project,Y
+197,Bank Transfer,Other,public,active,716,252,2026-09-21,Bank transfers to suppliers and payees.,Bank transfers for today,Y
+444,Car Maintenance Support,Other,public,active,131,80,2026-09-20,"Company car maintenance: repairs, batteries, tyres, fuel invoices.",Car battery replacement; service the Elantra,Y
+121,Clinic Support,Other,public,dormant,12,0,2025-09-03,"Clinic: medical supplies, medical reports, first aid (dormant since Sep 2025).",,N
+150,Color Sales Upper,Other,public,low use,83,5,2026-09-03,"Color sales upper management: customer targets and achievements, sales reports.",,Y
+345,Developer 2 Support,Other,private,dormant,2,0,2024-07-22,Developer test channel (private).,,N
+235,E-invoice Support,Other,private,active,592,138,2026-09-21,E-invoice system errors (invalid documents) (private).,Invalid e-invoice,Y
+148,General Accounting MEA,Other,private,dormant,7,0,2023-10-25,General accounting MEA (dormant since 2023).,,N
+147,Loading MEA,Other,private,dormant,19,0,2024-03-13,Loading MEA (dormant since 2024).,,N
+78,Maintenance Support,Other,public,active,1251,259,2026-09-22,"Building and factory maintenance: AC, doors, electrical, pumps, forklifts, new installations.",AC not working; broken door; forklift repair,Y
+412,New Quick,Other,private,dormant,10,0,2025-01-02,"Old app (Quick) testing (dormant, private).",,N
+142,Physical Counting 2022,Other,public,dormant,19,0,2023-12-28,Physical counting 2022 (closed project).,,N
+149,Sales Export MEA,Other,private,dormant,8,0,2023-12-06,"Sales export MEA (dormant since 2023, private).",,N
+146,Services,Other,public,low use,71,8,2026-07-22,"Services: cleaning workers, cleaning supplies, temporary helpers, office services.",Need a cleaner; cleaning supplies,Y
+70,Transport Support,Other,public,active,613,172,2026-09-13,"Transport: drivers and company vehicles, deliveries, traffic fines and licences, distributing stands and gifts.",Need a driver; deliver gifts; traffic fines,Y
+52,1GL Producation Support,Productions,public,active,282,29,2026-08-31,"Plant 1 production: monthly production plans, packaging changes, technical follow-up.",,Y
+93,2GL Producation Support,Productions,private,active,94,15,2026-08-31,"Plant 2 production: monthly production plans, BOM changes (private).",,Y
+56,3GL Producation Support,Productions,private,active,312,39,2026-09-19,"Plant 3 production: production plans, shortages, quotas (private).",,Y
+14,White Product Complaints,Products Complaints,private,active,568,79,2026-09-21,"White products complaints (e.g. 3030, 2020, putty, sealer) (private).",Complaint about 3030 product,Y
+431,Coloring Project Support,Project,public,active,722,349,2026-09-21,Filling (tinting) project customers' orders.,Fill order for a project customer,Y
+365,Projects - Prices,Project,private,active,1714,712,2026-09-22,Project price quotations (private).,Quotation for a project,Y
+436,Projects Colors Pricing,Project,public,active,205,110,2026-09-21,Product pricing for projects (colors).,Price products for a project,Y
+138,Public Relations Support,Public Relations,public,active,29,10,2026-09-13,"Public relations / legal papers: power of attorney, commercial register, ISO certificates, permits, utility bills.",Commercial register; ISO certificate for a tender,Y
+74,Purchasing Approval,Purchasing,private,dormant,138,0,2023-11-13,"Purchasing approvals (dormant since 2023, private).",,N
+43,Purchasing Support,Purchasing,public,active,6297,1206,2026-09-22,"Purchasing: purchase requests, POs, supplier deliveries and shortages, office and factory supplies.",Purchase request; supplier delivery delay,Y
+440,HSE Document Control,QHSE,public,active,16,12,2026-09-19,QHSE document control: new / updated forms and procedures.,Add a new form,Y
+439,HSE Safety Warehouse,QHSE,public,active,169,106,2026-09-21,"Safety store: PPE issue, uniforms, gloves.",Need safety shoes / uniform,Y
+87,HSE Support,QHSE,public,active,566,137,2026-09-19,"Health, safety and environment: accidents, non-conformity reports, safety training, environmental measurements.",Forklift accident report; non-conformity,Y
+12,Developer Support,Quick,private,low use,646,7,2026-02-26,"Developer support (mostly tests, private).",,N
+448,Echo Support,Quick,public,active,82,69,2026-09-16,"Echo app: dealer / sub-dealer accounts, moving customer codes, mobile numbers.",Activate a new customer account on Echo,Y
+30,Quick Support,Quick,public,active,2084,295,2026-09-27,"Quick / Sila apps support: login, app errors, chats, channels.",App won't open; duplicate chat,Y
+8,Quick Test,Quick,private,active,165,17,2026-01-14,Quick test channel (private).,,N
+71,1GL Receptionist Support,Reception,public,active,760,272,2026-09-21,"Reception plant 1: meeting-room booking, visitors, reception daily report.",Book the meeting room,Y
+123,2GL Receptionist Support,Reception,public,active,30,11,2026-09-10,"Reception plant 2: meeting-room booking, visitors.",Book the meeting room (2GL),Y
+64,Direct Sales Support,Sales,public,active,1382,421,2026-09-22,"Direct sales: direct-sale requests, sales reports, collections and customer debts.",Direct sale request; collection statement,Y
+104,FG & Direct Sales,Sales,public,active,4076,930,2026-09-22,"Finished goods for direct sales: product availability, products outside the plan, additions.",Make a product available; product outside plan,Y
+90,Sales Colors Support,Sales,public,active,2846,475,2026-09-21,"Color sales: color-center customers, targets, tinting complaints, opening gifts, customer trips.",Color center target; opening gifts,Y
+101,Sales Export Support,Sales,public,active,573,156,2026-09-22,"Export sales: export requests by country, agent enquiries, export invoices and gifts.",Export request (Libya); agent enquiry,Y
+111,Sales Projects Support,Sales,public,active,857,302,2026-09-21,"Projects sales: project quotation requests, project orders, samples for projects.",Quotation request for a project,Y
+41,Sales White Support,Sales,public,active,2828,510,2026-09-21,"White products sales: customer credit, product availability, agent requests, daily quota, complaints.",Extra credit for a customer; product availability,Y
+88,MR Malik Approval,Top Management,public,dormant,1104,0,2025-05-25,Approvals by Mr Malik (dormant since May 2025).,,N
+81,MR Mohamed Approval,Top Management,public,active,1704,275,2026-09-21,"Approvals by Mr Mohamed: purchase orders, budgets, contract renewals and spending approvals.",Approve PO; approval request,Y
+54,1GL Gift Warehouse Support,Warehouse,public,active,1224,245,2026-09-20,Gift warehouse plant 1: promotional gifts and printed material for customers and centers.,Gifts for a customer; catalogues,Y
+63,1GL RM Warhouses Support,Warehouse,public,active,4080,1064,2026-09-21,"Raw-material warehouse plant 1: supplier receipts by PO, transfers between plants.",Receipt of code 562; transfer from Obour,Y
+80,2GL Gift Warehouse Support,Warehouse,public,active,1050,242,2026-09-21,"Gift warehouse plant 2: gifts, catalogues and color cards for centers, export gift loading.",NCS color card for a customer; gifts for a center,Y
+82,2GL RM Warehouses,Warehouse,public,active,4300,532,2026-09-22,"Raw-material warehouse plant 2: transfers, supplier plans and returns, analysis certificates.",Transfer code 1503 to Obour,Y
+58,3GL Warehouse Support,Warehouse,public,active,2176,550,2026-09-21,"Warehouse plant 3: raw-material receipts by PO, transfers, export loading.",Receipt PO 2611882,Y
+117,4GL RM Warehouse Support,Warehouse,public,active,390,66,2026-09-17,Raw-material warehouse plant 4: receipts of trips.,,Y
+284,Central Raw Material Warehouse,Warehouse,private,low use,17,3,2026-03-01,"Central raw-material warehouse: stock checks, shortages, tanks (private).",,Y

@@ -9,14 +9,21 @@ import https from 'https'
 // made localhost much slower than the live site (the browser keeps its
 // connection alive there).
 const gatewayAgent = new https.Agent({ keepAlive: true, maxSockets: 16 })
+// the same for the Files API (:7500): a media grid asks for many thumbnails at once
+const filesAgent = new https.Agent({ keepAlive: true, maxSockets: 16 })
 
 // Bumps the human-readable AppVersion* number (src/shared/api.js BASE_BODY,
 // sent with every apiCall) by 1 on every production build -- i.e. every IIS
 // Publish. Runs at buildStart so the incremented value is what actually gets
 // bundled, and rewrites the source file itself (not just the build output),
 // so the bump is permanent and shows up in git.
+//
+// It also writes version.json ({ "version": "<n>" }) beside index.html: the
+// running app compares it with its own number (src/shared/appUpdate.js) and
+// makes users reload once a newer build is published.
 function appVersionBumpPlugin() {
   const apiFile = path.resolve(__dirname, 'src/shared/api.js')
+  let version = ''
   return {
     name: 'sila-app-version-bump',
     apply: 'build',
@@ -30,7 +37,15 @@ function appVersionBumpPlugin() {
       const next = String(Number(match[1]) + 1)
       const bumped = src.replace(/(AppVersion(?:Web|Android|Ios|Desktop):\s*')(\d+)(')/g, `$1${next}$3`)
       fs.writeFileSync(apiFile, bumped)
+      version = next
       console.log(`[sila-app-version-bump] AppVersion* ${match[1]} -> ${next}`)
+    },
+    generateBundle() {
+      if (!version) return
+      this.emitFile({
+        type: 'asset', fileName: 'version.json',
+        source: JSON.stringify({ version, builtAt: new Date().toISOString() }) + '\n',
+      })
     },
   }
 }
@@ -45,9 +60,20 @@ export default defineConfig({
       '/api/v2/attachments': {
         target: 'https://sila.glcpaints.com:7500',
         changeOrigin: true,
+        agent: filesAgent,
         // a hung connection fails instead of blocking the dev server for good
         // (uploads: 5 min for large files)
         timeout: 300_000, proxyTimeout: 300_000,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
+        }
+      },
+      // Profile photos, through the Files API too (SilaApi Photos/PhotoEndpoints.cs).
+      '/api/v2/photo': {
+        target: 'https://sila.glcpaints.com:7500',
+        changeOrigin: true,
+        agent: filesAgent,
+        timeout: 60_000, proxyTimeout: 60_000,
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => proxyReq.removeHeader('origin'))
         }

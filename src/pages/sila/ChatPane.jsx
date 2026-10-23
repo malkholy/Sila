@@ -1,17 +1,22 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Check, CheckCheck, FileText, Ban, Paperclip, Send, Mic, MoreHorizontal, Reply, Copy, Pencil, Trash2, X, Clock, AlertCircle,
-  Users, Lock, Hash, ShieldAlert, Play, Pause, Flag, RotateCcw, Archive, Type, Download,
+  Users, Lock, Hash, ShieldAlert, Play, Pause, Flag, RotateCcw, Archive, Type, Download, Forward, CheckCircle2, XCircle, Undo2,
 } from 'lucide-react';
 import RichComposer from './RichComposer.jsx';
 import { sanitizeForSend, sanitizeForShow, hasFormatting, toPlainText } from '../../shared/richText.js';
-import { ACCEPT, checkFile, downloadFile, fileBlobUrl, fileEntity, isFilesApiUrl, uploadFile } from '../../shared/files.js';
+import { ACCEPT, checkFile, downloadFile, fileBlobUrl, fileEntity, isFilesApiUrl, saveAttachment, uploadFile } from '../../shared/files.js';
 import Avatar from './Avatar.jsx';
-import { chatApi, formatSize, newLocalId, PAGE_SIZE, changeTicketState } from '../../shared/chat.js';
-import { cacheKey, getCached, putCached, newestId, applyDelta } from '../../shared/chatCache.js';
+import { chatApi, formatSize, newLocalId, PAGE_SIZE, changeTicketState, answerForward, cancelForward } from '../../shared/chat.js';
+import ForwardDialog from './ForwardDialog.jsx';
+import { cacheKey, getCached, putCached, syncAnchor, applyDelta } from '../../shared/chatCache.js';
 import GroupInfoPanel from './GroupInfoPanel.jsx';
 import TicketInfoPanel from './TicketInfoPanel.jsx';
+import { isSelectingText } from '../../shared/textSelection.js';
 import { onLive } from '../../shared/live.js';
+import { FlagButton } from './TicketFlag.jsx';
+import { AssignButton } from './TicketAssign.jsx';
+import SlaBadge from './SlaBadge.jsx';
 
 // The right side for a one-to-one chat, a group or a ticket (design/mockups/Home.dc.html):
 // header, messages (newest page first, "Load older" pages back), read state,
@@ -28,12 +33,21 @@ import { onLive } from '../../shared/live.js';
 const TICKET_TONE = {
   0: ['var(--blue)', 'var(--blue-soft)'], 1: ['var(--green)', 'var(--green-soft)'], 5: ['var(--amber)', 'var(--amber-soft)'],
 };
+// can: the header's Can* flag that shows the button (default: key); confirm: asked
+// first, in the panel. kind: 'state' (Change ticket state), 'forward' (the dialog),
+// 'accept' / 'reject' (Answer forward, on the waiting copy), 'cancel' (Cancel forward).
 const TICKET_ACTIONS = [
   { key: 'start', action: 'Start', label: 'Start', icon: Play, primary: true },
+  { key: 'accept', can: 'answerForward', kind: 'accept', label: 'Accept forward', icon: CheckCircle2, primary: true },
+  { key: 'reject', can: 'answerForward', kind: 'reject', label: 'Reject forward', icon: XCircle,
+    confirm: 'Reject this forwarded ticket? It goes back to the channel it came from.', confirmLabel: 'Reject' },
+  { key: 'forward', kind: 'forward', label: 'Forward', icon: Forward },
+  { key: 'cancelForward', kind: 'cancel', label: 'Cancel forward', icon: Undo2,
+    confirm: 'Cancel the forward? The ticket comes back here as New.', confirmLabel: 'Cancel forward' },
   { key: 'hold', action: 'Hold', label: 'Hold', icon: Pause },
   { key: 'reopen', action: 'Reopen', label: 'Reopen', icon: RotateCcw, primary: true },
   { key: 'end', action: 'End', label: 'End', icon: Flag },
-  { key: 'close', action: 'Close', label: 'Close', icon: Archive, confirm: true },
+  { key: 'close', action: 'Close', label: 'Close', icon: Archive, confirm: 'Close this ticket for good?', confirmLabel: 'Close' },
 ];
 
 function dayLabel(d) {
@@ -186,12 +200,44 @@ function ImageViewer({ image, onClose }) {
   );
 }
 
+// The download icon in the bottom-left corner of every attachment (images,
+// files, voice notes)
+export function DownloadButton({ file, entity, size = 26 }) {
+  const [state, setState] = useState({ busy: false, error: '' });
+  const save = async (e) => {
+    e.stopPropagation();
+    if (state.busy) return;
+    setState({ busy: true, error: '' });
+    try { await saveAttachment({ file, entity }); setState({ busy: false, error: '' }); }
+    catch (err) { setState({ busy: false, error: err.message || 'Could not download the file.' }); }
+  };
+  return (
+    <button type="button" onClick={save} disabled={state.busy} aria-label={`Download ${file.name}`}
+      title={state.error || (state.busy ? 'Saving…' : `Download ${file.name}`)} style={{
+        position: 'absolute', left: file.image ? 6 : 0, bottom: file.image ? 6 : 0, zIndex: 1, width: size, height: size, padding: 0, borderRadius: 7,
+        border: 'none', background: state.error ? 'var(--red)' : 'rgba(15,23,42,.6)', color: '#fff',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: state.busy ? 'wait' : 'pointer',
+        opacity: state.busy ? 0.6 : 1,
+      }}>
+      <Download size={13} />
+    </button>
+  );
+}
+
 function Attachment({ file, mine, entity, onView }) {
   const ours = isFilesApiUrl(file.url) && file.id && entity;
-  if (file.audio && !ours) return <VoiceNote file={file} mine={mine} />;
-  if (file.image) return ours ? <ProtectedImage file={file} mine={mine} entity={entity} onView={onView} />
-    : <ImageAttachment file={file} mine={mine} onView={onView} />;
-  return <FileCard file={file} mine={mine} entity={ours ? entity : null} />;
+  const body = file.audio && !ours ? <VoiceNote file={file} mine={mine} />
+    : file.image ? (ours ? <ProtectedImage file={file} mine={mine} entity={entity} onView={onView} />
+      : <ImageAttachment file={file} mine={mine} onView={onView} />)
+      : <FileCard file={file} mine={mine} entity={ours ? entity : null} />;
+  return (
+    // images: the icon sits on the picture's corner; files / voice notes: just under
+    // their bottom-left corner, so it never covers the file badge or the play button
+    <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', minWidth: 0, paddingBottom: file.image ? 0 : 30 }}>
+      {body}
+      <DownloadButton file={file} entity={ours ? entity : null} />
+    </div>
+  );
 }
 
 // A file being uploaded / posted from this tab
@@ -384,6 +430,48 @@ function Bubble({ m, otherName, menuOpen, onMenu, actions, isGroup, canChange, o
   );
 }
 
+// A table or picture pasted into the formatted-text editor: shown first, then
+// sent as an image file (like WhatsApp). Enter sends, Esc cancels.
+function PastePreview({ image, onCancel, onSend }) {
+  const sendRef = useRef(null);
+  useEffect(() => {
+    sendRef.current?.focus();
+    const esc = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); onCancel(); } };
+    document.addEventListener('keydown', esc, true);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [onCancel]);
+  return (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div aria-hidden="true" onMouseDown={onCancel} style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,.55)' }} />
+      <div role="dialog" aria-modal="true" aria-labelledby="paste-title" style={{
+        position: 'relative', width: 'min(760px, 100%)', maxHeight: '92%', padding: 20, borderRadius: 16, background: 'var(--surface)',
+        boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 12,
+      }}>
+        <h2 id="paste-title" style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>Send as image</h2>
+        <div style={{
+          flex: 1, minHeight: 80, overflow: 'auto', borderRadius: 10, border: '1px solid var(--border)', background: '#fff',
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 8,
+        }}>
+          <img src={image.url} alt="Pasted table" style={{ maxWidth: '100%', height: 'auto', display: 'block' }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {image.file.name} · {formatSize(image.file.size)}
+          </span>
+          <button onClick={onCancel} style={{
+            height: 40, padding: '0 16px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--surface)',
+            color: 'var(--text)', fontWeight: 700, fontFamily: 'var(--font)', cursor: 'pointer',
+          }}>Cancel</button>
+          <button ref={sendRef} onClick={onSend} style={{
+            height: 40, padding: '0 18px', borderRadius: 10, border: 'none', background: 'var(--accent)', color: 'var(--on-accent)',
+            fontWeight: 700, fontFamily: 'var(--font)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+          }}><Send size={16} /> Send</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmDelete({ m, busy, isGroup, onCancel, onConfirm }) {
   const cancelRef = useRef(null);
   useEffect(() => {
@@ -424,7 +512,10 @@ function ConfirmDelete({ m, busy, isGroup, onCancel, onConfirm }) {
   );
 }
 
-export default function ChatPane({ item, isOnline = () => false, onRead, onActivity, onTicketChange }) {
+// onClose: shown as an X at the end of the header (the pane opened in a drawer, e.g. the Channels board)
+// onLeave: the user left this group / ticket (close it, refresh the list)
+// onFlagChange(id, flag): the user flagged / unflagged this ticket (lists show it at once)
+export default function ChatPane({ item, isOnline = () => false, onRead, onActivity, onTicketChange, onClose, onLeave, onFlagChange }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const api = useMemo(() => chatApi(item), [item.id]);
   const [state, setState] = useState({ status: 'loading', header: null, messages: [], hasMore: false, error: '' });
@@ -456,6 +547,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const canWrite = !(isGroup && header?.locked && !header?.isAdmin) && !ticketClosedForChat;
   const [adminOnly, setAdminOnly] = useState(false);   // tickets: the next message is an admins-only note
   const [richOpen, setRichOpen] = useState(false);     // the formatted-text pop-up (T button)
+  const [pasted, setPasted] = useState(null);          // { file, url }: a pasted table / picture to send
   const fileInputRef = useRef(null);
   const [viewing, setViewing] = useState(null);       // { url, name, downloadUrl }: the image viewer
   const closeViewer = useCallback(() => setViewing(null), []);
@@ -464,6 +556,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const richRef = useRef(null);
   const [actionBusy, setActionBusy] = useState(null);  // ticket action key
   const [confirmAction, setConfirmAction] = useState(null);
+  const [forwarding, setForwarding] = useState(false);   // the Forward dialog
 
   const flash = useCallback((text) => {
     setNotice(text);
@@ -494,9 +587,10 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
       });
   }, [api]);
 
-  // rows newer than the newest one held (new messages, edit / delete copies)
+  // new rows (messages, edit / delete copies): from SYNC_OVERLAP messages back,
+  // so one that arrived out of order is never skipped (chatCache.js syncAnchor)
   const syncNew = useCallback((messages) => {
-    const after = newestId(messages || stateRef.current.messages);
+    const after = syncAnchor(messages || stateRef.current.messages);
     if (!after) return;
     if (syncing.current) { syncAgain.current = true; return; }   // a change arrived mid-sync: run once more after
     syncing.current = true;
@@ -506,7 +600,10 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
         if (seq !== loadSeq.current) return;
         if (page.messages.length >= PAGE_SIZE) { fullLoad(true); return; }   // too many to be sure: reload
         const el = scrollRef.current;
-        if (page.messages.length && el && el.scrollHeight - el.scrollTop - el.clientHeight < 120) stickBottom.current = true;
+        const held = new Set(stateRef.current.messages.map(m => m.id));
+        if (page.messages.some(m => !held.has(m.id)) && el && el.scrollHeight - el.scrollTop - el.clientHeight < 120) stickBottom.current = true;
+        // something new from the others while this conversation is open: it is read
+        if (page.messages.some(m => !held.has(m.id) && !m.mine)) readRef.current();
         setState(s => (s.status !== 'ready' ? s
           : { ...s, header: page.header || s.header, messages: applyDelta(s.messages, page.messages) }));
       })
@@ -519,6 +616,29 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const syncNewRef = useRef(syncNew);
   syncNewRef.current = syncNew;
 
+  // Messages that arrive while the conversation is on screen count as read at
+  // once (no unread badge between two people chatting); in a background tab,
+  // as soon as the user comes back to it. One request at a time.
+  const reading = useRef({ busy: false, again: false, waiting: false });
+  const readNow = () => {
+    const r = reading.current;
+    if (document.visibilityState !== 'visible') { r.waiting = true; return; }
+    if (r.busy) { r.again = true; return; }
+    r.busy = true; r.waiting = false;
+    api.markRead()
+      .then(() => onRead?.(item.id))
+      .catch(() => { r.waiting = true; })   // tried again when the tab is next shown
+      .finally(() => { r.busy = false; if (r.again) { r.again = false; readNow(); } });
+  };
+  const readRef = useRef(readNow);
+  readRef.current = readNow;
+  useEffect(() => {
+    const back = () => { if (reading.current.waiting && document.visibilityState === 'visible') readRef.current(); };
+    document.addEventListener('visibilitychange', back);
+    window.addEventListener('focus', back);
+    return () => { document.removeEventListener('visibilitychange', back); window.removeEventListener('focus', back); };
+  }, []);
+
   const load = useCallback(() => {
     const cached = getCached(key);
     if (cached) {
@@ -529,9 +649,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
     } else {
       fullLoad();
     }
-    if (item.unread > 0) {
-      api.markRead().then(() => onRead?.(item.id)).catch(() => { /* stays unread; retried next open */ });
-    }
+    if (item.unread > 0) readRef.current();
     // item.unread / onRead are read at open time only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, key]);
@@ -647,6 +765,9 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const pickFiles = (e) => {
     const files = [...(e.target.files || [])];
     e.target.value = '';   // the same file can be picked again
+    sendFiles(files);
+  };
+  const sendFiles = (files) => {
     if (!files.length || !canWrite) return;
     const problems = [];
     for (const file of files.slice(0, 10)) {
@@ -719,12 +840,18 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   // ticket state change; the SP re-checks the role and the state, and posts a system line
   const runTicketAction = async (a) => {
     setConfirmAction(null);
+    if (a.kind === 'forward') { setForwarding(true); return; }
     setActionBusy(a.key);
     try {
-      await changeTicketState(header.ticketId, a.action);
+      if (a.kind === 'accept') await answerForward(header.ticketId, true);
+      else if (a.kind === 'reject') await answerForward(header.ticketId, false);
+      else if (a.kind === 'cancel') await cancelForward(header.ticketId);
+      else await changeTicketState(header.ticketId, a.action);
+      onTicketChange?.(item.id);
+      // a rejected copy is deleted: the caller is no longer in it
+      if (a.kind === 'reject') { if (onLeave) onLeave(item.id); else onClose?.(); return; }
       stickBottom.current = true;
       fullLoad(true);
-      onTicketChange?.(item.id);
     } catch (err) { flash(err.message || 'Could not change the ticket.'); }
     finally { setActionBusy(null); }
   };
@@ -761,6 +888,17 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
     }, 0);
   }
   // closed without sending: the text goes back to the plain box, so nothing is lost
+  // a table / picture pasted into the editor: preview it, then send it as a file
+  const onPasteImage = (file) => {
+    const problem = checkFile(file);
+    if (problem) { flash(problem); return; }
+    setPasted(old => { if (old) URL.revokeObjectURL(old.url); return { file, url: URL.createObjectURL(file) }; });
+  };
+  const closePasted = () => {
+    setPasted(old => { if (old) URL.revokeObjectURL(old.url); return null; });
+    setTimeout(() => richRef.current?.focus(), 0);
+  };
+
   const closeRich = () => {
     const { text } = readComposer(true);
     setRichOpen(false);
@@ -812,26 +950,61 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
     <>
       <span style={{
         flex: '0 0 44px', width: 44, height: 44, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--accent-soft)', border: '1.5px solid var(--accent-line)', color: 'var(--accent-strong)',
+        background: tone[1], border: `1.5px solid ${tone[0]}`, color: tone[0],
       }}><Hash size={22} strokeWidth={1.8} /></span>
-      <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+      <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'left' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>
-          <span dir="auto"># {header?.channel || item.raw?.ChannelName || ''} · #{item.raw?.TicketID}</span>
+          <span dir="auto" style={{ padding: '2px 7px', borderRadius: 6, background: 'var(--soft)' }}># {header?.channel || item.raw?.ChannelName || ''}</span>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>#{item.raw?.TicketID}</span>
           {(header?.stateLabel || item.state) && (
             <span style={{ padding: '1px 9px', borderRadius: 999, background: tone[1], color: tone[0], fontSize: 11, fontWeight: 700 }}>
               {header?.stateLabel || item.state}
             </span>
           )}
+          {header && <SlaBadge sla={header.sla} state={header.state} />}
         </span>
-        <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }} dir="auto">{header?.title || item.title}</span>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-          {header ? `${header.memberCount} member${header.memberCount === 1 ? '' : 's'}` : '\u00a0'}
-          <span style={{ color: 'var(--accent-strong)', fontWeight: 600 }}> · {showInfo ? 'hide details' : 'details'}</span>
-        </span>
+        <span style={{ fontSize: 18, lineHeight: 1.35, fontWeight: 800, color: 'var(--text)', overflowWrap: 'anywhere' }} dir="auto">{header?.title || item.title}</span>
+        {header?.createdBy && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px 16px', flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+              <span>Created by <bdi style={{ fontWeight: 700, color: 'var(--text2)' }}>{header.createdBy}</bdi></span>
+              {header.createdByJobTitle && <span dir="auto" style={{ fontSize: 11, overflowWrap: 'anywhere' }}>{header.createdByJobTitle}</span>}
+            </span>
+            {header.createdAt && <span style={{ fontSize: 11 }}>
+              {header.createdAt.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>}
+          </span>
+        )}
       </span>
     </>
   );
-  const ticketActions = isTicket && header ? TICKET_ACTIONS.filter(a => header.can[a.key]) : [];
+  const ticketActions = isTicket && header ? TICKET_ACTIONS.filter(a => header.can[a.can || a.key]) : [];
+  // the state buttons the caller may use, shown in the ticket details panel
+  const ticketActionsNode = ticketActions.length > 0 && (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+      {ticketActions.map(a => {
+        const Icon = a.icon;
+        const asking = confirmAction?.key === a.key;
+        return asking ? (
+          <div key={a.key} role="group" aria-label={`Confirm ${a.label}`} style={{
+            flexBasis: '100%', display: 'flex', flexDirection: 'column', gap: 8, padding: 10, borderRadius: 10,
+            background: 'var(--red-soft)',
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)' }}>{a.confirm}</span>
+            <span style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => runTicketAction(a)} style={actionButton(true)}>{a.confirmLabel}</button>
+              <button onClick={() => setConfirmAction(null)} style={actionButton(false)}>Back</button>
+            </span>
+          </div>
+        ) : (
+          <button key={a.key} disabled={!!actionBusy} onClick={() => (a.confirm ? setConfirmAction(a) : runTicketAction(a))}
+            style={{ ...actionButton(a.primary), opacity: actionBusy && actionBusy !== a.key ? 0.5 : 1 }}>
+            <Icon size={15} /> {actionBusy === a.key ? `${a.label}…` : a.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   const headerBody = isTicket ? ticketHeaderBody : (
     <>
@@ -856,38 +1029,54 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
       }}>
         {multi ? (
           // the group / ticket header opens the details panel (members)
-          <button onClick={() => setShowInfo(v => !v)} aria-expanded={showInfo}
+          <button onClick={() => { if (!isSelectingText()) setShowInfo(v => !v); }} aria-expanded={showInfo}
             aria-label={`${otherName}: ${showInfo ? 'hide' : 'show'} ${isTicket ? 'ticket details' : 'group info'}`}
             style={{
               display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, padding: '4px 8px', margin: '-4px -8px',
-              border: 'none', borderRadius: 12, background: showInfo ? 'var(--soft)' : 'transparent', cursor: 'pointer',
+              border: 'none', borderRadius: 12, background: 'transparent', cursor: 'pointer',
               fontFamily: 'var(--font)',
             }}>{headerBody}</button>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>{headerBody}</div>
         )}
-        {ticketActions.length > 0 && (
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            {ticketActions.map(a => {
-              const Icon = a.icon;
-              const asking = confirmAction?.key === a.key;
-              return asking ? (
-                <span key={a.key} role="group" aria-label={`Confirm ${a.label}`} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>Close this ticket for good?</span>
-                  <button onClick={() => runTicketAction(a)} style={actionButton(true)}>Close</button>
-                  <button onClick={() => setConfirmAction(null)} style={actionButton(false)}>Cancel</button>
-                </span>
-              ) : (
-                <button key={a.key} disabled={!!actionBusy} onClick={() => (a.confirm ? setConfirmAction(a) : runTicketAction(a))}
-                  style={{ ...actionButton(a.primary), opacity: actionBusy && actionBusy !== a.key ? 0.5 : 1 }}>
-                  <Icon size={15} /> {actionBusy === a.key ? `${a.label}…` : a.label}
-                </button>
-              );
-            })}
-          </div>
+        {isTicket && header?.ticketId && (
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <AssignButton ticketId={header.ticketId} assignee={header.assignee} can={header.can} meId={header.me}
+              onChange={(assignee) => {
+                setState(s => ({ ...s, header: s.header ? { ...s.header, assignee } : s.header }));
+                stickBottom.current = true;
+                fullLoad(true);              // the system line + the new Take / Unassign rights
+                onTicketChange?.(item.id);   // lists show the new owner
+              }} />
+            <FlagButton ticketId={header.ticketId} flag={header.flag} onChange={(flag) => {
+              setState(s => ({ ...s, header: s.header ? { ...s.header, flag } : s.header }));
+              onFlagChange?.(item.id, flag);
+            }} />
+          </span>
+        )}
+        {onClose && (
+          <button onClick={onClose} aria-label="Close" title="Close" style={{
+            marginLeft: isTicket && header?.ticketId ? 0 : 'auto', flexShrink: 0, width: 40, height: 40, borderRadius: 10,
+            border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text2)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+          }}><X size={18} /></button>
         )}
       </header>
 
+      {isTicket && header?.state === 3 && header.originalTicketId > 0 && (
+        // a forwarded copy waiting for approval: the messages below are the original's (read-only)
+        <div role="note" style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '10px 24px', fontSize: 13,
+          background: 'var(--amber-soft)', color: 'var(--text)', borderBottom: '1px solid var(--border)',
+        }}>
+          <Forward size={16} style={{ color: 'var(--amber)', flexShrink: 0 }} />
+          <span style={{ flex: 1, minWidth: 0 }}>
+            Forwarded from <b dir="auto"># {header.forwardedFrom || 'another channel'}</b> (Ticket #{header.originalTicketId}).
+            This is its conversation so far, admins-only notes left out.
+            {header.can.answerForward ? ' Accept to take it over, or reject to send it back.' : ' It waits for this channel\'s admins or team leaders.'}
+          </span>
+        </div>
+      )}
       <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {state.status === 'loading' && (
           <div role="status" style={{ margin: 'auto', color: 'var(--muted)', fontSize: 13 }}>Loading messages…</div>
@@ -1004,6 +1193,13 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
         }}>{notice}</div>
       )}
       {viewing && <ImageViewer image={viewing} onClose={closeViewer} />}
+      {forwarding && header && (
+        <ForwardDialog ticketId={header.ticketId} channelId={header.channelId} categoryId={header.categoryId}
+          onClose={() => setForwarding(false)}
+          onDone={() => { setForwarding(false); stickBottom.current = true; fullLoad(true); onTicketChange?.(item.id); flash('Ticket forwarded. It waits for the other channel to accept it.'); }} />
+      )}
+      {pasted && <PastePreview image={pasted} onCancel={closePasted}
+        onSend={() => { const f = pasted.file; closePasted(); sendFiles([f]); }} />}
       {richOpen && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 45, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'rgba(15,23,42,.45)' }} />
@@ -1036,6 +1232,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
               )}
             </div>
             <RichComposer ref={richRef} disabled={busy} onSubmit={() => submit(null, true)} onEscape={closeRich}
+              onPasteImage={editing || !canWrite ? undefined : onPasteImage}
               onEmptyChange={setRichEmpty} minHeight={200} maxHeight={420} hint={false}
               accent={isTicket && adminOnly ? 'var(--amber)' : 'var(--border)'}
               placeholder={editing ? 'Edit your message…' : `Message ${otherName.split(' ')[0]}…`} />
@@ -1057,7 +1254,10 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
       {confirmDel && <ConfirmDelete m={confirmDel} busy={busy} isGroup={multi} onCancel={() => setConfirmDel(null)} onConfirm={doDelete} />}
     </main>
     {isTicket && showInfo && (
-      <TicketInfoPanel ticketId={item.raw?.TicketID} header={header} isOnline={isOnline} onClose={() => setShowInfo(false)} />
+      <TicketInfoPanel ticketId={item.raw?.TicketID} header={header} isOnline={isOnline} actions={ticketActionsNode}
+        entity={entity} onView={setViewing} onClose={() => setShowInfo(false)}
+        onMembersChange={() => { stickBottom.current = true; fullLoad(true); onTicketChange?.(item.id); }}
+        onLeft={() => { onTicketChange?.(item.id); if (onLeave) onLeave(item.id); else onClose?.(); }} />
     )}
     {isGroup && showInfo && (
       <GroupInfoPanel groupId={item.raw?.GroupID} header={header} isOnline={isOnline} onClose={() => setShowInfo(false)}
@@ -1076,7 +1276,16 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
             messages: system ? [...s.messages.filter(x => x.id !== system.id), system].sort(bySort) : s.messages,
           }));
           if (system) onActivity?.(item.id, { preview: system.text, at: system.at });
-        }} />
+        }}
+        onMembersChange={({ memberCount, system }) => {
+          stickBottom.current = !!system;
+          setState(s => ({
+            ...s, header: s.header ? { ...s.header, memberCount: memberCount || s.header.memberCount } : s.header,
+            messages: system ? [...s.messages.filter(x => x.id !== system.id), system].sort(bySort) : s.messages,
+          }));
+          if (system) onActivity?.(item.id, { preview: system.text, at: system.at });
+        }}
+        onLeft={() => onLeave?.(item.id)} />
     )}
     </div>
   );

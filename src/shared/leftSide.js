@@ -4,20 +4,25 @@
 // dbo.APIGeneralOperation. The gateway fills @User from the token; permission
 // row in SQLScript/V1ApiOperationPermissionSeed.sql.
 import { apiExec } from './auth.js';
+import { flagOf } from './ticketFlag.js';
+import { assigneeOf } from './ticketAssign.js';
+import { slaOf } from './ticketSla.js';
 
 const PROC = 'dbo.APISilaWebOperation';
 
 // TicketState -> tone [fg, bg]; labels come from cha.TicketState
 const TICKET_TONE = {
-  0: ['var(--blue)', 'var(--blue-soft)'],
-  1: ['var(--green)', 'var(--green-soft)'],
-  5: ['var(--amber)', 'var(--amber-soft)'],
+  0: ['var(--blue)', 'var(--blue-soft)'],          // New
+  1: ['var(--green)', 'var(--green-soft)'],        // In Progress
+  2: ['var(--orange)', 'var(--orange-soft)'],      // Forwarded
+  3: ['var(--amber)', 'var(--amber-soft)'],        // Approve Waiting
+  5: ['var(--amber)', 'var(--amber-soft)'],        // Hold
 };
 const MUTED_TONE = ['var(--text2)', 'var(--soft)'];
 
 const clean = (s) => String(s ?? '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
 // For an attachment the SP's LastMessage is the file name; a voice note (.m4a ...) reads better as words
-const preview = (s) => {
+export const preview = (s) => {
   const t = clean(s);
   if (/^Text Is Deleted \*+$/i.test(t)) return 'This message was deleted';   // the mobile app's delete placeholder
   return /^\S+\.(m4a|aac|mp3|ogg|oga|opus|wav)$/i.test(t) ? 'Voice message' : t;
@@ -52,7 +57,7 @@ function toItem(r) {
     item.title = r.FromName || r.FromUsername || 'Unknown user';
     item.username = String(r.FromUsername || '').toLowerCase();   // matches live presence
     item.photoUrl = r.FromPhotoURL || '';
-    item.jobTitle = [r.FromJobName, r.FromDepartmentName].filter(Boolean).join(' · ');
+    item.jobTitle = r.FromJobName || '';
     item.sub = item.jobTitle;
   }
   if (kind === 'group') item.title = r.GroupName || 'Group';
@@ -61,6 +66,9 @@ function toItem(r) {
     item.sub = [r.ChannelName && `# ${r.ChannelName}`, r.TicketID && `#${r.TicketID}`].filter(Boolean).join(' · ');
     item.state = r.TicketStateDescription || '';
     item.tone = TICKET_TONE[r.TicketState] || MUTED_TONE;
+    item.flag = flagOf(r);   // the user's own follow-up flag
+    item.assignee = assigneeOf(r);   // who owns it
+    item.sla = slaOf(r);             // first reply / finish against the channel's targets
   }
   if (kind === 'mail') {
     item.title = r.MailSubject || 'Mail';
@@ -81,8 +89,14 @@ const byRecent = (a, b) => (b.at?.getTime() || 0) - (a.at?.getTime() || 0);
 // bump it on every new message / unread change). Returns { items, maxSeq }:
 // a full load drops hidden conversations; a delta keeps them (hidden: true) so
 // mergeLeftSide can remove them. Throws ApiError with the SP's message.
+// A delta starts LEFT_OVERLAP sequence numbers back: SynSequence is taken
+// inside the writer's transaction, so a change that commits a moment after a
+// higher one would otherwise be skipped until the next full load. The rows
+// re-read are merged by SilaID (mergeLeftSide) and only notify when their
+// unread count goes up, so reading them again changes nothing.
+const LEFT_OVERLAP = 500;
 export async function loadLeftSide(maxSeq = 0) {
-  const res = await apiExec(PROC, 'Left side', { MaxSeq: maxSeq });
+  const res = await apiExec(PROC, 'Left side', { MaxSeq: maxSeq ? Math.max(1, maxSeq - LEFT_OVERLAP) : 0 });
   const rows = res?.data?.List0 || [];
   const all = rows.map(toItem);
   const items = (maxSeq ? all : all.filter(i => !i.hidden)).sort(byRecent);

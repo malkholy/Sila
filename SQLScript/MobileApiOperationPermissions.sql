@@ -146,3 +146,37 @@ WHEN NOT MATCHED THEN
     INSERT (ProcedureName, OperationName, Enabled, AllowExternal, AllowedParametersJson, Notes, ModifiedBy)
     VALUES (s.ProcedureName, s.OperationName, 1, 1, @Attachment, s.Notes, N'claude');
 GO
+
+-- -------------------------------------------------------------------------
+-- CHA.APITicketOperation ticket flag (2026-10-23, SQLScript/APITicketOperationFlag.sql):
+-- the caller's own follow-up flag (dbo.SilaTicketFlag). @TicketID in
+-- extraParams, DueDate / Note in LineData.
+-- -------------------------------------------------------------------------
+DECLARE @TicketFlag NVARCHAR(MAX) = N'["TicketID","FireBaseToken","AppVersionWeb","AppVersionAndroid","AppVersionIos","AppVersionDesktop","PlatForm"]';
+MERGE [PLS].[V1ApiOperationPermission] AS t
+USING (VALUES
+    (N'CHA.APITicketOperation', N'Set Ticket Flag',   N'Mobile: flag a ticket for yourself (due date, note)'),
+    (N'CHA.APITicketOperation', N'Clear Ticket Flag', N'Mobile: clear your own ticket flag')
+) AS s (ProcedureName, OperationName, Notes)
+ON t.ProcedureName = s.ProcedureName AND t.OperationName = s.OperationName
+WHEN NOT MATCHED THEN
+    INSERT (ProcedureName, OperationName, Enabled, AllowExternal, AllowedParametersJson, Notes, ModifiedBy)
+    VALUES (s.ProcedureName, s.OperationName, 1, 1, @TicketFlag, s.Notes, N'claude');
+GO
+
+-- -------------------------------------------------------------------------
+-- CHA.APITicketOperation ticket assignment (2026-10-23, dbo.SilaTicketAssignment):
+-- @TicketID in extraParams; Assign: LineData = the UserID.
+-- -------------------------------------------------------------------------
+DECLARE @TicketAssign NVARCHAR(MAX) = N'["TicketID","FireBaseToken","AppVersionWeb","AppVersionAndroid","AppVersionIos","AppVersionDesktop","PlatForm"]';
+MERGE [PLS].[V1ApiOperationPermission] AS t
+USING (VALUES
+    (N'CHA.APITicketOperation', N'Assign Ticket',   N'Mobile: managers assign the ticket to someone in it'),
+    (N'CHA.APITicketOperation', N'Take Ticket',     N'Mobile: a non-CC member takes an unassigned ticket'),
+    (N'CHA.APITicketOperation', N'Unassign Ticket', N'Mobile: the assignee or a manager unassigns it')
+) AS s (ProcedureName, OperationName, Notes)
+ON t.ProcedureName = s.ProcedureName AND t.OperationName = s.OperationName
+WHEN NOT MATCHED THEN
+    INSERT (ProcedureName, OperationName, Enabled, AllowExternal, AllowedParametersJson, Notes, ModifiedBy)
+    VALUES (s.ProcedureName, s.OperationName, 1, 1, @TicketAssign, s.Notes, N'claude');
+GO

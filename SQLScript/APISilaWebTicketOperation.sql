@@ -37,16 +37,27 @@ GO
 -- Operations (LineData JSON):
 --   Channel list          -> channels the caller can see (public, or a member of a
 --                            private one) with IsFavorite, IsMember, MyIsAdmin,
---                            MyIsTeamLeader, MyOpenTickets, MyUnread.
+--                            MyIsTeamLeader, MyOpenTickets, MyUnread, and what it handles:
+--                            Purpose, Examples, OfferInAssistant (dbo.SilaChannelPurpose).
 --   Channel members       { ChannelID }  visible channels only.
 --   Set channel favorite  { ChannelID, Favorite: 1|0 }
---   Ticket list           { ChannelID?: int, Closed?: 1 }  the caller's tickets
+--   Ticket list           { ChannelID?: int, Closed?: 1, Since?: bigint }  the caller's tickets
 --                            (open by default; Closed = 1: closed ones, newest 200).
+--                            List1 = { Mark }: the watermark for the next call.
+--                            Since = a previous Mark: ONLY the caller's tickets whose
+--                            TicketHistory or own TicketMembers row changed after it
+--                            (RowVer, SQLScript/TicketRowVersion.sql), in any state and
+--                            with IsLeft, so the app can file / drop them; at most 2001
+--                            rows (more = reload in full).
 --   Ticket messages       { TicketID, BeforeChatID?, AfterChatID?, Top? (1-200, 50) }
 --                            List0 = the ticket + the caller's role and allowed
 --                            actions, List1 = messages newest first (SortID like groups).
+--                            A forwarded copy waiting for approval (state 3) also lists the
+--                            original ticket's messages (no admins-only notes), read-only.
 --                            Read-only: opening a ticket does NOT mark it read.
 --   Ticket members        { TicketID }
+--   Ticket media          { TicketID }  files and messages with links (newest 500), for the
+--                            details panel; the same visibility as Ticket messages.
 --   Mark ticket read      { TicketID }
 --   New ticket            { ChannelID, Subject, Text, Members: [ { UserID, IsCC } ], TempTicketID? }
 --   Send ticket chat      { TicketID, Text, LocalChatID, ReplayMsgID?, AdminOnly?: 1, Html? }
@@ -60,8 +71,23 @@ GO
 --   Forward ticket        { TicketID, ToChannelID, Members?: [ { UserID, IsCC } ] }
 --   Answer forward        { TicketID (the forwarded copy), Accept: 1|0 }
 --   Cancel forward        { TicketID (the original) }
---   Invite ticket members { TicketID, Members: [ { UserID, IsCC } ] }
+--   Invite ticket members { TicketID, Members: [ { UserID, IsCC } ] }   admins / team leaders only
 --   Remove ticket member  { TicketID, UserID }   managers, or yourself (leave)
+--   Leave ticket          { TicketID }   any member; not the last admin / team leader of an
+--                            open ticket
+--   Assign ticket / Take ticket / Unassign ticket  { TicketID, UserID (Assign) }  the ticket's
+--                            owner (dbo.SilaTicketAssignment): managers assign anyone in it, a
+--                            non-CC member takes it while unassigned, the assignee or a manager
+--                            unassigns. Rows / header carry AssignedUserID / AssignedName; the
+--                            header also CanAssign / CanTake / CanUnassign.
+--   Ticket report         { From?, To? }  per channel / per assignee times for the channels the
+--                            caller manages (all for mhd); see the block. Every ticket row and
+--                            the header also carry the SLA: FirstReplyDate, ReplyMinutes,
+--                            ReplyTarget, ReplyState, FinishWorkMinutes, FinishTarget, FinishState
+--                            (working minutes; states 0 no target, 1 on time, 2 due soon, 3 late).
+--   Set ticket flag       { TicketID, Flagged: 1|0, DueDate?: 'yyyy-mm-dd', Note? }  the caller's
+--                            own follow-up flag (dbo.SilaTicketFlag); lists, the header and
+--                            the Home list return MyFlagged / MyFlagDue / MyFlagNote
 -- Writes on a message return it (Ticket messages columns + TicketID); writes on
 -- a ticket return the ticket row (Ticket list columns).
 --
@@ -123,9 +149,12 @@ BEGIN
                         THEN 1 ELSE 0 END AS IsFavorite,
                    CASE WHEN cm.UserID IS NULL THEN 0 ELSE 1 END AS IsMember,
                    ISNULL(cm.IsAdmin, 0) AS MyIsAdmin, ISNULL(cm.IsTeamLeader, 0) AS MyIsTeamLeader,
-                   ISNULL(t.OpenTickets, 0) AS MyOpenTickets, ISNULL(t.Unread, 0) AS MyUnread
+                   ISNULL(t.OpenTickets, 0) AS MyOpenTickets, ISNULL(t.Unread, 0) AS MyUnread,
+                   ISNULL(p.Purpose, N'') AS Purpose, ISNULL(p.Examples, N'') AS Examples,
+                   CAST(ISNULL(p.OfferInAssistant, 0) AS INT) AS OfferInAssistant
             FROM CHA.ChannelMaster c
             JOIN @Visible v ON v.ChannelID = c.ChannelID
+            LEFT JOIN dbo.SilaChannelPurpose p ON p.ChannelID = c.ChannelID
             LEFT JOIN CHA.ChannelCategory cc ON cc.ChannelCategoryID = c.CategoryID
             LEFT JOIN CHA.ChannelMembers cm  ON cm.ChannelID = c.ChannelID AND cm.UserID = @UserID
             OUTER APPLY (SELECT COUNT(*) AS OpenTickets, SUM(tm.UnreadCount) AS Unread
@@ -144,12 +173,11 @@ BEGIN
 
             IF @Operation = N'Channel members'
             BEGIN
-                SELECT m.UserID, u.Username, u.FullName, j.JobName, d.DepartmentName, p.FileURL AS PhotoURL,
+                SELECT m.UserID, u.Username, u.FullName, j.JobName, j.DepartmentName, p.FileURL AS PhotoURL,
                        m.IsAdmin, m.IsTeamLeader
                 FROM CHA.ChannelMembers m
                 JOIN dbo.UserMaster u                ON u.UserID = m.UserID AND u.IsNotActive = 0
-                LEFT JOIN dbo.UserJobMaster j        ON j.JobID = u.JobID
-                LEFT JOIN dbo.UserDepartmentMaster d ON d.DepartmentID = u.DepartmentID
+                LEFT JOIN dbo.V_SilaUserTitle j        ON j.UserID = u.UserID
                 OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                              WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
                 WHERE m.ChannelID = @CChannel
@@ -171,15 +199,69 @@ BEGIN
         BEGIN
             DECLARE @LChannel INT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.ChannelID') AS INT), 0);
             DECLARE @LClosed INT = CASE WHEN TRY_CAST(JSON_VALUE(@LineData, '$.Closed') AS INT) = 1 THEN 1 ELSE 0 END;
+            DECLARE @LSince BIGINT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.Since') AS BIGINT), 0);
+            -- the watermark, taken FIRST: every change below MIN_ACTIVE_ROWVERSION() is
+            -- committed, so the next call (RowVer > Mark) misses nothing still being saved
+            DECLARE @LMark BIGINT = CAST(MIN_ACTIVE_ROWVERSION() AS BIGINT) - 1;
+
+            IF @LSince > 0
+            BEGIN
+                -- changed tickets (any member's change, state, last message ...) plus the
+                -- caller's own member rows (unread count, left, roles); both seek an index
+                DECLARE @LChanged TABLE (TicketID INT PRIMARY KEY);
+                INSERT INTO @LChanged (TicketID)
+                SELECT th.TicketID FROM CHA.TicketHistory th WHERE th.RowVer > CAST(@LSince AS BINARY(8))
+                UNION
+                SELECT tm.TicketID FROM CHA.TicketMembers tm WHERE tm.UserID = @UserID AND tm.RowVer > CAST(@LSince AS BINARY(8));
+
+                SELECT TOP (2001)
+                       th.TicketID, th.TicketSubject, th.TicketState, ts.StateDescription, th.TicketChannelID AS ChannelID,
+                       c.Name AS ChannelName, th.CreatedDate, th.CreatedByUser, cu.FullName AS CreatedByName,
+                       th.LastMessage, th.LastChatID, th.LastMaintDate, th.StartDate, th.EndedDate, th.ClosedDate,
+                       th.OrginalTicketID, th.OrginalChannelID, oc.Name AS OrginalChannelName,
+                       tm.UnreadCount AS Unread, tm.IsMuted, tm.IsAdmin AS MyIsAdmin, tm.IsTeamLeader AS MyIsTeamLeader,
+                       CASE WHEN tm.IsCreatedBy = 1 OR th.CreatedByUser = @User THEN 1 ELSE 0 END AS MyIsCreator,
+                       tm.IsLeft,
+                       CASE WHEN tf.TicketID IS NULL THEN 0 ELSE 1 END AS MyFlagged, tf.DueDate AS MyFlagDue, tf.Note AS MyFlagNote,
+                   ta.UserID AS AssignedUserID, au.Username AS AssignedUsername, ISNULL(NULLIF(au.FullName, N''), au.Username) AS AssignedName,
+                   sla.FirstReplyDate, sla.ReplyMinutes, sla.ReplyTarget, sla.ReplyState,
+                   sla.FinishMinutes AS FinishWorkMinutes, sla.FinishTarget, sla.FinishState
+                FROM @LChanged x
+                JOIN CHA.TicketHistory th        ON th.TicketID = x.TicketID
+                LEFT JOIN dbo.SilaTicketFlag tf  ON tf.TicketID = th.TicketID AND tf.UserID = @UserID
+            LEFT JOIN dbo.SilaTicketAssignment ta ON ta.TicketID = th.TicketID
+            LEFT JOIN dbo.UserMaster au      ON au.UserID = ta.UserID
+            OUTER APPLY dbo.fnSilaTicketSla(th.TicketID) sla
+                -- one member row per ticket (an active one first)
+                CROSS APPLY (SELECT TOP (1) m.UnreadCount, m.IsMuted, m.IsAdmin, m.IsTeamLeader, m.IsCreatedBy, m.IsLeft
+                             FROM CHA.TicketMembers m WHERE m.TicketID = th.TicketID AND m.UserID = @UserID
+                             ORDER BY m.IsLeft, m.ID DESC) tm
+                LEFT JOIN CHA.TicketState ts     ON ts.StateID = th.TicketState
+                LEFT JOIN CHA.ChannelMaster c    ON c.ChannelID = th.TicketChannelID
+                LEFT JOIN CHA.ChannelMaster oc   ON oc.ChannelID = th.OrginalChannelID AND th.OrginalChannelID <> 0
+                LEFT JOIN dbo.UserMaster cu      ON cu.Username = th.CreatedByUser
+                ORDER BY th.LastMaintDate DESC;
+                SELECT @LMark AS Mark;
+                RETURN;
+            END
+
             SELECT TOP (CASE WHEN @LClosed = 1 THEN 200 ELSE 2000 END)
                    th.TicketID, th.TicketSubject, th.TicketState, ts.StateDescription, th.TicketChannelID AS ChannelID,
                    c.Name AS ChannelName, th.CreatedDate, th.CreatedByUser, cu.FullName AS CreatedByName,
                    th.LastMessage, th.LastChatID, th.LastMaintDate, th.StartDate, th.EndedDate, th.ClosedDate,
                    th.OrginalTicketID, th.OrginalChannelID, oc.Name AS OrginalChannelName,
                    tm.UnreadCount AS Unread, tm.IsMuted, tm.IsAdmin AS MyIsAdmin, tm.IsTeamLeader AS MyIsTeamLeader,
-                   CASE WHEN tm.IsCreatedBy = 1 OR th.CreatedByUser = @User THEN 1 ELSE 0 END AS MyIsCreator
+                   CASE WHEN tm.IsCreatedBy = 1 OR th.CreatedByUser = @User THEN 1 ELSE 0 END AS MyIsCreator,
+                   CASE WHEN tf.TicketID IS NULL THEN 0 ELSE 1 END AS MyFlagged, tf.DueDate AS MyFlagDue, tf.Note AS MyFlagNote,
+                   ta.UserID AS AssignedUserID, au.Username AS AssignedUsername, ISNULL(NULLIF(au.FullName, N''), au.Username) AS AssignedName,
+                   sla.FirstReplyDate, sla.ReplyMinutes, sla.ReplyTarget, sla.ReplyState,
+                   sla.FinishMinutes AS FinishWorkMinutes, sla.FinishTarget, sla.FinishState
             FROM CHA.TicketMembers tm
             JOIN CHA.TicketHistory th        ON th.TicketID = tm.TicketID
+            LEFT JOIN dbo.SilaTicketFlag tf  ON tf.TicketID = th.TicketID AND tf.UserID = @UserID
+            LEFT JOIN dbo.SilaTicketAssignment ta ON ta.TicketID = th.TicketID
+            LEFT JOIN dbo.UserMaster au      ON au.UserID = ta.UserID
+            OUTER APPLY dbo.fnSilaTicketSla(th.TicketID) sla
             LEFT JOIN CHA.TicketState ts     ON ts.StateID = th.TicketState
             LEFT JOIN CHA.ChannelMaster c    ON c.ChannelID = th.TicketChannelID
             LEFT JOIN CHA.ChannelMaster oc   ON oc.ChannelID = th.OrginalChannelID AND th.OrginalChannelID <> 0
@@ -188,6 +270,7 @@ BEGIN
               AND (@LChannel = 0 OR th.TicketChannelID = @LChannel)
               AND ((@LClosed = 0 AND th.TicketState < 50) OR (@LClosed = 1 AND th.TicketState = 50))
             ORDER BY th.LastMaintDate DESC;
+            SELECT @LMark AS Mark;
             RETURN;
         END
 
@@ -259,25 +342,212 @@ BEGIN
         END
 
         -- =================================================================
+        -- TICKET REPORT { From?: 'yyyy-mm-dd', To?: 'yyyy-mm-dd' } (default: the
+        -- last 30 days; at most a year). The channels the caller manages (admin
+        -- or team leader in CHA.ChannelMembers) -- every channel for mhd. Times
+        -- are WORKING minutes (dbo.fnSilaTicketSla, SQLScript/SilaSla.sql).
+        --   List0 per channel: opened / finished in the period, open now, late now
+        --         (no reply / not finished past the target), average first reply and
+        --         finish, share on time, the targets.
+        --   List1 per person (the tickets' assignees): open, late now, finished in
+        --         the period, average finish.
+        --   List2 { From, To, Channels }.
+        -- =================================================================
+        IF @Operation = N'Ticket report'
+        BEGIN
+            DECLARE @RpFrom DATE = TRY_CONVERT(DATE, JSON_VALUE(@LineData, '$.From'), 23);
+            DECLARE @RpTo DATE = TRY_CONVERT(DATE, JSON_VALUE(@LineData, '$.To'), 23);
+            IF @RpTo IS NULL SET @RpTo = CAST(GETDATE() AS DATE);
+            IF @RpFrom IS NULL OR @RpFrom > @RpTo SET @RpFrom = DATEADD(DAY, -29, @RpTo);
+            IF DATEDIFF(DAY, @RpFrom, @RpTo) > 366 SET @RpFrom = DATEADD(DAY, -366, @RpTo);
+            DECLARE @RpEnd DATETIME = DATEADD(DAY, 1, CAST(@RpTo AS DATETIME));
+
+            DECLARE @RpChannels TABLE (ChannelID INT PRIMARY KEY);
+            INSERT INTO @RpChannels (ChannelID)
+            SELECT c.ChannelID FROM CHA.ChannelMaster c
+            WHERE LOWER(@User) = N'mhd'
+               OR EXISTS (SELECT 1 FROM CHA.ChannelMembers m WHERE m.ChannelID = c.ChannelID AND m.UserID = @UserID
+                          AND (m.IsAdmin = 1 OR m.IsTeamLeader = 1));
+            IF NOT EXISTS (SELECT 1 FROM @RpChannels)
+            BEGIN SET @State = 403; SET @Message = N'Reports are for channel admins and team leaders.'; RETURN; END
+
+            -- the tickets that count: opened or finished in the period, or open now
+            DECLARE @Rp TABLE (TicketID INT PRIMARY KEY, ChannelID INT, CreatedDate DATETIME, TicketState INT,
+                               FirstReplyDate DATETIME, FinishDate DATETIME, ReplyMinutes INT, FinishMinutes INT,
+                               ReplyTarget INT, FinishTarget INT, ReplyState INT, FinishState INT, AssignedUserID INT);
+            INSERT INTO @Rp
+            SELECT th.TicketID, th.TicketChannelID, th.CreatedDate, th.TicketState, x.FirstReplyDate, x.FinishDate,
+                   x.ReplyMinutes, x.FinishMinutes, x.ReplyTarget, x.FinishTarget, x.ReplyState, x.FinishState, ta.UserID
+            FROM CHA.TicketHistory th
+            JOIN @RpChannels rc ON rc.ChannelID = th.TicketChannelID
+            CROSS APPLY dbo.fnSilaTicketSla(th.TicketID) x
+            LEFT JOIN dbo.SilaTicketAssignment ta ON ta.TicketID = th.TicketID
+            WHERE th.TicketState NOT IN (2, 3)
+              AND ((th.CreatedDate >= @RpFrom AND th.CreatedDate < @RpEnd)
+                   OR th.TicketState < 10
+                   OR (x.FinishDate >= @RpFrom AND x.FinishDate < @RpEnd));
+
+            SELECT c.ChannelID, c.Name AS ChannelName, s.FirstReplyMinutes AS ReplyTarget, s.FinishMinutes AS FinishTarget,
+                   SUM(CASE WHEN r.CreatedDate >= @RpFrom AND r.CreatedDate < @RpEnd THEN 1 ELSE 0 END) AS Opened,
+                   SUM(CASE WHEN r.FinishDate >= @RpFrom AND r.FinishDate < @RpEnd THEN 1 ELSE 0 END) AS Finished,
+                   SUM(CASE WHEN r.TicketState < 10 THEN 1 ELSE 0 END) AS OpenNow,
+                   SUM(CASE WHEN r.TicketState < 10 AND r.FirstReplyDate IS NULL AND r.ReplyState = 3 THEN 1 ELSE 0 END) AS NoReplyLate,
+                   SUM(CASE WHEN r.TicketState < 10 AND r.FinishState = 3 THEN 1 ELSE 0 END) AS FinishLate,
+                   AVG(CASE WHEN r.CreatedDate >= @RpFrom AND r.CreatedDate < @RpEnd AND r.FirstReplyDate IS NOT NULL THEN r.ReplyMinutes END) AS AvgReplyMinutes,
+                   AVG(CASE WHEN r.FinishDate >= @RpFrom AND r.FinishDate < @RpEnd THEN r.FinishMinutes END) AS AvgFinishMinutes,
+                   SUM(CASE WHEN r.CreatedDate >= @RpFrom AND r.CreatedDate < @RpEnd AND r.FirstReplyDate IS NOT NULL AND r.ReplyTarget IS NOT NULL THEN 1 ELSE 0 END) AS ReplyMeasured,
+                   SUM(CASE WHEN r.CreatedDate >= @RpFrom AND r.CreatedDate < @RpEnd AND r.FirstReplyDate IS NOT NULL AND r.ReplyTarget IS NOT NULL AND r.ReplyMinutes <= r.ReplyTarget THEN 1 ELSE 0 END) AS ReplyOnTime,
+                   SUM(CASE WHEN r.FinishDate >= @RpFrom AND r.FinishDate < @RpEnd AND r.FinishTarget IS NOT NULL THEN 1 ELSE 0 END) AS FinishMeasured,
+                   SUM(CASE WHEN r.FinishDate >= @RpFrom AND r.FinishDate < @RpEnd AND r.FinishTarget IS NOT NULL AND r.FinishMinutes <= r.FinishTarget THEN 1 ELSE 0 END) AS FinishOnTime
+            FROM @RpChannels rc
+            JOIN CHA.ChannelMaster c ON c.ChannelID = rc.ChannelID
+            LEFT JOIN dbo.SilaChannelSla s ON s.ChannelID = c.ChannelID
+            LEFT JOIN @Rp r ON r.ChannelID = c.ChannelID
+            WHERE ISNULL(c.InActive, 0) = 0 OR r.TicketID IS NOT NULL
+            GROUP BY c.ChannelID, c.Name, s.FirstReplyMinutes, s.FinishMinutes
+            HAVING COUNT(r.TicketID) > 0
+            ORDER BY SUM(CASE WHEN r.TicketState < 10 AND r.FinishState = 3 THEN 1 ELSE 0 END) DESC, c.Name;
+
+            SELECT u.UserID, u.Username, ISNULL(NULLIF(u.FullName, N''), u.Username) AS FullName, p.FileURL AS PhotoURL,
+                   SUM(CASE WHEN r.TicketState < 10 THEN 1 ELSE 0 END) AS OpenNow,
+                   SUM(CASE WHEN r.TicketState < 10 AND r.FinishState = 3 THEN 1 ELSE 0 END) AS LateNow,
+                   SUM(CASE WHEN r.FinishDate >= @RpFrom AND r.FinishDate < @RpEnd THEN 1 ELSE 0 END) AS Finished,
+                   AVG(CASE WHEN r.FinishDate >= @RpFrom AND r.FinishDate < @RpEnd THEN r.FinishMinutes END) AS AvgFinishMinutes
+            FROM @Rp r
+            JOIN dbo.UserMaster u ON u.UserID = r.AssignedUserID
+            OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
+                         WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
+            GROUP BY u.UserID, u.Username, u.FullName, p.FileURL
+            ORDER BY SUM(CASE WHEN r.TicketState < 10 AND r.FinishState = 3 THEN 1 ELSE 0 END) DESC, u.FullName;
+
+            SELECT @RpFrom AS [From], @RpTo AS [To], (SELECT COUNT(*) FROM @RpChannels) AS Channels;
+            RETURN;
+        END
+
+        -- =================================================================
         -- EVERYTHING ON ONE TICKET: the ticket and the caller's role in it
         -- =================================================================
         DECLARE @TicketID INT, @TState INT, @TChannel INT, @TCreatedBy NVARCHAR(50), @TOrig INT, @TOrigChannel INT,
-                @TForwardBy NVARCHAR(50), @TIsManager INT, @TIsCreator INT, @TIsMember INT = 0;
-        IF @Operation IN (N'Ticket messages', N'Ticket members', N'Mark ticket read', N'Send ticket chat', N'Send ticket file',
+                @TForwardBy NVARCHAR(50), @TIsManager INT, @TIsCreator INT, @TIsMember INT = 0, @TIsCC INT = 0;
+        IF @Operation IN (N'Ticket messages', N'Ticket members', N'Ticket media', N'Mark ticket read', N'Send ticket chat', N'Send ticket file',
                           N'Change ticket state', N'Forward ticket', N'Answer forward', N'Cancel forward',
-                          N'Invite ticket members', N'Remove ticket member')
+                          N'Invite ticket members', N'Remove ticket member', N'Leave ticket', N'Set ticket flag',
+                          N'Assign ticket', N'Take ticket', N'Unassign ticket')
         BEGIN
             SET @TicketID = TRY_CAST(JSON_VALUE(@LineData, '$.TicketID') AS INT);
             SELECT @TState = th.TicketState, @TChannel = th.TicketChannelID, @TCreatedBy = th.CreatedByUser,
                    @TOrig = th.OrginalTicketID, @TOrigChannel = th.OrginalChannelID, @TForwardBy = th.ForwardBy,
                    @TIsMember = 1,
                    @TIsManager = CASE WHEN tm.IsAdmin = 1 OR tm.IsTeamLeader = 1 THEN 1 ELSE 0 END,
-                   @TIsCreator = CASE WHEN tm.IsCreatedBy = 1 OR th.CreatedByUser = @User THEN 1 ELSE 0 END
+                   @TIsCreator = CASE WHEN tm.IsCreatedBy = 1 OR th.CreatedByUser = @User THEN 1 ELSE 0 END,
+                   @TIsCC = CASE WHEN tm.IsCC = 1 THEN 1 ELSE 0 END
             FROM CHA.TicketHistory th
             JOIN CHA.TicketMembers tm ON tm.TicketID = th.TicketID AND tm.UserID = @UserID AND tm.IsLeft = 0
             WHERE th.TicketID = @TicketID;
             IF @TIsMember = 0
             BEGIN SET @State = 403; SET @Message = N'Ticket not found.'; RETURN; END
+        END
+
+        -- -----------------------------------------------------------------
+        -- Set ticket flag: the caller's own follow-up flag (dbo.SilaTicketFlag),
+        -- private to him. Flagged = 0 clears it. DueDate (yyyy-mm-dd) and Note
+        -- (at most 300 characters) are optional.
+        -- -----------------------------------------------------------------
+        IF @Operation = N'Set ticket flag'
+        BEGIN
+            DECLARE @FgOn INT, @FgDue NVARCHAR(30), @FgNote NVARCHAR(MAX);
+            SELECT @FgOn = CASE WHEN Flagged = 0 THEN 0 ELSE 1 END, @FgDue = NULLIF(LTRIM(RTRIM(DueDate)), N''),
+                   @FgNote = LTRIM(RTRIM(ISNULL(Note, N'')))
+            FROM OPENJSON(@LineData) WITH (Flagged INT '$.Flagged', DueDate NVARCHAR(30) '$.DueDate', Note NVARCHAR(MAX) '$.Note');
+            IF @FgDue IS NOT NULL AND TRY_CONVERT(DATE, @FgDue, 23) IS NULL
+            BEGIN SET @State = 1; SET @Message = N'The due date is not valid.'; RETURN; END
+            IF LEN(@FgNote) > 300
+            BEGIN SET @State = 1; SET @Message = N'The note can be at most 300 characters.'; RETURN; END
+            IF @FgOn = 0
+                DELETE FROM dbo.SilaTicketFlag WHERE TicketID = @TicketID AND UserID = @UserID;
+            ELSE
+            BEGIN
+                UPDATE dbo.SilaTicketFlag SET DueDate = TRY_CONVERT(DATE, @FgDue, 23), Note = @FgNote, LastMaintDate = GETDATE()
+                WHERE TicketID = @TicketID AND UserID = @UserID;
+                IF @@ROWCOUNT = 0
+                    INSERT INTO dbo.SilaTicketFlag (TicketID, UserID, DueDate, Note) VALUES (@TicketID, @UserID, TRY_CONVERT(DATE, @FgDue, 23), @FgNote);
+            END
+            SELECT @TicketID AS TicketID, CASE WHEN f.TicketID IS NULL THEN 0 ELSE 1 END AS MyFlagged, f.DueDate AS MyFlagDue, f.Note AS MyFlagNote
+            FROM (SELECT 1 AS one) z LEFT JOIN dbo.SilaTicketFlag f ON f.TicketID = @TicketID AND f.UserID = @UserID;
+            RETURN;
+        END
+
+        -- -----------------------------------------------------------------
+        -- Assignment (dbo.SilaTicketAssignment): who owns the ticket.
+        --   Assign ticket   { TicketID, UserID }  admins / team leaders; anyone in the ticket
+        --   Take ticket     { TicketID }          any non-CC member, while nobody has it
+        --   Unassign ticket { TicketID }          the assignee or a manager
+        -- Open tickets only (state < 50). A system line each time; returns the ticket row.
+        -- -----------------------------------------------------------------
+        IF @Operation IN (N'Assign ticket', N'Take ticket', N'Unassign ticket')
+        BEGIN
+            IF @TState >= 50
+            BEGIN SET @State = 1; SET @Message = N'This ticket is closed.'; RETURN; END
+            DECLARE @AsCurrent INT = (SELECT UserID FROM dbo.SilaTicketAssignment WHERE TicketID = @TicketID);
+            DECLARE @AsTarget INT, @AsName NVARCHAR(MAX), @AsText NVARCHAR(MAX), @AsSame INT = 0;
+            IF @Operation = N'Assign ticket'
+            BEGIN
+                IF @TIsManager = 0
+                BEGIN SET @State = 403; SET @Message = N'Only ticket admins and team leaders can assign a ticket.'; RETURN; END
+                SET @AsTarget = TRY_CAST(JSON_VALUE(@LineData, '$.UserID') AS INT);
+            END
+            ELSE IF @Operation = N'Take ticket'
+            BEGIN
+                IF @TIsCC = 1
+                BEGIN SET @State = 403; SET @Message = N'People in CC can''t take a ticket.'; RETURN; END
+                IF @AsCurrent IS NOT NULL AND @AsCurrent <> @UserID
+                BEGIN SET @State = 1; SET @Message = N'Someone already has this ticket.'; RETURN; END
+                SET @AsTarget = @UserID;
+            END
+            ELSE
+            BEGIN
+                IF @AsCurrent IS NULL
+                BEGIN SET @State = 1; SET @Message = N'Nobody has this ticket.'; RETURN; END
+                IF @TIsManager = 0 AND @AsCurrent <> @UserID
+                BEGIN SET @State = 403; SET @Message = N'Only the assignee or a ticket admin / team leader can unassign it.'; RETURN; END
+            END
+
+            IF @Operation <> N'Unassign ticket'
+            BEGIN
+                SELECT @AsName = ISNULL(NULLIF(u.FullName, N''), u.Username)
+                FROM CHA.TicketMembers tm JOIN dbo.UserMaster u ON u.UserID = tm.UserID AND u.IsNotActive = 0
+                WHERE tm.TicketID = @TicketID AND tm.UserID = @AsTarget AND tm.IsLeft = 0;
+                IF @AsName IS NULL
+                BEGIN SET @State = 1; SET @Message = N'Only someone in the ticket can be assigned.'; RETURN; END
+                IF @AsCurrent = @AsTarget SET @AsSame = 1;   -- already his: nothing to change
+                SET @AsText = CASE WHEN @AsTarget = @UserID THEN @Me + N' took this ticket'
+                                   ELSE @Me + N' assigned this ticket to @' + @AsName END;
+            END
+            ELSE
+                SET @AsText = @Me + N' unassigned this ticket ('
+                              + ISNULL((SELECT N'@' + ISNULL(NULLIF(FullName, N''), Username) FROM dbo.UserMaster WHERE UserID = @AsCurrent), N'') + N')';
+
+            IF @AsSame = 0
+            BEGIN
+            BEGIN TRANSACTION;
+            IF @Operation = N'Unassign ticket'
+                DELETE FROM dbo.SilaTicketAssignment WHERE TicketID = @TicketID;
+            ELSE
+            BEGIN
+                UPDATE dbo.SilaTicketAssignment SET UserID = @AsTarget, AssignedBy = @User, AssignedDate = GETDATE() WHERE TicketID = @TicketID;
+                IF @@ROWCOUNT = 0
+                    INSERT INTO dbo.SilaTicketAssignment (TicketID, UserID, AssignedBy) VALUES (@TicketID, @AsTarget, @User);
+            END
+            DECLARE @AsChat INT = NEXT VALUE FOR dbo.ChatTicket;
+            INSERT INTO CHA.TicketChatHistory
+                (ChatID, ChannelID, TicketID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,
+                 CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem, IsAdmin)
+            VALUES (@AsChat, @TChannel, @TicketID, @UserID, @User, @AsText, @AsText, 0, 0,
+                    @User, GETDATE(), @User, GETDATE(), 0, 0, 0, 0, 1, 0);
+            UPDATE CHA.TicketHistory SET LastMaintDate = GETDATE(), LastMaintByUser = @User WHERE TicketID = @TicketID;
+            COMMIT TRANSACTION;
+            END
+            SET @RetTicket = @TicketID;
         END
 
         -- -----------------------------------------------------------------
@@ -290,9 +560,14 @@ BEGIN
             DECLARE @MTop INT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.Top') AS INT), 50);
             IF @MTop < 1 SET @MTop = 1;
             IF @MTop > 200 SET @MTop = 200;
+            -- a forwarded copy waiting for approval (state 3): its managers also read the
+            -- original ticket's conversation (no admins-only notes -- those stay behind on
+            -- Accept too), so they can decide. Read-only: nothing is marked read there.
+            DECLARE @MOrig INT = CASE WHEN @TState = 3 AND ISNULL(@TOrig, 0) > 0 THEN @TOrig ELSE 0 END;
 
             SELECT th.TicketID, th.TicketSubject, th.TicketState, ts.StateDescription, th.TicketChannelID AS ChannelID,
                    c.Name AS ChannelName, c.CategoryID, th.CreatedDate, th.CreatedByUser, cu.FullName AS CreatedByName,
+                   cj.JobName AS CreatedByJobName,
                    th.StartDate, th.StartBy, th.EndedDate, th.EndedBy, th.ClosedDate, th.ClosedBy, th.HoldDate, th.HoldBy,
                    th.ForwardDate, th.ForwardBy, th.OrginalTicketID, th.OrginalChannelID, oc.Name AS OrginalChannelName,
                    (SELECT COUNT(*) FROM CHA.TicketMembers x WHERE x.TicketID = th.TicketID AND x.IsLeft = 0) AS MemberCount,
@@ -308,13 +583,28 @@ BEGIN
                    CASE WHEN @TIsManager = 1 AND th.TicketState = 0 THEN 1 ELSE 0 END AS CanForward,
                    CASE WHEN @TIsManager = 1 AND th.TicketState = 3 THEN 1 ELSE 0 END AS CanAnswerForward,
                    CASE WHEN (@TIsManager = 1 OR th.ForwardBy = @User) AND th.TicketState = 2 THEN 1 ELSE 0 END AS CanCancelForward,
-                   CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanInvite,
-                   @TIsManager AS CanRemoveMembers
+                   CASE WHEN @TIsManager = 1 AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanInvite,
+                   @TIsManager AS CanRemoveMembers,
+                   CASE WHEN @TIsManager = 1 AND th.TicketState < 50
+                         AND (SELECT COUNT(*) FROM CHA.TicketMembers x WHERE x.TicketID = th.TicketID AND x.IsLeft = 0
+                              AND (x.IsAdmin = 1 OR x.IsTeamLeader = 1)) <= 1 THEN 0 ELSE 1 END AS CanLeave,
+                   CASE WHEN @TIsManager = 1 AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanAssign,
+                   CASE WHEN ta.TicketID IS NULL AND @TIsCC = 0 AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanTake,
+                   CASE WHEN ta.TicketID IS NOT NULL AND (@TIsManager = 1 OR ta.UserID = @UserID) AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanUnassign,
+                   CASE WHEN tf.TicketID IS NULL THEN 0 ELSE 1 END AS MyFlagged, tf.DueDate AS MyFlagDue, tf.Note AS MyFlagNote,
+                   ta.UserID AS AssignedUserID, au.Username AS AssignedUsername, ISNULL(NULLIF(au.FullName, N''), au.Username) AS AssignedName,
+                   sla.FirstReplyDate, sla.ReplyMinutes, sla.ReplyTarget, sla.ReplyState,
+                   sla.FinishMinutes AS FinishWorkMinutes, sla.FinishTarget, sla.FinishState
             FROM CHA.TicketHistory th
+            LEFT JOIN dbo.SilaTicketFlag tf ON tf.TicketID = th.TicketID AND tf.UserID = @UserID
+            LEFT JOIN dbo.SilaTicketAssignment ta ON ta.TicketID = th.TicketID
+            LEFT JOIN dbo.UserMaster au     ON au.UserID = ta.UserID
+            OUTER APPLY dbo.fnSilaTicketSla(th.TicketID) sla
             LEFT JOIN CHA.TicketState ts    ON ts.StateID = th.TicketState
             LEFT JOIN CHA.ChannelMaster c   ON c.ChannelID = th.TicketChannelID
             LEFT JOIN CHA.ChannelMaster oc  ON oc.ChannelID = th.OrginalChannelID AND th.OrginalChannelID <> 0
             LEFT JOIN dbo.UserMaster cu     ON cu.Username = th.CreatedByUser
+            LEFT JOIN dbo.V_SilaUserTitle cj ON cj.UserID = cu.UserID
             WHERE th.TicketID = @TicketID;
 
             SELECT TOP (@MTop)
@@ -329,17 +619,17 @@ BEGIN
             FROM CHA.TicketChatHistory m
             -- replaced versions: the ticket's OrginalChatIDs, collected once (as for groups)
             LEFT JOIN (SELECT DISTINCT n.OrginalChatID FROM CHA.TicketChatHistory n
-                       WHERE n.TicketID = @TicketID AND n.OrginalChatID > 0) sup ON sup.OrginalChatID = m.ChatID
+                       WHERE n.TicketID IN (@TicketID, @MOrig) AND n.OrginalChatID > 0) sup ON sup.OrginalChatID = m.ChatID
             LEFT JOIN dbo.AttachmentHistory t  ON t.AttachmentID = m.AttachmentID AND m.AttachmentID <> 0
             LEFT JOIN dbo.UserMaster fu        ON fu.UserID = m.FromUserID
-            LEFT JOIN dbo.UserJobMaster fj     ON fj.JobID = fu.JobID
+            LEFT JOIN dbo.V_SilaUserTitle fj     ON fj.UserID = fu.UserID
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = fu.AttachmentID AND fu.AttachmentID <> 0 ORDER BY x.ID DESC) fp
             -- TOP 1: the old 'New Chat' saved some messages twice under one ChatID
             OUTER APPLY (SELECT TOP (1) x.Text, x.FromUserID, x.FromUserName, x.IsAdmin FROM CHA.TicketChatHistory x
                          WHERE x.ChatID = m.ReplayMsgID AND m.ReplayMsgID <> 0 AND x.TicketID = m.TicketID ORDER BY x.ID DESC) r
             LEFT JOIN dbo.UserMaster ru        ON ru.UserID = r.FromUserID
-            WHERE m.TicketID = @TicketID
+            WHERE (m.TicketID = @TicketID OR (@MOrig > 0 AND m.TicketID = @MOrig AND m.IsAdmin = 0))
               AND (m.IsAdmin = 0 OR @TIsManager = 1)                 -- admins-only notes
               AND (sup.OrginalChatID IS NULL OR @MAfter > 0)
               AND (@MBefore = 0 OR CASE WHEN m.OrginalChatID > 0 THEN m.OrginalChatID ELSE m.ChatID END < @MBefore)
@@ -349,18 +639,47 @@ BEGIN
         END
 
         -- -----------------------------------------------------------------
+        -- Ticket media (read-only): files, and messages that carry a link,
+        -- newest first -- what the caller can see in Ticket messages: no
+        -- admins-only notes for non-managers, no replaced versions, no
+        -- deleted or system lines. The app splits files into media / docs and
+        -- reads the links out of Text.
+        -- -----------------------------------------------------------------
+        IF @Operation = N'Ticket media'
+        BEGIN
+            -- a waiting forwarded copy: the original's files too (as Ticket messages)
+            DECLARE @DOrig INT = CASE WHEN @TState = 3 AND ISNULL(@TOrig, 0) > 0 THEN @TOrig ELSE 0 END;
+            SELECT TOP (500)
+                   m.ChatID, m.CreatedDate, m.FromUserID, ISNULL(fu.FullName, m.FromUserName) AS FromName,
+                   m.AttachmentID, t.FileName, t.FileOrginalName, t.FileExtension, t.FileSize, t.FileURL,
+                   CASE WHEN ISNULL(m.AttachmentID, 0) = 0 THEN m.Text END AS Text
+            FROM CHA.TicketChatHistory m
+            LEFT JOIN (SELECT DISTINCT n.OrginalChatID FROM CHA.TicketChatHistory n
+                       WHERE n.TicketID IN (@TicketID, @DOrig) AND n.OrginalChatID > 0) sup ON sup.OrginalChatID = m.ChatID
+            LEFT JOIN dbo.AttachmentHistory t ON t.AttachmentID = m.AttachmentID AND m.AttachmentID <> 0
+            LEFT JOIN dbo.UserMaster fu       ON fu.UserID = m.FromUserID
+            WHERE (m.TicketID = @TicketID OR (@DOrig > 0 AND m.TicketID = @DOrig AND m.IsAdmin = 0))
+              AND (m.IsAdmin = 0 OR @TIsManager = 1)
+              AND sup.OrginalChatID IS NULL
+              AND ISNULL(m.IsDeleted, 0) = 0 AND ISNULL(m.IsSystem, 0) = 0
+              AND ((m.AttachmentID <> 0 AND t.FileURL IS NOT NULL)
+                   OR m.Text LIKE N'%http%' OR m.Text LIKE N'%www.%')
+            ORDER BY m.ChatID DESC, m.ID DESC;
+            RETURN;
+        END
+
+        -- -----------------------------------------------------------------
         -- Ticket members (read-only)
         -- -----------------------------------------------------------------
         IF @Operation = N'Ticket members'
         BEGIN
-            SELECT tm.UserID, u.Username, u.FullName, j.JobName, d.DepartmentName, p.FileURL AS PhotoURL,
+            SELECT tm.UserID, u.Username, u.FullName, j.JobName, j.DepartmentName, p.FileURL AS PhotoURL,
                    tm.IsAdmin, tm.IsTeamLeader, tm.IsCC, tm.IsInvited,
                    CASE WHEN tm.IsCreatedBy = 1 OR u.Username = @TCreatedBy THEN 1 ELSE 0 END AS IsCreator,
                    CASE WHEN tm.UserID = @UserID THEN 1 ELSE 0 END AS IsMe
             FROM CHA.TicketMembers tm
             JOIN dbo.UserMaster u                ON u.UserID = tm.UserID
-            LEFT JOIN dbo.UserJobMaster j        ON j.JobID = u.JobID
-            LEFT JOIN dbo.UserDepartmentMaster d ON d.DepartmentID = u.DepartmentID
+            LEFT JOIN dbo.V_SilaUserTitle j        ON j.UserID = u.UserID
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
             WHERE tm.TicketID = @TicketID AND tm.IsLeft = 0
@@ -629,6 +948,7 @@ BEGIN
                 WHERE u.TicketID = @TOrig AND u.UserID IN (SELECT x.UserID FROM CHA.TicketMembers x WHERE x.TicketID = @TicketID AND x.IsLeft = 0);
                 DELETE FROM CHA.TicketUnreadChat WHERE TicketID = @TOrig;
                 DELETE FROM CHA.TicketMembers WHERE TicketID = @TOrig;
+                DELETE FROM dbo.SilaTicketAssignment WHERE TicketID = @TOrig;
                 DELETE FROM dbo.SilaHistory WHERE TicketID = @TOrig AND RecordType = 'C';   -- the delete trigger handles one row only
                 DELETE FROM CHA.TicketHistory WHERE TicketID = @TOrig;
                 UPDATE CHA.TicketHistory SET TicketState = 0, LastMaintDate = GETDATE(), LastMaintByUser = @User WHERE TicketID = @TicketID;
@@ -652,6 +972,7 @@ BEGIN
                 DELETE FROM CHA.TicketUnreadChat WHERE TicketID = @TicketID;
                 DELETE FROM CHA.TicketChatHistory WHERE TicketID = @TicketID;
                 DELETE FROM CHA.TicketMembers WHERE TicketID = @TicketID;
+                DELETE FROM dbo.SilaTicketAssignment WHERE TicketID = @TicketID;
                 DELETE FROM dbo.SilaHistory WHERE TicketID = @TicketID AND RecordType = 'C';
                 DELETE FROM CHA.TicketHistory WHERE TicketID = @TicketID;
                 UPDATE CHA.TicketHistory SET TicketState = 0, LastMaintDate = GETDATE(), LastMaintByUser = @User WHERE TicketID = @TOrig;
@@ -686,6 +1007,7 @@ BEGIN
                 DELETE FROM CHA.TicketUnreadChat WHERE TicketID = @KCopy;
                 DELETE FROM CHA.TicketChatHistory WHERE TicketID = @KCopy;
                 DELETE FROM CHA.TicketMembers WHERE TicketID = @KCopy;
+                DELETE FROM dbo.SilaTicketAssignment WHERE TicketID = @KCopy;
                 DELETE FROM dbo.SilaHistory WHERE TicketID = @KCopy AND RecordType = 'C';
                 DELETE FROM CHA.TicketHistory WHERE TicketID = @KCopy;
             END
@@ -701,14 +1023,14 @@ BEGIN
         END
 
         -- -----------------------------------------------------------------
-        -- Invite ticket members (managers or the creator). Roles from the
+        -- Invite ticket members (admins / team leaders only). Roles from the
         -- channel. Someone who had left is brought back (his Home row re-added:
         -- the update trigger only handles leaving).
         -- -----------------------------------------------------------------
         IF @Operation = N'Invite ticket members'
         BEGIN
-            IF @TIsManager = 0 AND @TIsCreator = 0
-            BEGIN SET @State = 403; SET @Message = N'Only ticket admins, team leaders or the creator can invite people.'; RETURN; END
+            IF @TIsManager = 0
+            BEGIN SET @State = 403; SET @Message = N'Only ticket admins and team leaders can invite people.'; RETURN; END
             IF @TState >= 50
             BEGIN SET @State = 1; SET @Message = N'This ticket is closed.'; RETURN; END
             DECLARE @IList TABLE (UserID INT PRIMARY KEY, IsAdmin INT, IsTeamLeader INT, IsCC INT, FullName NVARCHAR(MAX), Existing INT);
@@ -756,12 +1078,13 @@ BEGIN
 
         -- -----------------------------------------------------------------
         -- Remove ticket member (managers remove anyone but the creator;
-        -- anyone may leave). One row: the update trigger drops his Home row
-        -- and unread rows.
+        -- anyone may leave) / Leave ticket (the caller). One row: the update
+        -- trigger drops his Home row and unread rows.
         -- -----------------------------------------------------------------
-        IF @Operation = N'Remove ticket member'
+        IF @Operation IN (N'Remove ticket member', N'Leave ticket')
         BEGIN
-            DECLARE @RTarget INT = TRY_CAST(JSON_VALUE(@LineData, '$.UserID') AS INT);
+            DECLARE @RTarget INT = CASE WHEN @Operation = N'Leave ticket' THEN @UserID
+                                        ELSE TRY_CAST(JSON_VALUE(@LineData, '$.UserID') AS INT) END;
             DECLARE @RIsCreator INT, @RName NVARCHAR(MAX), @RIsManager INT;
             SELECT @RIsCreator = CASE WHEN tm.IsCreatedBy = 1 OR u.Username = @TCreatedBy THEN 1 ELSE 0 END,
                    @RIsManager = CASE WHEN tm.IsAdmin = 1 OR tm.IsTeamLeader = 1 THEN 1 ELSE 0 END,
@@ -776,7 +1099,9 @@ BEGIN
             BEGIN SET @State = 403; SET @Message = N'The ticket''s creator can''t be removed.'; RETURN; END
             IF @RIsManager = 1 AND (SELECT COUNT(*) FROM CHA.TicketMembers WHERE TicketID = @TicketID AND IsLeft = 0
                                     AND (IsAdmin = 1 OR IsTeamLeader = 1)) <= 1 AND @TState < 50
-            BEGIN SET @State = 1; SET @Message = N'An open ticket needs at least one admin or team leader.'; RETURN; END
+            BEGIN SET @State = 1; SET @Message = CASE WHEN @RTarget = @UserID
+                THEN N'You are the last admin or team leader of this open ticket: end or close it, or have someone made admin first.'
+                ELSE N'An open ticket needs at least one admin or team leader.' END; RETURN; END
 
             DECLARE @RText NVARCHAR(MAX) = CASE WHEN @RTarget = @UserID
                 THEN N'@' + @RName + N' has left Ticket #' + CAST(@TicketID AS NVARCHAR(20))
@@ -784,6 +1109,7 @@ BEGIN
             DECLARE @RChat INT;
             BEGIN TRANSACTION;
             UPDATE CHA.TicketMembers SET IsLeft = 1 WHERE TicketID = @TicketID AND UserID = @RTarget;
+            DELETE FROM dbo.SilaTicketAssignment WHERE TicketID = @TicketID AND UserID = @RTarget;   -- nobody owns it now
             SET @RChat = NEXT VALUE FOR dbo.ChatTicket;
             INSERT INTO CHA.TicketChatHistory
                 (ChatID, ChannelID, TicketID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,
@@ -879,7 +1205,7 @@ BEGIN
             FROM CHA.TicketChatHistory m
             LEFT JOIN dbo.AttachmentHistory t  ON t.AttachmentID = m.AttachmentID AND m.AttachmentID <> 0
             LEFT JOIN dbo.UserMaster fu        ON fu.UserID = m.FromUserID
-            LEFT JOIN dbo.UserJobMaster fj     ON fj.JobID = fu.JobID
+            LEFT JOIN dbo.V_SilaUserTitle fj     ON fj.UserID = fu.UserID
             OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                          WHERE x.AttachmentID = fu.AttachmentID AND fu.AttachmentID <> 0 ORDER BY x.ID DESC) fp
             OUTER APPLY (SELECT TOP (1) x.Text, x.FromUserID, x.FromUserName FROM CHA.TicketChatHistory x
@@ -898,9 +1224,17 @@ BEGIN
                    th.OrginalTicketID, th.OrginalChannelID, oc.Name AS OrginalChannelName,
                    ISNULL(tm.UnreadCount, 0) AS Unread, ISNULL(tm.IsMuted, 0) AS IsMuted,
                    ISNULL(tm.IsAdmin, 0) AS MyIsAdmin, ISNULL(tm.IsTeamLeader, 0) AS MyIsTeamLeader,
-                   CASE WHEN tm.IsCreatedBy = 1 OR th.CreatedByUser = @User THEN 1 ELSE 0 END AS MyIsCreator
+                   CASE WHEN tm.IsCreatedBy = 1 OR th.CreatedByUser = @User THEN 1 ELSE 0 END AS MyIsCreator,
+                   CASE WHEN tf.TicketID IS NULL THEN 0 ELSE 1 END AS MyFlagged, tf.DueDate AS MyFlagDue, tf.Note AS MyFlagNote,
+                   ta.UserID AS AssignedUserID, au.Username AS AssignedUsername, ISNULL(NULLIF(au.FullName, N''), au.Username) AS AssignedName,
+                   sla.FirstReplyDate, sla.ReplyMinutes, sla.ReplyTarget, sla.ReplyState,
+                   sla.FinishMinutes AS FinishWorkMinutes, sla.FinishTarget, sla.FinishState
             FROM CHA.TicketHistory th
             LEFT JOIN CHA.TicketMembers tm   ON tm.TicketID = th.TicketID AND tm.UserID = @UserID AND tm.IsLeft = 0
+            LEFT JOIN dbo.SilaTicketFlag tf  ON tf.TicketID = th.TicketID AND tf.UserID = @UserID
+            LEFT JOIN dbo.SilaTicketAssignment ta ON ta.TicketID = th.TicketID
+            LEFT JOIN dbo.UserMaster au      ON au.UserID = ta.UserID
+            OUTER APPLY dbo.fnSilaTicketSla(th.TicketID) sla
             LEFT JOIN CHA.TicketState ts     ON ts.StateID = th.TicketState
             LEFT JOIN CHA.ChannelMaster c    ON c.ChannelID = th.TicketChannelID
             LEFT JOIN CHA.ChannelMaster oc   ON oc.ChannelID = th.OrginalChannelID AND th.OrginalChannelID <> 0
@@ -932,6 +1266,7 @@ USING (VALUES
     (N'CHA.APISilaWebTicketOperation', N'Ticket list',           N'The caller''s tickets (open, or closed), optional channel'),
     (N'CHA.APISilaWebTicketOperation', N'Ticket messages',       N'Messages of a ticket the caller is in; admins-only notes for managers only'),
     (N'CHA.APISilaWebTicketOperation', N'Ticket members',        N'Members of a ticket the caller is in'),
+    (N'CHA.APISilaWebTicketOperation', N'Ticket media',          N'Files and links of a ticket the caller is in (details panel)'),
     (N'CHA.APISilaWebTicketOperation', N'Mark ticket read',      N'Clear the caller''s unread rows for a ticket'),
     (N'CHA.APISilaWebTicketOperation', N'New ticket',            N'Open a ticket in a visible channel; roles copied from the channel'),
     (N'CHA.APISilaWebTicketOperation', N'Send ticket chat',      N'Members send while New / In Progress; admins-only notes for managers'),
@@ -942,8 +1277,14 @@ USING (VALUES
     (N'CHA.APISilaWebTicketOperation', N'Forward ticket',        N'Managers forward a new ticket to a channel of the same category'),
     (N'CHA.APISilaWebTicketOperation', N'Answer forward',        N'Managers of the waiting copy accept / reject it'),
     (N'CHA.APISilaWebTicketOperation', N'Cancel forward',        N'Managers or the forwarder cancel a pending forward'),
-    (N'CHA.APISilaWebTicketOperation', N'Invite ticket members', N'Managers or the creator invite active users; roles from the channel'),
-    (N'CHA.APISilaWebTicketOperation', N'Remove ticket member',  N'Managers remove members (not the creator); anyone may leave')
+    (N'CHA.APISilaWebTicketOperation', N'Invite ticket members', N'Admins / team leaders invite active users; roles from the channel'),
+    (N'CHA.APISilaWebTicketOperation', N'Remove ticket member',  N'Managers remove members (not the creator); anyone may leave'),
+    (N'CHA.APISilaWebTicketOperation', N'Leave ticket',          N'The caller leaves a ticket; not the last admin / team leader of an open one'),
+    (N'CHA.APISilaWebTicketOperation', N'Set ticket flag',       N'The caller''s own follow-up flag on a ticket he is in (due date, note)'),
+    (N'CHA.APISilaWebTicketOperation', N'Assign ticket',         N'Managers assign the ticket to someone in it'),
+    (N'CHA.APISilaWebTicketOperation', N'Ticket report',         N'Times per channel / assignee for the channels the caller manages (all for mhd)'),
+    (N'CHA.APISilaWebTicketOperation', N'Take ticket',           N'A non-CC member takes an unassigned ticket'),
+    (N'CHA.APISilaWebTicketOperation', N'Unassign ticket',       N'The assignee or a manager unassigns the ticket')
 ) AS s (ProcedureName, OperationName, Notes)
 ON t.ProcedureName = s.ProcedureName AND t.OperationName = s.OperationName
 WHEN NOT MATCHED THEN

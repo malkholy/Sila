@@ -1,12 +1,102 @@
 import React, { useEffect, useState } from 'react';
-import { X, Hash } from 'lucide-react';
+import { X, Hash, UserPlus, UserMinus, LogOut } from 'lucide-react';
 import Avatar from './Avatar.jsx';
-import { loadTicketMembers } from '../../shared/chat.js';
+import { loadTicketMembers, inviteTicketMembers, removeTicketMember, leaveTicket } from '../../shared/chat.js';
+import MediaSection from './MediaSection.jsx';
+import { fmtWork } from '../../shared/ticketSla.js';
+import AddMembersDialog from './AddMembersDialog.jsx';
 
 // The ticket details panel (opens from the ticket header): channel, state,
-// who opened it and when, then the members -- managers (admins / team
-// leaders) first, with Admin / Team leader / Creator / CC badges. Inviting and
-// removing people comes with ticket management.
+// who opened it and when, the state buttons the caller may use (actions, from
+// ChatPane), then the members -- managers (admins / team
+// leaders) first, with Admin / Team leader / Creator / CC badges. Admins and
+// team leaders invite people and remove members (not the creator); everyone
+// can leave, except the last admin / team leader of an open ticket. The SP
+// checks it all again (header.can: its Can* flags); remove / leave ask first,
+// in the panel.
+
+// CHA.TicketState -> [fg, bg]
+const STATE_TONE = {
+  0: ['var(--blue)', 'var(--blue-soft)'], 1: ['var(--green)', 'var(--green-soft)'], 2: ['var(--orange)', 'var(--orange-soft)'],
+  3: ['var(--amber)', 'var(--amber-soft)'], 5: ['var(--amber)', 'var(--amber-soft)'],
+};
+const when = (d) => d.toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+// "3 d 4 h", "2 h 10 min", "5 min"
+function span(ms) {
+  const min = Math.max(0, Math.round(ms / 60_000));
+  const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
+  if (d) return h ? `${d} d ${h} h` : `${d} d`;
+  if (h) return m ? `${h} h ${m} min` : `${h} h`;
+  return `${m} min`;
+}
+
+// The ticket's dated steps (header.history, oldest first): a dot per step,
+// who did it, when, and how long after the step before.
+function History({ steps, nameOf, closed }) {
+  const opened = steps[0]?.at;
+  const end = closed && steps.length ? steps[steps.length - 1].at : new Date();
+  return (
+    <div>
+      <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {steps.map((st, i) => {
+          const last = i === steps.length - 1;
+          return (
+            <li key={st.key} style={{ display: 'flex', gap: 10 }}>
+              <span aria-hidden="true" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 12, flexShrink: 0 }}>
+                <span style={{
+                  width: 10, height: 10, borderRadius: 5, marginTop: 5, flexShrink: 0,
+                  background: last ? 'var(--accent)' : 'var(--surface)', border: `2px solid ${last ? 'var(--accent)' : 'var(--border2)'}`,
+                }} />
+                {!last && <span style={{ flex: 1, width: 2, background: 'var(--border)', margin: '2px 0' }} />}
+              </span>
+              <span style={{ flex: 1, minWidth: 0, paddingBottom: last ? 0 : 12, display: 'flex', flexDirection: 'column' }}>
+                <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{st.label}</span>
+                  {i > 0 && <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>+{span(st.at - steps[i - 1].at)}</span>}
+                </span>
+                <span style={{ fontSize: 12, color: 'var(--text2)' }}>{when(st.at)}</span>
+                {st.by && <span style={{ fontSize: 12, color: 'var(--muted)' }}>by <span dir="auto">{nameOf(st.by)}</span></span>}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      {opened && (
+        <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 10, background: 'var(--bg)', fontSize: 12, color: 'var(--text2)' }}>
+          {closed ? 'Took' : 'Open for'} <b style={{ color: 'var(--text)' }}>{span(end - opened)}</b>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// First reply and finish against the channel's targets, in working time
+// (Sat-Thu 08:00-16:00): done in time / late, or how long so far while open.
+function ServiceLevel({ sla, state }) {
+  const line = (label, m, done, doneLabel) => {
+    if (!m.target) return null;
+    const late = m.minutes > m.target;
+    const soon = !done && !late && m.minutes * 4 >= m.target * 3;
+    const tone = late ? 'var(--red)' : soon ? 'var(--amber)' : done ? 'var(--green)' : 'var(--text2)';
+    return (
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13, padding: '4px 0' }}>
+        <span style={{ color: 'var(--text)' }}>{label}</span>
+        <span style={{ color: tone, fontWeight: 700, textAlign: 'right' }}>
+          {done ? `${doneLabel} ${fmtWork(m.minutes)}` : `${fmtWork(m.minutes)} so far`}
+          <span style={{ color: 'var(--muted)', fontWeight: 600 }}> / {fmtWork(m.target)}</span>
+          {late ? ' · late' : soon ? ' · due soon' : done ? ' ✓' : ''}
+        </span>
+      </div>
+    );
+  };
+  return (
+    <div style={{ paddingTop: 4 }}>
+      {line('First reply', sla.reply, !!sla.firstReply || state >= 10, 'replied in')}
+      {line('Finish', sla.finish, state >= 10, 'took')}
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>Working time, Saturday to Thursday 08:00–16:00.</div>
+    </div>
+  );
+}
 
 function Badge({ children, tone }) {
   const [fg, bg] = tone === 'admin' ? ['var(--accent-strong)', 'var(--accent-soft)']
@@ -18,16 +108,47 @@ function Badge({ children, tone }) {
   );
 }
 
-export default function TicketInfoPanel({ ticketId, header, isOnline, onClose }) {
+// entity / onView: the conversation's file context and image viewer (from ChatPane), for the media section
+// onMembersChange: people were invited / removed (reload the conversation);
+// onLeft: the caller left the ticket (close it).
+export default function TicketInfoPanel({ ticketId, header, isOnline, actions, entity, onView, onClose, onMembersChange, onLeft }) {
   const [state, setState] = useState({ status: 'loading', members: [], error: '' });
+  const [inviting, setInviting] = useState(false);
+  const [confirm, setConfirm] = useState(null);   // { kind: 'remove', m } | { kind: 'leave' }
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [confirmError, setConfirmError] = useState('');
+  const [reloads, setReloads] = useState(0);
   useEffect(() => {
     let alive = true;
-    setState({ status: 'loading', members: [], error: '' });
+    setState(s => ({ ...s, status: s.members.length ? 'ready' : 'loading', error: '' }));
     loadTicketMembers(ticketId)
       .then(members => { if (alive) setState({ status: 'ready', members, error: '' }); })
       .catch(err => { if (alive) setState({ status: 'error', members: [], error: err.message || 'Could not load the members.' }); });
     return () => { alive = false; };
-  }, [ticketId]);
+  }, [ticketId, reloads]);
+  const can = header?.can || {};
+
+  const invite = async (ids) => {
+    await inviteTicketMembers(ticketId, ids);   // errors are shown by the dialog
+    setReloads(n => n + 1);
+    onMembersChange?.();
+  };
+  const runConfirm = async () => {
+    setConfirmBusy(true); setConfirmError('');
+    try {
+      if (confirm.kind === 'remove') {
+        await removeTicketMember(ticketId, confirm.m.id);
+        setState(st => ({ ...st, members: st.members.filter(x => x.id !== confirm.m.id) }));
+        setConfirm(null);
+        onMembersChange?.();
+      } else {
+        await leaveTicket(ticketId);
+        setConfirm(null);
+        onLeft?.();
+      }
+    } catch (err) { setConfirmError(err.message || 'Could not complete that.'); }
+    finally { setConfirmBusy(false); }
+  };
 
   useEffect(() => {
     const esc = (e) => { if (e.key === 'Escape') onClose(); };
@@ -54,6 +175,13 @@ export default function TicketInfoPanel({ ticketId, header, isOnline, onClose })
         {m.leader && !m.admin && <Badge tone="admin">Team leader</Badge>}
         {m.cc && <Badge>CC</Badge>}
       </span>
+      {can.removeMembers && !m.me && !m.creator && (
+        <button onClick={() => { setConfirmError(''); setConfirm({ kind: 'remove', m }); }} aria-label={`Remove ${m.name} from the ticket`}
+          title="Remove from ticket" style={{
+            width: 30, height: 30, borderRadius: 15, border: 'none', background: 'transparent', color: 'var(--muted)', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+          }}><UserMinus size={15} /></button>
+      )}
     </li>
   );
   const heading = (text) => (
@@ -76,27 +204,98 @@ export default function TicketInfoPanel({ ticketId, header, isOnline, onClose })
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px 20px' }}>
         {header && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: 'var(--text2)' }}>
-            <span dir="auto" style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{header.title}</span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Hash size={13} /> {header.channel} · #{header.ticketId}</span>
-            {header.forwardedFrom && <span>Forwarded from # {header.forwardedFrom}</span>}
-            <span>{header.stateLabel}</span>
-            {header.createdBy && (
-              <span>Opened by {header.createdBy}{header.createdAt ? ` · ${header.createdAt.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</span>
+          <>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: 'var(--text2)', textAlign: 'left' }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}><span dir="auto">{header.title}</span></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <Hash size={13} /><span dir="auto">{header.channel}</span><span>· #{header.ticketId}</span>
+                {header.stateLabel && (
+                  <span style={{
+                    padding: '1px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+                    background: (STATE_TONE[header.state] || ['', 'var(--soft)'])[1], color: (STATE_TONE[header.state] || ['var(--text2)'])[0],
+                  }}>{header.stateLabel}</span>
+                )}
+              </div>
+              {header.forwardedFrom && <div>Forwarded from # <span dir="auto">{header.forwardedFrom}</span></div>}
+            </div>
+            {header.sla && (header.sla.reply.target || header.sla.finish.target) && (
+              <>
+                {heading('Service level')}
+                <ServiceLevel sla={header.sla} state={header.state} />
+              </>
             )}
-          </div>
+            {header.history?.length > 0 && (
+              <>
+                {heading('History')}
+                <div style={{ paddingTop: 6 }}>
+                  <History steps={header.history} closed={header.state >= 50} nameOf={(u) => {
+                    const m = state.members.find(x => x.username === u);
+                    if (m) return m.name;
+                    return u === String(header.createdByUser || '').toLowerCase() && header.createdBy ? header.createdBy : `@${u}`;
+                  }} />
+                </div>
+              </>
+            )}
+          </>
+        )}
+        {actions && (
+          <>
+            {heading('Actions')}
+            <div style={{ paddingTop: 6 }}>{actions}</div>
+          </>
         )}
         {state.status === 'loading' && <div role="status" style={{ marginTop: 16, fontSize: 13, color: 'var(--muted)' }}>Loading members…</div>}
         {state.status === 'error' && <div role="alert" style={{ marginTop: 16, fontSize: 13, color: 'var(--red)' }}>{state.error}</div>}
+        {can.invite && (
+          <button onClick={() => setInviting(true)} style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', height: 40, marginTop: 16,
+            borderRadius: 10, border: '1px dashed var(--accent-line)', background: 'var(--accent-soft)', color: 'var(--accent-strong)',
+            fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font)',
+          }}><UserPlus size={16} /> Invite people</button>
+        )}
+        {confirm && (
+          <div role="alertdialog" aria-label="Confirm" style={{
+            display: 'flex', flexDirection: 'column', gap: 8, padding: 12, marginTop: 12, borderRadius: 12, background: 'var(--red-soft)',
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)' }}>
+              {confirm.kind === 'remove'
+                ? <>Remove <span dir="auto">{confirm.m.name}</span> from this ticket?</>
+                : 'Leave this ticket? You will stop getting its messages.'}
+            </span>
+            {confirmError && <span style={{ fontSize: 12, color: 'var(--red)' }}>{confirmError}</span>}
+            <span style={{ display: 'flex', gap: 8 }}>
+              <button onClick={runConfirm} disabled={confirmBusy} style={{
+                height: 34, padding: '0 14px', borderRadius: 8, border: 'none', background: 'var(--red)', color: '#fff',
+                fontWeight: 700, fontSize: 13, cursor: confirmBusy ? 'wait' : 'pointer', fontFamily: 'var(--font)',
+              }}>{confirmBusy ? 'Working…' : confirm.kind === 'remove' ? 'Remove' : 'Leave'}</button>
+              <button onClick={() => setConfirm(null)} disabled={confirmBusy} style={{
+                height: 34, padding: '0 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)',
+                color: 'var(--text)', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font)',
+              }}>Cancel</button>
+            </span>
+          </div>
+        )}
         {state.status === 'ready' && (
           <>
             {managers.length > 0 && heading(`Admins and team leaders · ${managers.length}`)}
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>{managers.map(row)}</ul>
             {others.length > 0 && heading(`Members · ${others.length}`)}
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>{others.map(row)}</ul>
+            {can.leave && (
+              <button onClick={() => { setConfirmError(''); setConfirm({ kind: 'leave' }); }} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', height: 40, marginTop: 12,
+                borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--red)',
+                fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'var(--font)',
+              }}><LogOut size={16} /> Leave ticket</button>
+            )}
           </>
         )}
+        <MediaSection ticketId={ticketId} entity={entity} onView={onView} heading={heading} />
       </div>
+      {inviting && (
+        <AddMembersDialog title="Invite to ticket" verb="Invite" where="ticket" existingIds={state.members.map(m => m.id)}
+          onAdd={invite} onClose={() => setInviting(false)} />
+      )}
     </aside>
   );
 }

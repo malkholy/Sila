@@ -2,12 +2,26 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { restore, logout } from './shared/auth.js';
 import { connectLive, disconnectLive } from './shared/live.js';
 import { clearChatCache } from './shared/chatCache.js';
+import { clearDirectory } from './shared/chat.js';
+import { clearBoardCache } from './pages/sila/ChannelsBoard.jsx';
 import LoginPage from './pages/sila/LoginPage.jsx';
 import HomeShell from './pages/sila/HomeShell.jsx';
+import UpdateGate from './pages/sila/UpdateGate.jsx';
 
 // Sila web app: sign-in (SilaApi /api/v2/auth) -> Home shell. A stored session
-// is restored on reload; the live socket runs while signed in.
+// is restored on reload; the live socket runs while signed in. UpdateGate
+// covers every screen once a newer build is published.
 export default function SilaApp() {
+  const [signedIn, setSignedIn] = useState(false);
+  return (
+    <>
+      <Screens onSignedInChange={setSignedIn} />
+      <UpdateGate signedIn={signedIn} />
+    </>
+  );
+}
+
+function Screens({ onSignedInChange }) {
   const [user, setUser] = useState(null);
   const [phase, setPhase] = useState('restoring');   // restoring | signed-out | signed-in | offline
 
@@ -28,18 +42,20 @@ export default function SilaApp() {
 
   // The session ended elsewhere (logout on another tab, password change, expiry).
   useEffect(() => {
-    const ended = () => { disconnectLive(); clearChatCache(); setUser(null); setPhase('signed-out'); };
+    const ended = () => { disconnectLive(); clearChatCache(); clearBoardCache(); clearDirectory(); setUser(null); setPhase('signed-out'); };
     window.addEventListener('sila:signed-out', ended);
     return () => window.removeEventListener('sila:signed-out', ended);
   }, []);
 
   const signOut = useCallback(async () => {
     disconnectLive();
-    clearChatCache();
+    clearChatCache(); clearBoardCache(); clearDirectory();
     setUser(null);
     setPhase('signed-out');
     await logout();
   }, []);
+
+  useEffect(() => { onSignedInChange(phase === 'signed-in'); }, [phase, onSignedInChange]);
 
   if (phase === 'restoring' || phase === 'offline') {
     return (

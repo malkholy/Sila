@@ -15,6 +15,7 @@ using Plus.Api;
 using Plus.Api.Auth;
 using Plus.Api.Attachments;
 using Plus.Api.Live;
+using Plus.Api.Photos;
 using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -187,6 +188,12 @@ builder.Services.AddScoped<IAttachmentStore, SqlAttachmentStore>();
 builder.Services.AddHttpClient(LegacyFileSource.ClientName, c => c.Timeout = TimeSpan.FromSeconds(60))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddSingleton<ILegacyFileSource, LegacyFileSource>();
+// Profile photos (/api/v2/photo): fetched from the old photo server (Photos:Hosts only),
+// no redirects, short timeout.
+builder.Services.AddOptions<PhotoOptions>().BindConfiguration("Photos");
+builder.Services.AddHttpClient(HttpPhotoSource.ClientName, c => c.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddSingleton<IPhotoSource, HttpPhotoSource>();
 var attachmentRequestLimit = (builder.Configuration.GetValue<long?>("Attachments:MaxFileSizeBytes")
     ?? 50L * 1024 * 1024) + 1024 * 1024;
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
@@ -285,16 +292,19 @@ OnlyWhen(app.MapPost("/api/v2/auth/change-password", async (ChangePasswordReques
     return Results.Ok(new { message = "Password changed. Sign in again." });
 }).RequireAuthorization().RequireRateLimiting("login"), IssuesTokens);
 OnlyWhen(app.MapPost("/api/v2/exec", async (ExecRequest request, HttpContext http, GatewayPolicy policy,
-    IProcedureExecutor executor, CancellationToken cancellationToken) =>
+    IProcedureExecutor executor, LiveChangePump changes, CancellationToken cancellationToken) =>
 {
     var context = await policy.AuthorizeAsync(request, http.User, http.Connection.RemoteIpAddress, cancellationToken);
     http.Items["database"] = context.DatabaseKey;
     http.Items["procedure"] = context.Procedure;
     http.Items["operation"] = request.Operation;
     var result = await executor.ExecuteAsync(request, context, cancellationToken);
+    // a send / edit / state change moved SilaHistory: tell the live channel now
+    if (result.Ok) changes.Poke();
     return Results.Json(result with { TraceId = http.TraceIdentifier }, statusCode: result.Ok ? 200 : 422);
 }).RequireAuthorization("gateway"), ExecEnabled);
 app.MapAttachments(attachmentRequestLimit);
+app.MapPhotos();
 app.MapLive();
 app.Run();
 

@@ -7,15 +7,19 @@ const API_URL = IS_DEV
 const SP_NAME = 'Pls.APIPlusOperationV1';
 
 const BASE_BODY = {
-  AppVersionWeb: '257',
-  AppVersionAndroid: '257',
-  AppVersionIos: '257',
-  AppVersionDesktop: '257',
+  AppVersionWeb: '270',
+  AppVersionAndroid: '270',
+  AppVersionIos: '270',
+  AppVersionDesktop: '270',
   FireBaseToken: '',
   PlatForm: 'web',
   deviceID: '',
   IP: '192.168.1.3'
 };
+
+// This build's number (bumped by every production build, vite.config.js): the
+// web app compares it with the published version.json (shared/appUpdate.js).
+export const APP_VERSION = BASE_BODY.AppVersionWeb;
 
 // `apiType` is kept for call-site compatibility but ignored -- the generic
 // router SP is the default. Pass an object `{ spName }` as the 4th arg to route

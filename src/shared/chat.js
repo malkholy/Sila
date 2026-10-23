@@ -6,6 +6,9 @@
 // for all three kinds.
 import { apiExec, apiExecIdempotent } from './auth.js';
 import { hasFormatting } from './richText.js';
+import { flagOf } from './ticketFlag.js';
+import { assigneeOf } from './ticketAssign.js';
+import { slaOf } from './ticketSla.js';
 
 const PROC = 'dbo.APISilaWebOperation';
 const TICKET_PROC = 'CHA.APISilaWebTicketOperation';
@@ -122,19 +125,37 @@ export function chatApi(item) {
 
 // The ticket header from 'Ticket messages' List0: what it is, where, its state,
 // and what the caller may do now (the SP's Can* flags: the same rules it checks).
+// A ticket date from TicketHistory; empty / placeholder (before 2000) = not happened.
+function ticketDate(v) {
+  if (!v) return null;
+  const d = new Date(String(v).replace(' ', 'T'));
+  return Number.isNaN(d.getTime()) || d.getFullYear() < 2000 ? null : d;
+}
+
 function ticketHeader(h, item) {
   const flag = (k) => Number(h[k]) > 0;
+  // the ticket's dated steps, oldest first; by = a username
+  const history = [
+    ['opened', 'Opened', h.CreatedDate, h.CreatedByUser], ['forwarded', 'Forwarded', h.ForwardDate, h.ForwardBy],
+    ['started', 'Started', h.StartDate, h.StartBy], ['hold', 'Put on hold', h.HoldDate, h.HoldBy],
+    ['ended', 'Ended', h.EndedDate, h.EndedBy], ['closed', 'Closed', h.ClosedDate, h.ClosedBy],
+  ].map(([key, label, at, by]) => ({ key, label, at: ticketDate(at), by: String(by || '').toLowerCase() }))
+    .filter(x => x.at).sort((a, b) => a.at - b.at);
   return {
     me: h.MeUserID, isTicket: true, ticketId: h.TicketID, title: h.TicketSubject || item.title, photoUrl: '',
     state: Number(h.TicketState), stateLabel: h.StateDescription || '', channel: h.ChannelName || '',
-    createdBy: h.CreatedByName || h.CreatedByUser || '', createdAt: h.CreatedDate ? new Date(String(h.CreatedDate).replace(' ', 'T')) : null,
+    createdBy: h.CreatedByName || h.CreatedByUser || '', createdByUser: h.CreatedByUser || '', createdAt: h.CreatedDate ? new Date(String(h.CreatedDate).replace(' ', 'T')) : null,
+    createdByJobTitle: h.CreatedByJobName || '',
     memberCount: Number(h.MemberCount) || 0, isManager: flag('MyIsManager'), isCreator: flag('MyIsCreator'),
-    forwardedFrom: h.OrginalChannelName || '',
+    forwardedFrom: h.OrginalChannelName || '', history, flag: flagOf(h),
+    channelId: Number(h.ChannelID) || 0, categoryId: Number(h.CategoryID) || 0,
+    originalTicketId: Number(h.OrginalTicketID) || 0, assignee: assigneeOf(h), sla: slaOf(h),
     can: {
       send: flag('CanSend'), adminNote: flag('CanWriteAdminNote'), start: flag('CanStart'), hold: flag('CanHold'),
       end: flag('CanEnd'), reopen: flag('CanReopen'), close: flag('CanClose'), forward: flag('CanForward'),
       answerForward: flag('CanAnswerForward'), cancelForward: flag('CanCancelForward'), invite: flag('CanInvite'),
-      removeMembers: flag('CanRemoveMembers'),
+      removeMembers: flag('CanRemoveMembers'), leave: flag('CanLeave'),
+      assign: flag('CanAssign'), take: flag('CanTake'), unassign: flag('CanUnassign'),
     },
   };
 }
@@ -146,6 +167,112 @@ export async function changeTicketState(ticketId, action) {
   return res?.data?.List0?.[0] || null;
 }
 
+// Forwarding (the SP checks it all again): a New ticket goes to a channel of the
+// same category and waits there (state 3) until that channel's managers accept
+// or reject it. The target channel's admins / team leaders and the ticket's
+// creator always join the copy; members = [{ id, cc }] adds others.
+export async function forwardTicket(ticketId, toChannelId, members = []) {
+  await apiExec(TICKET_PROC, 'Forward ticket', {
+    TicketID: ticketId, ToChannelID: toChannelId, Members: members.map(m => ({ UserID: m.id, IsCC: m.cc ? 1 : 0 })),
+  });
+}
+// on the waiting copy; rejecting deletes the copy (the caller leaves it)
+export async function answerForward(ticketId, accept) {
+  await apiExec(TICKET_PROC, 'Answer forward', { TicketID: ticketId, Accept: accept ? 1 : 0 });
+}
+// on the original (the forwarder or its managers)
+export async function cancelForward(ticketId) {
+  await apiExec(TICKET_PROC, 'Cancel forward', { TicketID: ticketId });
+}
+
+// The Channels board: the caller's tickets (member, not left) -- open ones
+// (state < 50, up to 2000) or, closed = true, the newest 200 closed ones.
+// since = a previous mark: only the tickets that changed after it, in any
+// state, with left = true for tickets the caller left (TicketHistory /
+// TicketMembers RowVer). Returns { rows, mark, more }: mark = the watermark for
+// the next delta (0 = the server has no RowVer yet: reload in full instead);
+// more = the delta hit its cap (reload in full).
+export const TICKET_DELTA_CAP = 2000;
+const ticketDateOf = (v) => (v ? new Date(String(v).replace(' ', 'T')) : null);
+// one 'Ticket list' row (also what 'New ticket' returns) as the board's ticket
+export const toBoardTicket = (r) => ({
+  id: Number(r.TicketID), subject: r.TicketSubject || `Ticket #${r.TicketID}`, state: Number(r.TicketState),
+  stateLabel: r.StateDescription || '', channelId: Number(r.ChannelID) || 0, channel: r.ChannelName || '',
+  createdBy: String(r.CreatedByUser || '').toLowerCase(), createdByName: r.CreatedByName || r.CreatedByUser || 'Unknown',
+  created: ticketDateOf(r.CreatedDate), last: ticketDateOf(r.LastMaintDate) || ticketDateOf(r.CreatedDate), lastMessage: r.LastMessage || '',
+  unread: Number(r.Unread) || 0, left: Number(r.IsLeft) > 0, flag: flagOf(r), assignee: assigneeOf(r), sla: slaOf(r), raw: r,
+});
+export async function loadTickets({ closed = false, since = 0 } = {}) {
+  const line = since ? { Since: since } : closed ? { Closed: 1 } : {};
+  const res = await apiExec(TICKET_PROC, 'Ticket list', line);
+  const list = res?.data?.List0 || [];
+  return { rows: list.map(toBoardTicket), mark: Number(res?.data?.List1?.[0]?.Mark) || 0, more: since > 0 && list.length > TICKET_DELTA_CAP };
+}
+
+// New ticket: the channels the caller can see (favorites and his own first) ...
+export async function loadChannels() {
+  const res = await apiExec(TICKET_PROC, 'Channel list', {});
+  return (res?.data?.List0 || []).map(r => ({
+    id: Number(r.ChannelID), name: r.Name || `Channel ${r.ChannelID}`, category: r.CategoryDescription || '',
+    categoryId: Number(r.CategoryID) || 0, manager: Number(r.MyIsAdmin) > 0 || Number(r.MyIsTeamLeader) > 0,
+    private: Number(r.IsPrivate) > 0, favorite: Number(r.IsFavorite) > 0, member: Number(r.IsMember) > 0,
+    purpose: r.Purpose || '', examples: r.Examples || '',
+  }));
+}
+// ... a channel's people (its admins / team leaders join every new ticket) ...
+export async function loadChannelMembers(channelId) {
+  const res = await apiExec(TICKET_PROC, 'Channel members', { ChannelID: channelId });
+  return (res?.data?.List0 || []).map(r => ({
+    id: r.UserID, username: String(r.Username || '').toLowerCase(), name: r.FullName || r.Username || 'Unknown user',
+    photoUrl: r.PhotoURL || '', jobTitle: [r.JobName, r.DepartmentName].filter(Boolean).join(' · '),
+    admin: Number(r.IsAdmin) > 0, leader: Number(r.IsTeamLeader) > 0,
+  }));
+}
+// ... and the ticket itself: members = [{ id, cc }] (roles come from the channel,
+// set by the SP). tempId makes a retried request return the same ticket.
+// Resolves to the new ticket's row ('Ticket list' columns).
+export async function createTicket({ channelId, subject, text, members = [], tempId }) {
+  const res = await apiExec(TICKET_PROC, 'New ticket', {
+    ChannelID: channelId, Subject: subject, Text: text, TempTicketID: tempId,
+    Members: members.map(m => ({ UserID: m.id, IsCC: m.cc ? 1 : 0 })),
+  });
+  const row = res?.data?.List0?.[0];
+  if (!row?.TicketID) throw new Error('The server did not return the new ticket.');
+  return row;
+}
+
+// The details panel's "Media, links and docs": { media, docs, links }, newest
+// first. Files split by extension (images = media); links are read out of the
+// text of messages that carry one.
+const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
+export async function loadTicketMedia(ticketId) {
+  const res = await apiExec(TICKET_PROC, 'Ticket media', { TicketID: ticketId });
+  const seen = new Set();
+  const out = { media: [], docs: [], links: [] };
+  for (const r of res?.data?.List0 || []) {
+    if (seen.has(r.ChatID)) continue;   // the old 'New Chat' saved some messages twice
+    seen.add(r.ChatID);
+    const at = r.CreatedDate ? new Date(String(r.CreatedDate).replace(' ', 'T')) : null;
+    const base = { chatId: r.ChatID, at, from: r.FromName || '' };
+    if (Number(r.AttachmentID) > 0 && r.FileURL) {
+      const ext = String(r.FileExtension || '').replace(/^\./, '').toLowerCase();
+      const file = {
+        id: Number(r.AttachmentID), name: r.FileOrginalName || r.FileName || 'Attachment', ext, url: r.FileURL,
+        size: Number(r.FileSize) || 0, sizeText: Number(r.FileSize) ? '' : String(r.FileSize || ''),
+        image: IMAGE_EXT.has(ext), audio: AUDIO_EXT.has(ext),
+      };
+      (file.image ? out.media : out.docs).push({ ...base, file });
+    } else {
+      const text = String(r.Text || '').replace(/<[^>]*>/g, ' ');
+      for (const raw of text.match(URL_RE) || []) {
+        const url = raw.replace(/[).,;!?]+$/, '');
+        out.links.push({ ...base, url: /^https?:/i.test(url) ? url : `https://${url}` });
+      }
+    }
+  }
+  return out;
+}
+
 // The ticket members panel: managers (admins / team leaders) first.
 export async function loadTicketMembers(ticketId) {
   const res = await apiExec(TICKET_PROC, 'Ticket members', { TicketID: ticketId });
@@ -155,6 +282,19 @@ export async function loadTicketMembers(ticketId) {
     admin: Number(r.IsAdmin) > 0, leader: Number(r.IsTeamLeader) > 0, cc: Number(r.IsCC) > 0,
     creator: Number(r.IsCreator) > 0, me: Number(r.IsMe) > 0,
   }));
+}
+
+// Ticket membership (the SP enforces: admins / team leaders invite and
+// remove, not the creator; anyone leaves but not the last admin / team leader
+// of an open ticket; roles of invited people come from the channel).
+export async function inviteTicketMembers(ticketId, userIds) {
+  await apiExec(TICKET_PROC, 'Invite ticket members', { TicketID: ticketId, Members: userIds.map(id => ({ UserID: id, IsCC: 0 })) });
+}
+export async function removeTicketMember(ticketId, userId) {
+  await apiExec(TICKET_PROC, 'Remove ticket member', { TicketID: ticketId, UserID: userId });
+}
+export async function leaveTicket(ticketId) {
+  await apiExec(TICKET_PROC, 'Leave ticket', { TicketID: ticketId });
 }
 
 // The group details panel: { members (admins first, with photo / job / badges), creator }.
@@ -196,21 +336,94 @@ export async function setGroupAdmin(groupId, userId, admin) {
   };
 }
 
+// Group membership (the SP enforces: admins add / remove, not the creator,
+// anyone leaves but not the last admin). Each returns
+// { changed, memberCount, system } -- system is the posted line.
+const membershipResult = (res) => {
+  const r = res?.data?.List0?.[0] || {};
+  return {
+    changed: Number(r.Changed) || 0, memberCount: Number(r.MemberCount) || 0,
+    system: r.SystemChatID ? { id: r.SystemChatID, sortId: r.SystemChatID, system: true, text: String(r.SystemText || ''), at: new Date() } : null,
+  };
+};
+export async function addGroupMembers(groupId, userIds) {
+  return membershipResult(await apiExec(PROC, 'Add group members', { GroupID: groupId, UserIDs: userIds }));
+}
+export async function removeGroupMember(groupId, userId) {
+  return membershipResult(await apiExec(PROC, 'Remove group member', { GroupID: groupId, UserID: userId }));
+}
+export async function leaveGroup(groupId) {
+  return membershipResult(await apiExec(PROC, 'Leave group', { GroupID: groupId }));
+}
+
+const toPickerUser = (r) => ({
+  id: r.UserID, username: String(r.Username || '').toLowerCase(), name: r.FullName || r.Username || 'Unknown user',
+  photoUrl: r.PhotoURL || '', jobTitle: [r.JobName, r.DepartmentName].filter(Boolean).join(' · '),
+  userGroup: r.UserGroupName || '', userGroupId: Number(r.UserGroupID) || 0,
+});
+const toUserGroup = (r) => ({ id: r.UserGroupID, name: r.UserGroupName || `Group ${r.UserGroupID}`, count: Number(r.ActiveUsers) || 0 });
+
+// The people directory: every active user (but the caller) and the user
+// groups, loaded once after sign-in and kept for the session; reloaded every
+// 30 minutes (startDirectory) and by the Refresh buttons (loadDirectory
+// { force }). The pickers search it locally. A server without 'Find users'
+// All (SQLScript/APISilaWebOperation.sql) still stops at 100 rows: then the
+// directory is not complete and the pickers search the server as before.
+const DIRECTORY_EVERY_MS = 30 * 60_000;
+const OLD_FIND_CAP = 100;
+let directory = null;        // { users, groups, complete, at }
+let directoryLoad = null;
+const directoryListeners = new Set();
+export function loadDirectory({ force = false } = {}) {
+  if (directory && !force) return Promise.resolve(directory);
+  if (!directoryLoad) {
+    directoryLoad = Promise.all([
+      apiExec(PROC, 'Find users', { Search: '', Top: 2000, All: 1 }),
+      apiExec(PROC, 'User groups', {}),
+    ]).then(([u, g]) => {
+      const users = (u?.data?.List0 || []).map(toPickerUser);
+      directory = { users, groups: (g?.data?.List0 || []).map(toUserGroup), complete: users.length !== OLD_FIND_CAP, at: Date.now() };
+      directoryListeners.forEach(fn => fn(directory));
+      return directory;
+    }).finally(() => { directoryLoad = null; });
+  }
+  return directoryLoad;
+}
+// open pickers follow a reload; returns the unsubscribe
+export function onDirectory(fn) { directoryListeners.add(fn); return () => directoryListeners.delete(fn); }
+// after sign-in (HomeShell): load now, then every 30 minutes; returns the stop
+export function startDirectory() {
+  loadDirectory({ force: !directory || Date.now() - directory.at > DIRECTORY_EVERY_MS }).catch(() => {});
+  const t = setInterval(() => loadDirectory({ force: true }).catch(() => {}), DIRECTORY_EVERY_MS);
+  return () => clearInterval(t);
+}
+export function clearDirectory() { directory = null; }
+
+// The same matching and order as the SP: name / username / user group contains
+// the text, names starting with it first, then by name.
+function searchDirectory(users, search, top, userGroupId) {
+  const t = search.toLowerCase();
+  const has = (v) => !!v && v.toLowerCase().includes(t);
+  const starts = (u) => u.name.toLowerCase().startsWith(t) || u.username.startsWith(t);
+  return users
+    .filter(u => (!userGroupId || u.userGroupId === userGroupId) && (!t || has(u.name) || has(u.username) || has(u.userGroup)))
+    .sort((a, b) => (t ? starts(b) - starts(a) : 0) || a.name.localeCompare(b.name))
+    .slice(0, Math.min(top, userGroupId ? 300 : 100));
+}
+
 // People picker (new group / new chat): active users, not the caller. The
 // search also matches the user group's name; userGroupId narrows to one group.
 export async function findUsers(search = '', top = 30, userGroupId = 0) {
+  if (directory?.complete) return searchDirectory(directory.users, search, top, userGroupId);
   const res = await apiExec(PROC, 'Find users', { Search: search, Top: top, UserGroupID: userGroupId || 0 });
-  return (res?.data?.List0 || []).map(r => ({
-    id: r.UserID, username: String(r.Username || '').toLowerCase(), name: r.FullName || r.Username || 'Unknown user',
-    photoUrl: r.PhotoURL || '', jobTitle: [r.JobName, r.DepartmentName].filter(Boolean).join(' · '),
-    userGroup: r.UserGroupName || '',
-  }));
+  return (res?.data?.List0 || []).map(toPickerUser);
 }
 
 // User groups (UserGroupMaster) with how many active users each has: the picker's filter.
 export async function loadUserGroups() {
+  if (directory) return directory.groups;
   const res = await apiExec(PROC, 'User groups', {});
-  return (res?.data?.List0 || []).map(r => ({ id: r.UserGroupID, name: r.UserGroupName || `Group ${r.UserGroupID}`, count: Number(r.ActiveUsers) || 0 }));
+  return (res?.data?.List0 || []).map(toUserGroup);
 }
 
 // Creates a group: the caller becomes creator + admin. members: [{ id, admin }].

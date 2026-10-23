@@ -21,6 +21,8 @@ using Plus.Api.Auth;
 using Plus.Api.Attachments;
 using Plus.Api.Live;
 
+using Plus.Api.Photos;
+
 namespace Plus.Api.Tests;
 
 // verifyWith: build a verify-only Files API that trusts tokens issued by that
@@ -39,6 +41,7 @@ public sealed class GatewayFactory(bool localLogin = false, bool sqlPermissions 
     public FakeLegacyFiles LegacyFiles { get; } = new(AttachmentTests.Pdf);
     public FakeScanner Scanner { get; } = new();
     public FakeChangeSource Changes { get; } = new();
+    public FakePhotoSource Photos { get; } = new();
     public string StorageDir { get; } = Path.Combine(Path.GetTempPath(), $"plus-att-{Guid.NewGuid():N}");
     public string QuarantineDir { get; } = Path.Combine(Path.GetTempPath(), $"plus-quar-{Guid.NewGuid():N}");
     private readonly string keyPath = Path.Combine(Path.GetTempPath(), $"plus-api-test-{Guid.NewGuid()}.pem");
@@ -84,7 +87,8 @@ public sealed class GatewayFactory(bool localLogin = false, bool sqlPermissions 
             ["Live:RevalidateSeconds"] = "1",
             ["Live:MaxMessageBytes"] = "256",
             ["Live:MaxMessagesPer10Seconds"] = "5",
-            ["Live:ChangePollSeconds"] = "0"   // tests drive LiveChangePump.Tick themselves
+            ["Live:ChangePollSeconds"] = "0",   // tests drive LiveChangePump.Tick themselves
+            ["Photos:Hosts:0"] = "photos.example.test:7007"
         }));
         builder.ConfigureServices(services =>
         {
@@ -108,6 +112,8 @@ public sealed class GatewayFactory(bool localLogin = false, bool sqlPermissions 
             services.AddSingleton<IVirusScanner>(Scanner);
             services.RemoveAll<ILiveChangeSource>();
             services.AddSingleton<ILiveChangeSource>(Changes);
+            services.RemoveAll<IPhotoSource>();
+            services.AddSingleton<IPhotoSource>(Photos);
         });
     }
 

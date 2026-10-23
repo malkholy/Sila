@@ -84,7 +84,18 @@ public sealed class LiveChangePump(LiveHub hub, ILiveChangeSource source, IOptio
     ILogger<LiveChangePump> logger) : BackgroundService
 {
     private const int MaxRows = 2000;
+    // Poke() wakes the loop early (a write just went through /api/v2/exec), so a
+    // new message reaches the other side right away instead of on the next
+    // poll; never more often than MinGap. The poll stays as the safety net
+    // (writes from elsewhere, e.g. the old gateway).
+    private static readonly TimeSpan MinGap = TimeSpan.FromMilliseconds(300);
+    private readonly SemaphoreSlim wake = new(0, 1);
     private readonly Dictionary<string, Watch> watches = new(StringComparer.Ordinal);
+
+    public void Poke()
+    {
+        if (wake.CurrentCount == 0) try { wake.Release(); } catch (SemaphoreFullException) { /* already signalled */ }
+    }
 
     private sealed class Watch
     {
@@ -114,7 +125,12 @@ public sealed class LiveChangePump(LiveHub hub, ILiveChangeSource source, IOptio
                     delay = TimeSpan.FromSeconds(Math.Min(60, delay.TotalSeconds * Math.Pow(2, Math.Min(failures, 5))));
                 }
             }
-            try { await Task.Delay(delay, stoppingToken); }
+            try
+            {
+                if (failures == 0) await Task.Delay(MinGap, stoppingToken);
+                // the rest of the poll interval, or until a write pokes us
+                await wake.WaitAsync(failures == 0 ? delay - MinGap : delay, stoppingToken);
+            }
             catch (OperationCanceledException) { return; }
         }
     }

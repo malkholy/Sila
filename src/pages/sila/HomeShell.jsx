@@ -1,12 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Home, MessageCircle, Users, Hash, Settings, Search, Plus, Ticket, LogOut, Wifi, WifiOff, RefreshCw, Mail, CheckSquare,
+  Home, MessageCircle, Users, Hash, Settings, Search, LogOut, Wifi, WifiOff, RefreshCw, Mail, CheckSquare,
+  ListChecks, User, LayoutList, Columns3, ChevronLeft, ChevronRight, GripVertical, Bell, BellOff, X, Plus, Flag, UserCheck, BarChart3,
 } from 'lucide-react';
 import { useLive, retryLiveNow, onLive } from '../../shared/live.js';
 import { loadLeftSide, mergeLeftSide, formatWhen } from '../../shared/leftSide.js';
+import { notifyMessage, useNotifyState, enableNotify, disableNotify } from '../../shared/notify.js';
+import { isSelectingText } from '../../shared/textSelection.js';
+import { moveRowFocus } from '../../shared/rowNav.js';
+import { loadDirectory, startDirectory, loadChannels } from '../../shared/chat.js';
 import Avatar from './Avatar.jsx';
 import ChatPane from './ChatPane.jsx';
-import NewGroupDialog from './NewGroupDialog.jsx';
+import ChannelsBoard, { Segmented } from './ChannelsBoard.jsx';
+import SystemSettings from './SystemSettings.jsx';
+import { canSeeSettings } from '../../shared/settings.js';
+import ClearSearch from './ClearSearch.jsx';
+import NewTicketDialog from './NewTicketDialog.jsx';
+import Reports from './Reports.jsx';
+import { FlagMark } from './TicketFlag.jsx';
+import { AssigneeTag } from './TicketAssign.jsx';
+import SlaBadge from './SlaBadge.jsx';
+import { setTicketFlag } from '../../shared/ticketFlag.js';
+import { toBoardTicket } from '../../shared/chat.js';
 
 // The landing shell (design/mockups/Home.dc.html): rail, conversation list,
 // conversation pane. The list is the user's "left side" (dbo.APISilaWebOperation
@@ -22,41 +37,148 @@ const SECTIONS = [
 // filter / section -> which list kinds it shows (null = all)
 const FILTER_KINDS = { All: null, Unread: null, Chats: ['chat'], Groups: ['group'], Tickets: ['ticket'], Tasks: ['task'], Mail: ['mail'] };
 const SECTION_KINDS = { home: null, chats: ['chat'], groups: ['group'], channels: ['ticket'] };
+// Channels: the conversation list, or the Order Board grouped views (ChannelsBoard)
+const CHANNEL_VIEWS = [
+  ['conv', 'Conversation', MessageCircle], ['status', 'By Status', ListChecks],
+  ['channel', 'By Channel', Hash], ['creator', 'Created by', User], ['assignee', 'By Assignee', UserCheck],
+];
+// Home: one list + the conversation pane, or three panels side by side
+// (Chats | Groups | Tickets) with the conversation in a drawer on the right
+const HOME_VIEWS = [['list', 'List', LayoutList], ['panels', 'Panels', Columns3]];
+const PANELS = [
+  { key: 'chat', title: 'Chats', icon: MessageCircle, empty: 'No chats yet.' },
+  { key: 'group', title: 'Groups', icon: Users, empty: 'No groups yet.' },
+  { key: 'ticket', title: 'Tickets', icon: Hash, empty: 'No open tickets.' },
+];
+// Tickets panel: the "Open" toggle shows New + In Progress only (CHA.TicketState 0, 1)
+const OPEN_STATES = [0, 1];
+// Tickets panel sort; the Today / Yesterday lines show only for 'last' (time order)
+const TICKET_SORTS = [['last', 'Last update'], ['unread', 'Unread first'], ['state', 'Status'], ['number', 'Ticket #'], ['channel', 'Channel']];
+const STATE_ORDER = [0, 1, 2, 3, 5, 10, 50];   // New, In Progress, Forwarded, Approve Waiting, Hold, End, Close
+const byTime = (a, b) => (b.at?.getTime() || 0) - (a.at?.getTime() || 0);
+const TICKET_SORT_FN = {
+  last: byTime,
+  unread: (a, b) => (b.unread > 0) - (a.unread > 0) || b.unread - a.unread || byTime(a, b),
+  state: (a, b) => {
+    const r = (i) => { const k = STATE_ORDER.indexOf(Number(i.raw?.TicketState)); return k < 0 ? 99 : k; };
+    return r(a) - r(b) || byTime(a, b);
+  },
+  number: (a, b) => (Number(b.raw?.TicketID) || 0) - (Number(a.raw?.TicketID) || 0),
+  channel: (a, b) => String(a.raw?.ChannelName || '').localeCompare(String(b.raw?.ChannelName || '')) || byTime(a, b),
+};
 const KIND_ICON = { group: Users, ticket: Hash, mail: Mail, task: CheckSquare, other: MessageCircle };
 
-// Square badge for non-person conversations (group / ticket / mail / task)
-function KindBadge({ kind, size = 46 }) {
+// Square badge for non-person conversations (group / ticket / mail / task);
+// a ticket's badge takes its state colour (tone = [fg, bg]) when it has one
+function KindBadge({ kind, size = 46, tone }) {
   const Icon = KIND_ICON[kind] || MessageCircle;
   const ticket = kind === 'ticket';
+  const toned = ticket && tone && tone[0] !== 'var(--text2)';
   return (
     <span style={{
       flex: `0 0 ${size}px`, width: size, height: size, borderRadius: 13, display: 'flex', alignItems: 'center',
-      justifyContent: 'center', background: ticket ? 'var(--accent-soft)' : 'var(--soft)',
-      border: `1.5px solid ${ticket ? 'var(--accent-line)' : 'var(--border)'}`,
-      color: ticket ? 'var(--accent-strong)' : 'var(--text2)',
+      justifyContent: 'center',
+      background: toned ? tone[1] : ticket ? 'var(--accent-soft)' : 'var(--soft)',
+      border: `1.5px solid ${toned ? tone[0] : ticket ? 'var(--accent-line)' : 'var(--border)'}`,
+      color: toned ? tone[0] : ticket ? 'var(--accent-strong)' : 'var(--text2)',
     }}><Icon size={22} strokeWidth={1.8} /></span>
   );
 }
 
-function ConversationRow({ item, active, online, onPick }) {
+// A ticket's system lines name the ticket and the person with "@":
+// "@Mohammad Al Kholy has started Ticket #174769" -> "Mohammad Al Kholy started this ticket"
+function ticketPreview(text, ticketId) {
+  let t = String(text || '').replace(/^@/, '');
+  if (ticketId) {
+    t = t.replace(new RegExp(`\\b(forwarded )?Ticket #${ticketId}\\b`, 'i'), (_, fwd) => (fwd ? 'the forwarded ticket' : 'this ticket'));
+  }
+  return t.replace(/\bhas (started|ended|closed|reopened|held|forwarded|accepted|rejected|cancelled|canceled)\b/i, '$1');
+}
+
+// dbl: open on a double-click (the Panels view's drawer): a single click
+// selects the row, Up / Down move the selection (rowNav.js), Enter opens it
+// (a keyboard click has detail 0). In the List view a click opens the
+// conversation and selects the row too, so Up / Down work from there. The
+// click focuses the row itself: Safari doesn't focus buttons on click.
+// The search text marked inside a row's name / channel / number / preview
+// (terms: the active searches, lower case; empty = plain text).
+function Mark({ text, terms }) {
+  const str = String(text ?? '');
+  const list = (terms || []).filter(Boolean);
+  if (!str || !list.length) return str;
+  const re = new RegExp(`(${list.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+  return str.split(re).map((part, i) => (i % 2
+    ? <mark key={i} style={{ background: 'var(--amber-soft)', color: 'inherit', borderRadius: 3, padding: '0 1px', boxShadow: '0 0 0 1px var(--amber)' }}>{part}</mark>
+    : part));
+}
+
+// onToggleFlag(item): F on a selected ticket row flags / unflags it.
+function ConversationRow({ item, active, online, onPick, dbl = false, terms, onToggleFlag, meUser }) {
+  const [focused, setFocused] = useState(false);
   const unread = item.unread > 0;
+  const ticket = item.kind === 'ticket';
+  const ticketCreator = ticket ? String(item.raw?.TicketCreatedBy || item.raw?.CreatedByName || item.raw?.CreatedByUser || '').trim() : '';
+  const when = (
+    <span style={{ fontSize: 12, color: unread ? 'var(--accent-strong)' : 'var(--muted)', flexShrink: 0, fontWeight: unread ? 700 : 400 }}>
+      {formatWhen(item.at)}
+    </span>
+  );
   return (
-    <button onClick={onPick} aria-current={active ? 'true' : undefined} style={{
+    <button data-row onClick={(e) => { e.currentTarget.focus(); if (dbl && e.detail !== 0) return; if (!isSelectingText()) onPick(); }}
+      onDoubleClick={dbl ? () => { if (!isSelectingText()) onPick(); } : undefined}
+      onKeyDown={(e) => {
+        if ((e.key === 'f' || e.key === 'F') && ticket && onToggleFlag && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault(); onToggleFlag(item); return;
+        }
+        moveRowFocus(e);
+      }}
+      onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
+      aria-current={active ? 'true' : undefined} style={{
       display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: 12, borderRadius: 12, border: 'none',
-      background: active ? 'var(--accent-soft)' : 'transparent', textAlign: 'left', cursor: 'pointer',
+      background: active ? 'var(--accent-soft)' : focused ? 'var(--soft)' : 'transparent', textAlign: 'left', cursor: 'pointer',
+      outline: 'none', boxShadow: focused ? 'inset 0 0 0 2px var(--accent)' : 'none',
       color: 'var(--text)', fontFamily: 'var(--font)',
     }}>
-      {item.kind === 'chat' ? <Avatar name={item.title} size={46} online={online} photoUrl={item.photoUrl} /> : <KindBadge kind={item.kind} />}
+      {item.kind === 'chat' ? <Avatar name={item.title} size={46} online={online} photoUrl={item.photoUrl} />
+        : <KindBadge kind={item.kind} tone={item.tone} />}
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
-          <span style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto">{item.title}</span>
-          <span style={{ fontSize: 12, color: unread ? 'var(--accent-strong)' : 'var(--muted)', flexShrink: 0, fontWeight: unread ? 700 : 400 }}>
-            {formatWhen(item.at)}
-          </span>
+          <span style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto"><Mark text={item.title} terms={terms} /></span>
+          {/* a ticket's state sits in the top-right corner; its time in the bottom-right one */}
+          {ticket && item.state ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <SlaBadge sla={item.sla} state={Number(item.raw?.TicketState)} compact />
+              <FlagMark flag={item.flag} />
+              <span style={{
+                flexShrink: 0, padding: '1px 8px', borderRadius: 999, background: item.tone[1], color: item.tone[0],
+                fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+              }}>{item.state}</span>
+            </span>
+          ) : when}
         </span>
-        {(item.sub || item.state) && (
+        {ticket ? (
+          // where it lives, the number quieter in mono
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', minWidth: 0 }}>
-            {item.sub && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto">{item.sub}</span>}
+            {item.raw?.ChannelName && (
+              // the channel as a chip: # icon + name, cut with "..." when long
+              <span title={item.raw.ChannelName} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, maxWidth: '100%', height: 20, padding: '0 8px 0 6px',
+                borderRadius: 6, background: 'var(--soft)', border: '1px solid var(--border)', color: 'var(--text2)',
+                fontSize: 11.5, fontWeight: 600,
+              }}>
+                <Hash size={11} strokeWidth={2.4} style={{ flexShrink: 0, color: 'var(--muted)' }} />
+                <span dir="auto" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                  <Mark text={item.raw.ChannelName} terms={terms} />
+                </span>
+              </span>
+            )}
+            {item.raw?.TicketID && (
+              <span style={{ flexShrink: 0, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}><Mark text={`#${item.raw.TicketID}`} terms={terms} /></span>
+            )}
+          </span>
+        ) : (item.sub || item.state) && (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', minWidth: 0 }}>
+            {item.sub && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto"><Mark text={item.sub} terms={terms} /></span>}
             {item.state && (
               <span style={{
                 flexShrink: 0, padding: '0 7px', borderRadius: 999, background: item.tone[1], color: item.tone[0],
@@ -66,10 +188,27 @@ function ConversationRow({ item, active, online, onPick }) {
           </span>
         )}
         <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+        {ticket ? (
+          <span title={ticketCreator ? `Created by ${ticketCreator}` : 'Ticket creator unavailable'} style={{
+            display: 'flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0, marginTop: 3, marginBottom: 2,
+            fontSize: 11.5, color: 'var(--muted)',
+          }}>
+            <User size={12} aria-hidden="true" style={{ flexShrink: 0 }} />
+            <span style={{ flexShrink: 0 }}>Created by</span>
+            <span dir="auto" style={{
+              minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              color: 'var(--text2)', fontWeight: 600,
+            }}>{ticketCreator || 'Unknown'}</span>
+            {item.assignee && <span aria-hidden="true" style={{ color: 'var(--border2)' }}>·</span>}
+            <AssigneeTag assignee={item.assignee} me={meUser} />
+          </span>
+        ) : (
           <span dir="auto" style={{
+            flex: 1, minWidth: 0, textAlign: 'left',
             fontSize: 13, color: unread ? 'var(--text)' : 'var(--muted)', fontWeight: unread ? 600 : 400,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-          }}>{item.preview || ' '}</span>
+          }}>{item.preview ? <Mark text={item.preview} terms={terms} /> : ' '}</span>
+        )}
           {unread && (
             <span aria-label={`${item.unread} unread`} style={{
               minWidth: 20, height: 20, padding: '0 6px', borderRadius: 10, background: 'var(--accent)',
@@ -77,10 +216,43 @@ function ConversationRow({ item, active, online, onPick }) {
               justifyContent: 'center', flexShrink: 0,
             }}>{item.unread > 99 ? '99+' : item.unread}</span>
           )}
+          {ticket && item.state && when}
         </span>
       </span>
     </button>
   );
+}
+
+// Day divider lines in a newest-first list: Today / Yesterday / Earlier,
+// each shown once above the first conversation that falls in it.
+function dayGroup(d, now = new Date()) {
+  if (!d) return 'Earlier';
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const t = d.getTime();
+  if (t >= start) return 'Today';
+  if (t >= start - 86_400_000) return 'Yesterday';
+  return 'Earlier';
+}
+function withDayLines(items, renderRow) {
+  const out = [];
+  let last = null;
+  for (const item of items) {
+    const g = dayGroup(item.at);
+    if (g !== last) {
+      out.push(
+        <div key={`day-${g}-${out.length}`} role="separator" aria-label={g} style={{
+          display: 'flex', alignItems: 'center', gap: 10, padding: out.length ? '10px 12px 4px' : '4px 12px 4px',
+          fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--muted)',
+        }}>
+          {g}
+          <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+        </div>,
+      );
+      last = g;
+    }
+    out.push(renderRow(item));
+  }
+  return out;
 }
 
 function useNarrow(px = 820) {
@@ -121,18 +293,82 @@ export default function HomeShell({ user, onSignOut }) {
   const live = useLive();
   const narrow = useNarrow();
   const [section, setSection] = useState('home');
+  const [channelsView, setChannelsView] = useState(() => {
+    try { return localStorage.getItem('silaChannelsView') || 'conv'; } catch { return 'conv'; }
+  });
+  const [homeView, setHomeView] = useState(() => {
+    try { return localStorage.getItem('silaHomeView') || 'list'; } catch { return 'list'; }
+  });
+  const pickHomeView = (v) => {
+    setHomeView(v);
+    try { localStorage.setItem('silaHomeView', v); } catch { /* private mode: not remembered */ }
+  };
+  const [drawerId, setDrawerId] = useState(null);   // Panels view: the conversation open in the drawer
+  const notify = useNotifyState();
+  const [unreadOnly, setUnreadOnly] = useState(() => new Set());   // Panels view: panels showing unread only
+  // Panels view: the order of the three panels (drag a header, or the arrows), remembered
+  const [panelOrder, setPanelOrder] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('silaPanelsOrder') || 'null');
+      if (Array.isArray(saved) && saved.length === PANELS.length && PANELS.every(p => saved.includes(p.key))) return saved;
+    } catch { /* not remembered */ }
+    return PANELS.map(p => p.key);
+  });
+  const savePanelOrder = (order) => {
+    setPanelOrder(order);
+    try { localStorage.setItem('silaPanelsOrder', JSON.stringify(order)); } catch { /* private mode: not remembered */ }
+  };
+  const movePanel = (key, to) => {   // to: the index it should take
+    const from = panelOrder.indexOf(key);
+    if (from < 0 || to < 0 || to >= panelOrder.length || to === from) return;
+    const next = panelOrder.filter(k => k !== key);
+    next.splice(to, 0, key);
+    savePanelOrder(next);
+  };
+  const [ticketsOpenOnly, setTicketsOpenOnly] = useState(() => {
+    try { return localStorage.getItem('silaPanelsTicketsOpen') === '1'; } catch { return false; }
+  });
+  const toggleTicketsOpen = () => setTicketsOpenOnly(v => {
+    try { localStorage.setItem('silaPanelsTicketsOpen', v ? '0' : '1'); } catch { /* private mode: not remembered */ }
+    return !v;
+  });
+  const [ticketsFlaggedOnly, setTicketsFlaggedOnly] = useState(false);   // Panels: the Tickets panel's Flagged filter
+  const [ticketSort, setTicketSort] = useState(() => {
+    try { const v = localStorage.getItem('silaPanelsTicketSort'); return TICKET_SORT_FN[v] ? v : 'last'; } catch { return 'last'; }
+  });
+  const pickTicketSort = (v) => {
+    setTicketSort(v);
+    try { localStorage.setItem('silaPanelsTicketSort', v); } catch { /* private mode: not remembered */ }
+  };
+  const [dragKey, setDragKey] = useState(null);
+  const [dropKey, setDropKey] = useState(null);
+  const toggleUnread = (key) => setUnreadOnly(s => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const pickChannelsView = (v) => {
+    setChannelsView(v);
+    try { localStorage.setItem('silaChannelsView', v); } catch { /* private mode: not remembered */ }
+  };
   const [filter, setFilter] = useState('All');
   const [query, setQuery] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
-  const current = SECTIONS.find(s => s.key === section);
+  const current = SECTIONS.find(s => s.key === section) || SECTIONS[0];   // 'settings' has no list
+  const settingsAllowed = canSeeSettings(user.username);
+  // Reports: channel admins / team leaders (their channels) and mhd (all) -- the SP decides
+  const [reportsAllowed, setReportsAllowed] = useState(settingsAllowed);
+  useEffect(() => {
+    if (settingsAllowed) return;
+    loadChannels().then(list => setReportsAllowed(list.some(c => c.manager))).catch(() => { /* hidden */ });
+  }, [settingsAllowed]);
   const me = user.username.toLowerCase();
   const others = [...live.online].filter(u => u !== me);
 
   // ---- the left side (conversation list)
   const [left, setLeft] = useState({ status: 'loading', items: [], error: '' });
+  const [panelSearch, setPanelSearch] = useState({});   // Panels view: each panel's own search text
+  const [newTicket, setNewTicket] = useState(false);     // the quick + New ticket form
+  const openTicketId = useRef(0);                        // a ticket just created: opened once its Home row arrives
+  const [boardTicket, setBoardTicket] = useState(null);  // ... or, on the Channels board, opened in its drawer
   const [selectedId, setSelectedId] = useState(null);
-  const [newGroupOpen, setNewGroupOpen] = useState(false);
   const loadSeq = useRef(0);
   // Full load: sign-in, the Refresh button, and whenever the last one is over
   // 10 minutes old (a delta can't see deleted rows or Hide / UnHide). In
@@ -151,6 +387,10 @@ export default function HomeShell({ user, onSignOut }) {
       .catch(err => { if (seq === loadSeq.current) setLeft(s => ({ ...s, status: 'error', error: err.message || 'Could not load your conversations.' })); });
   }, []);
   useEffect(() => { reload(); }, [reload]);
+  // the people directory for the pickers: now, then every 30 minutes
+  useEffect(() => startDirectory(), []);
+  // the Refresh buttons: conversations and the people directory
+  const refreshAll = useCallback(() => { reload(); loadDirectory({ force: true }).catch(() => {}); }, [reload]);
 
   const syncLeft = useCallback(() => {
     const st = sync.current;
@@ -163,7 +403,12 @@ export default function HomeShell({ user, onSignOut }) {
       .then(({ items: delta, maxSeq }) => {
         if (seq !== loadSeq.current) return;   // a full load started meanwhile
         sync.current.maxSeq = maxSeq;
-        if (delta.length) setLeft(s => (s.status === 'ready' || s.status === 'refreshing' ? { ...s, items: mergeLeftSide(s.items, delta) } : s));
+        notifyNew(delta);
+        // the conversation open in front of the user has nothing unread: its pane
+        // marks the new messages read (ChatPane readNow); no badge in between
+        const seen = document.visibilityState === 'visible'
+          ? delta.map(d => (d.unread > 0 && openNowRef.current(d.id) ? { ...d, unread: 0 } : d)) : delta;
+        if (seen.length) setLeft(s => (s.status === 'ready' || s.status === 'refreshing' ? { ...s, items: mergeLeftSide(s.items, seen) } : s));
       })
       .catch(() => { /* next tick retries */ })
       .finally(() => {
@@ -172,6 +417,26 @@ export default function HomeShell({ user, onSignOut }) {
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reload]);
+  // desktop notifications: a conversation whose unread count went up in a delta,
+  // unless it is the one on screen (the tab visible and that conversation open)
+  const leftItemsRef = useRef([]);
+  leftItemsRef.current = left.items;
+  const openNowRef = useRef(() => false);
+  const openFromNotice = useRef(() => {});
+  const notifyNew = (delta) => {
+    const before = new Map(leftItemsRef.current.map(i => [i.id, i]));
+    for (const d of delta) {
+      if (d.hidden || d.unread <= (before.get(d.id)?.unread || 0)) continue;
+      if (document.visibilityState === 'visible' && openNowRef.current(d.id)) continue;
+      const tid = d.raw?.TicketID;
+      notifyMessage({
+        id: d.id,
+        title: d.kind === 'ticket' ? `#${tid} ${d.title}` : d.title,
+        body: d.kind === 'ticket' ? ticketPreview(d.preview, tid) : d.preview || 'New message',
+        onOpen: () => openFromNotice.current(d.id),
+      });
+    }
+  };
   const syncLeftRef = useRef(syncLeft);
   syncLeftRef.current = syncLeft;
   // live: a "changed" event (SilaApi watches SynSequence) or a (re)connect -> delta now
@@ -192,21 +457,6 @@ export default function HomeShell({ user, onSignOut }) {
       window.removeEventListener('focus', tick);
     };
   }, [syncLeft]);
-
-  // a group was created: reload the list, then open it (its row comes from SilaHistory)
-  const onGroupCreated = useCallback(({ groupId }) => {
-    setNewGroupOpen(false);
-    const seq = ++loadSeq.current;
-    loadLeftSide()
-      .then(({ items, maxSeq }) => {
-        if (seq !== loadSeq.current) return;
-        sync.current = { ...sync.current, maxSeq, fullAt: Date.now() };
-        setLeft({ status: 'ready', items, error: '' });
-        const made = items.find(i => i.kind === 'group' && i.raw?.GroupID === groupId);
-        if (made) setSelectedId(made.id);
-      })
-      .catch(err => setLeft(s => ({ ...s, status: 'error', error: err.message || 'Could not load your conversations.' })));
-  }, []);
 
   const filters = useMemo(() => {
     const has = (k) => left.items.some(i => i.kind === k);
@@ -272,13 +522,32 @@ export default function HomeShell({ user, onSignOut }) {
           fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14,
         }}>S</div>
       )}
+      {/* the quick New ticket button, on every screen */}
+      <button onClick={() => setNewTicket(true)} aria-label="New ticket" title="New ticket" style={{
+        width: narrow ? 44 : 48, height: narrow ? 44 : 48, borderRadius: 14, border: '1.5px dashed var(--accent)', cursor: 'pointer',
+        background: 'transparent', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        marginBottom: narrow ? 0 : 8, flexShrink: 0, order: narrow ? 99 : undefined,
+      }}><Plus size={22} strokeWidth={2.2} /></button>
       {SECTIONS.map(railItem)}
       {!narrow && <div style={{ flex: 1 }} />}
-      {!narrow && (
-        <button aria-label="Settings" title="Settings (coming soon)" disabled style={{
-          width: 44, height: 44, borderRadius: 12, border: 'none', background: 'transparent', color: 'var(--rail-text)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.6,
-        }}><Settings size={22} strokeWidth={1.8} /></button>
+      {reportsAllowed && (
+        <button onClick={() => setSection('reports')} aria-label="Reports" title="Reports"
+          aria-current={section === 'reports' ? 'page' : undefined} style={{
+            width: 44, height: 44, borderRadius: 12, border: 'none', cursor: 'pointer',
+            background: section === 'reports' ? 'var(--accent)' : 'transparent',
+            color: section === 'reports' ? 'var(--on-accent)' : 'var(--rail-text)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}><BarChart3 size={22} strokeWidth={1.8} /></button>
+      )}
+      {settingsAllowed && (
+        // System Settings: the user 'mhd' only (the SP enforces it too)
+        <button onClick={() => setSection('settings')} aria-label="System settings" title="System settings"
+          aria-current={section === 'settings' ? 'page' : undefined} style={{
+            width: 44, height: 44, borderRadius: 12, border: 'none', cursor: 'pointer',
+            background: section === 'settings' ? 'var(--accent)' : 'transparent',
+            color: section === 'settings' ? 'var(--on-accent)' : 'var(--rail-text)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}><Settings size={22} strokeWidth={1.8} /></button>
       )}
       <div ref={menuRef} style={{ position: 'relative' }}>
         <button onClick={() => setMenuOpen(o => !o)} aria-label="Account" aria-expanded={menuOpen} style={{
@@ -296,6 +565,32 @@ export default function HomeShell({ user, onSignOut }) {
               <div style={{ fontWeight: 800, color: 'var(--text)' }}>{user.displayName}</div>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>@{user.username}</div>
             </div>
+            {notify !== 'unsupported' && (
+              <button role="menuitem" disabled={notify === 'blocked'}
+                onClick={() => { if (notify === 'on') disableNotify(); else enableNotify(); }}
+                title={notify === 'blocked' ? 'Allow notifications for this site in Chrome (the lock icon in the address bar)' : undefined}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', border: 'none',
+                  borderRadius: 8, background: 'transparent', color: 'var(--text)', fontFamily: 'var(--font)',
+                  fontSize: 13, fontWeight: 700, cursor: notify === 'blocked' ? 'not-allowed' : 'pointer', textAlign: 'left',
+                  opacity: notify === 'blocked' ? 0.6 : 1,
+                }}>
+                {notify === 'on' ? <Bell size={16} /> : <BellOff size={16} />}
+                <span style={{ flex: 1 }}>Desktop notifications</span>
+                <span style={{ fontSize: 12, color: notify === 'on' ? 'var(--green)' : 'var(--muted)' }}>
+                  {notify === 'on' ? 'On' : notify === 'blocked' ? 'Blocked' : 'Off'}
+                </span>
+              </button>
+            )}
+            {notify === 'on' && (
+              // checks Chrome + the operating system can show one at all
+              <button role="menuitem" onClick={() => notifyMessage({ id: 'test', title: 'Sila', body: 'Test notification — they work on this computer.' })}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', border: 'none',
+                  borderRadius: 8, background: 'transparent', color: 'var(--text2)', fontFamily: 'var(--font)',
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                }}><Bell size={16} /> Send a test notification</button>
+            )}
             <button role="menuitem" onClick={onSignOut} style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 10px', border: 'none',
               borderRadius: 8, background: 'transparent', color: 'var(--red)', fontFamily: 'var(--font)',
@@ -307,59 +602,70 @@ export default function HomeShell({ user, onSignOut }) {
     </nav>
   );
 
+  // the user's own ticket flag changed (header button, or F on a row): the row shows it at once.
+  // A flag doesn't move SynSequence, so other devices see it on their next full load.
+  const onFlagChange = useCallback((id, flag) => setLeft(s => ({ ...s, items: s.items.map(i => (i.id === id ? { ...i, flag } : i)) })), []);
+  const toggleFlag = useCallback((item) => {
+    const tid = Number(item.raw?.TicketID);
+    if (!tid) return;
+    setTicketFlag(tid, item.flag ? null : {}).then(flag => onFlagChange(item.id, flag)).catch(() => { /* unchanged */ });
+  }, [onFlagChange]);
+
   const list = (
     <section aria-label={current.title} style={{
-      flex: narrow ? '1 1 auto' : '0 0 380px', minWidth: 0, minHeight: 0, background: 'var(--surface)',
+      flex: narrow ? '1 1 auto' : '0 0 430px', minWidth: 0, minHeight: 0, background: 'var(--surface)',
       borderRight: narrow ? 'none' : '1px solid var(--border)', display: 'flex', flexDirection: 'column',
     }}>
-      <div style={{ padding: '20px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text)' }}>{current.title}</h1>
+      <div style={{ padding: '16px 16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text)', letterSpacing: '-.03em' }}>{current.title}</h1>
+            {section === 'home' && (
+              <Segmented label="Home view" items={HOME_VIEWS} value={homeView} onPick={pickHomeView} height={32} />
+            )}
+          </div>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Your conversations, in one place</span>
+        </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={reload} disabled={left.status === 'loading' || left.status === 'refreshing'}
+          <button onClick={refreshAll} disabled={left.status === 'loading' || left.status === 'refreshing'}
             aria-label="Refresh conversations" title="Refresh" style={{
-              width: 44, height: 44, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)',
+              width: 36, height: 36, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
               color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
             }}><RefreshCw size={18} style={left.status === 'refreshing' ? { animation: 'spin 1s linear infinite' } : undefined} /></button>
-          <button onClick={() => setNewGroupOpen(true)} title="New group" style={{
-            height: 44, padding: '0 12px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)',
-            color: 'var(--text)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
-            fontFamily: 'var(--font)',
-          }}><Users size={16} /> Group</button>
-          <button disabled title="Coming soon" style={{
-            height: 44, padding: '0 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)',
-            color: 'var(--text)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, opacity: 0.55,
-          }}><Ticket size={16} /> Ticket</button>
-          <button disabled title="Coming soon" style={{
-            height: 44, padding: '0 14px', borderRadius: 12, border: 'none', background: 'var(--accent)',
-            color: 'var(--on-accent)', fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, opacity: 0.55,
-          }}><Plus size={16} /> New chat</button>
         </div>
       </div>
-      <div style={{ padding: '0 20px 10px' }}>
+      <div style={{ padding: '0 16px 12px' }}>
         <label htmlFor="home-search" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
           {current.hint}
         </label>
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, height: 44, padding: '0 14px', borderRadius: 12,
+        <div className="sila-conversation-search" style={{
+          display: 'flex', alignItems: 'center', gap: 8, height: 42, padding: '0 12px', borderRadius: 10,
           background: 'var(--bg)', color: 'var(--muted)',
         }}>
-          <Search size={18} />
+          <Search size={17} style={{ flexShrink: 0 }} aria-hidden="true" />
           <input id="home-search" value={query} onChange={e => setQuery(e.target.value)} placeholder={current.hint} style={{
             flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 14,
             color: 'var(--text)', fontFamily: 'var(--font)',
           }} />
+          {query && <button aria-label="Clear search" title="Clear search" onClick={() => {
+            setQuery('');
+            document.getElementById('home-search')?.focus();
+          }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28,
+            flexShrink: 0, border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--muted)', cursor: 'pointer',
+          }}><X size={15} /></button>}
         </div>
       </div>
       {section === 'home' && (
-        <div role="tablist" aria-label="Show" style={{ display: 'flex', gap: 6, padding: '0 20px 12px', flexWrap: 'wrap' }}>
+        <div className="sila-conversation-filters" role="group" aria-label="Filter conversations">
           {filters.map(({ key: f, unread }) => {
             const on = f === filter;
             return (
-              <button key={f} role="tab" aria-selected={on} onClick={() => setFilter(f)} style={{
-                height: 34, padding: '0 12px', borderRadius: 999, cursor: 'pointer', fontFamily: 'var(--font)',
-                border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, fontWeight: 700, fontSize: 12,
-                background: on ? 'var(--accent-soft)' : 'var(--surface)', color: on ? 'var(--accent-strong)' : 'var(--text2)',
-              }}>{f}{unread > 0 && f !== 'Unread' ? ` · ${unread}` : ''}</button>
+              <button key={f} aria-pressed={on} onClick={e => {
+                setFilter(f);
+                e.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+              }} className="sila-conversation-filter">
+                {f}{unread > 0 && <span aria-label={`${unread} unread conversations`}>{unread}</span>}
+              </button>
             );
           })}
         </div>
@@ -405,11 +711,11 @@ export default function HomeShell({ user, onSignOut }) {
           </div>
         </div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 10px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {visible.map(item => (
-            <ConversationRow key={item.id} item={item} active={item.id === selectedId}
+        <div data-rowlist style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 10px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {withDayLines(visible, item => (
+            <ConversationRow key={item.id} item={item} active={item.id === selectedId} terms={[query.trim().toLowerCase()]}
               online={!!item.username && live.online.has(item.username)}
-              onPick={() => setSelectedId(item.id)} />
+              onPick={() => setSelectedId(item.id)} onToggleFlag={toggleFlag} meUser={user.username} />
           ))}
         </div>
       )}
@@ -424,11 +730,251 @@ export default function HomeShell({ user, onSignOut }) {
       .sort((a, b) => (b.at?.getTime() || 0) - (a.at?.getTime() || 0)),
   })), []);
   const isOnline = useCallback((username) => !!username && live.online.has(username), [live.online]);
+  const channelsSwitch = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>View</span>
+      <Segmented label="Board view" items={CHANNEL_VIEWS} value={channelsView} onPick={pickChannelsView} />
+    </div>
+  );
+  // a ticket just created (New ticket): open it on Home once the list has its row
+  useEffect(() => {
+    const id = openTicketId.current;
+    if (!id) return;
+    const it = left.items.find(i => i.kind === 'ticket' && Number(i.raw?.TicketID) === id);
+    if (!it) return;
+    openTicketId.current = 0;
+    if (homeView === 'panels') setDrawerId(it.id); else setSelectedId(it.id);
+  }, [left.items, homeView]);
+  const onTicketCreated = useCallback((row) => {
+    setNewTicket(false);
+    reload();
+    if (section === 'channels' && channelsView !== 'conv') { setBoardTicket(toBoardTicket(row)); return; }
+    openTicketId.current = Number(row.TicketID);
+    setSection('home');
+  }, [reload, section, channelsView]);
+
   // a ticket's state changed in the pane: refresh the list now (state label; a closed ticket leaves it)
   const onTicketChange = useCallback(() => syncLeftRef.current(), []);
+  // the user left a group: close it and reload the list (a delta can't see a deleted row)
+  const onLeaveGroup = useCallback((id) => {
+    setSelectedId(cur => (cur === id ? null : cur));
+    setDrawerId(cur => (cur === id ? null : cur));
+    reload();
+  }, [reload]);
+
+  // ---- Home, Panels view: three lists side by side, the conversation in a drawer
+  const homeBar = (
+    <div style={{
+      flexShrink: 0, padding: '12px 20px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
+      display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text)', letterSpacing: '-.03em' }}>Home</h1>
+        <Segmented label="Home view" items={HOME_VIEWS} value={homeView} onPick={pickHomeView} />
+      </div>
+      {homeView === 'panels' && (
+        <>
+          <div style={{ flex: '1 1 220px', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label htmlFor="panels-search" style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>Search</label>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '0 12px', borderRadius: 8,
+              border: '1px solid var(--border2)', background: 'var(--surface)', color: 'var(--muted)',
+            }}>
+              <Search size={15} />
+              <input id="panels-search" value={query} onChange={e => setQuery(e.target.value)} placeholder="People, groups, tickets"
+                style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
+              <ClearSearch value={query} onClear={() => setQuery('')} size={24} style={{ marginRight: -6 }} />
+            </div>
+          </div>
+          <button onClick={refreshAll} disabled={left.status === 'loading' || left.status === 'refreshing'}
+            aria-label="Refresh conversations" title="Refresh" style={{
+              width: 36, height: 36, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)',
+              color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            }}><RefreshCw size={15} style={left.status === 'refreshing' ? { animation: 'spin 1s linear infinite' } : undefined} /></button>
+        </>
+      )}
+    </div>
+  );
+
+  const panelsQ = query.trim().toLowerCase();
+  const hit = (i, q) => [i.title, i.sub, i.preview, i.state].some(t => t && t.toLowerCase().includes(q));
+  const panels = (
+    <div style={{
+      flex: 1, minHeight: 0, display: 'flex', gap: 12, padding: 12, background: 'var(--bg)', overflowX: 'auto',
+    }}>
+      {panelOrder.map(k => PANELS.find(x => x.key === k)).map((p, index) => {
+        // the Home search, then this panel's own search box
+        const ownQ = (panelSearch[p.key] || '').trim().toLowerCase();
+        const matching = left.items.filter(i => i.kind === p.key && (!panelsQ || hit(i, panelsQ)) && (!ownQ || hit(i, ownQ)));
+        const unread = matching.reduce((n, i) => n + (i.unread > 0 ? 1 : 0), 0);
+        const onlyUnread = unreadOnly.has(p.key);
+        const stateOf = (i) => Number(i.raw?.TicketState);
+        const wantStates = p.key === 'ticket' && ticketsOpenOnly ? OPEN_STATES : null;
+        const flaggedOnly = p.key === 'ticket' && ticketsFlaggedOnly;
+        const filteredRows = matching.filter(i => (!onlyUnread || i.unread > 0) && (!wantStates || wantStates.includes(stateOf(i)))
+          && (!flaggedOnly || i.flag));
+        const sortKey = p.key === 'ticket' ? ticketSort : 'last';
+        const rows = sortKey === 'last' ? filteredRows : [...filteredRows].sort(TICKET_SORT_FN[sortKey]);
+        const Icon = p.icon;
+        return (
+          <section key={p.key} aria-label={p.title}
+            onDragOver={e => { if (dragKey && dragKey !== p.key) { e.preventDefault(); setDropKey(p.key); } }}
+            onDragLeave={() => setDropKey(k => (k === p.key ? null : k))}
+            onDrop={e => { e.preventDefault(); if (dragKey) movePanel(dragKey, index); setDragKey(null); setDropKey(null); }}
+            style={{
+              flex: '1 1 0', minWidth: 280, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--surface)',
+              border: `${dropKey === p.key ? 2 : 1}px ${dropKey === p.key ? 'dashed' : 'solid'} ${dropKey === p.key ? 'var(--accent)' : 'var(--border)'}`,
+              borderRadius: 14, overflow: 'hidden', opacity: dragKey === p.key ? 0.5 : 1,
+            }}>
+            <header draggable title="Drag to move this panel"
+              onDragStart={e => { setDragKey(p.key); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', p.key); }}
+              onDragEnd={() => { setDragKey(null); setDropKey(null); }}
+              style={{
+                flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)',
+                cursor: 'grab',
+              }}>
+              <GripVertical size={16} aria-hidden="true" style={{ color: 'var(--muted)', flexShrink: 0, marginRight: -4 }} />
+              <span style={{
+                width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: 'var(--accent-soft)', color: 'var(--accent-strong)', flexShrink: 0,
+              }}><Icon size={17} /></span>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{p.title}</h2>
+              {p.key === 'ticket' && (
+                <button onClick={toggleTicketsOpen} aria-pressed={ticketsOpenOnly}
+                  title={ticketsOpenOnly ? 'Show all tickets' : 'Show New and In progress only'} style={{
+                    height: 26, padding: '0 9px', borderRadius: 999, cursor: 'pointer', fontFamily: 'var(--font)',
+                    fontSize: 12, fontWeight: 700, flexShrink: 0,
+                    border: `1px solid ${ticketsOpenOnly ? 'var(--accent)' : 'var(--border)'}`,
+                    background: ticketsOpenOnly ? 'var(--accent-soft)' : 'var(--surface)',
+                    color: ticketsOpenOnly ? 'var(--accent-strong)' : 'var(--text2)',
+                  }}>Open · {matching.filter(i => OPEN_STATES.includes(stateOf(i))).length}</button>
+              )}
+              {p.key === 'ticket' && (
+                <button onClick={() => setTicketsFlaggedOnly(v => !v)} aria-pressed={ticketsFlaggedOnly}
+                  aria-label={`Flagged tickets: ${matching.filter(i => i.flag).length}`}
+                  title={ticketsFlaggedOnly ? 'Show all tickets' : 'Show your flagged tickets only (F flags the selected one)'} style={{
+                    height: 26, padding: '0 9px', borderRadius: 999, cursor: 'pointer', fontFamily: 'var(--font)',
+                    fontSize: 12, fontWeight: 700, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 5,
+                    border: `1px solid ${ticketsFlaggedOnly ? 'var(--amber)' : 'var(--border)'}`,
+                    background: ticketsFlaggedOnly ? 'var(--amber-soft)' : 'var(--surface)',
+                    color: ticketsFlaggedOnly ? 'var(--amber)' : 'var(--text2)',
+                  }}><Flag size={12} fill={ticketsFlaggedOnly ? 'currentColor' : 'none'} /> {matching.filter(i => i.flag).length}</button>
+              )}
+              <span style={{ flex: 1 }} />
+              {p.key === 'ticket' && (
+                <select value={ticketSort} onChange={e => pickTicketSort(e.target.value)} aria-label="Sort tickets" title="Sort tickets"
+                  onMouseDown={e => e.stopPropagation()} draggable={false} style={{
+                    height: 26, padding: '0 6px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)',
+                    color: 'var(--text2)', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font)', cursor: 'pointer', maxWidth: 120,
+                  }}>
+                  {TICKET_SORTS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                </select>
+              )}
+              <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>{matching.length}</span>
+              <span style={{ display: 'flex' }}>
+                {[[ChevronLeft, -1, 'left'], [ChevronRight, 1, 'right']].map(([Arrow, step, side]) => (
+                  <button key={side} onClick={() => movePanel(p.key, index + step)}
+                    disabled={index + step < 0 || index + step >= panelOrder.length}
+                    aria-label={`Move ${p.title} ${side}`} title={`Move ${side}`} style={{
+                      width: 26, height: 26, border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--text2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                      opacity: index + step < 0 || index + step >= panelOrder.length ? 0.3 : 1,
+                    }}><Arrow size={15} /></button>
+                ))}
+              </span>
+              <button onClick={() => toggleUnread(p.key)} aria-pressed={onlyUnread}
+                title={onlyUnread ? `Show all ${p.title.toLowerCase()}` : `Show unread ${p.title.toLowerCase()} only`} style={{
+                  height: 28, padding: '0 10px', borderRadius: 999, cursor: 'pointer', fontFamily: 'var(--font)',
+                  display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700,
+                  border: `1px solid ${onlyUnread ? 'var(--accent)' : 'var(--border)'}`,
+                  background: onlyUnread ? 'var(--accent)' : 'var(--surface)', color: onlyUnread ? 'var(--on-accent)' : 'var(--text2)',
+                }}>
+                Unread
+                {unread > 0 && (
+                  <span style={{
+                    minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, fontSize: 11, fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: onlyUnread ? 'var(--on-accent)' : 'var(--accent)', color: onlyUnread ? 'var(--accent-strong)' : 'var(--on-accent)',
+                  }}>{unread}</span>
+                )}
+              </button>
+            </header>
+            <div style={{ flexShrink: 0, padding: '8px 10px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, height: 34, padding: '0 10px', borderRadius: 8,
+                background: 'var(--bg)', color: 'var(--muted)',
+              }}>
+                <Search size={14} style={{ flexShrink: 0 }} aria-hidden="true" />
+                <input value={panelSearch[p.key] || ''} onChange={e => { const v = e.target.value; setPanelSearch(m => ({ ...m, [p.key]: v })); }}
+                  placeholder={`Search ${p.title.toLowerCase()}`} aria-label={`Search ${p.title.toLowerCase()}`}
+                  style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
+                <ClearSearch value={panelSearch[p.key]} onClear={() => setPanelSearch(m => ({ ...m, [p.key]: '' }))} size={24} style={{ marginRight: -6 }} />
+              </div>
+            </div>
+            <div data-rowlist style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '6px 6px 10px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {left.status === 'loading' ? (
+                <div role="status" style={{ padding: 16, fontSize: 13, color: 'var(--muted)' }}>Loading…</div>
+              ) : rows.length === 0 ? (
+                <div style={{ padding: 16, fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
+                  {onlyUnread && matching.length ? 'All caught up — nothing unread.'
+                    : flaggedOnly && matching.length ? 'No flagged tickets. Select a ticket and press F to flag it.'
+                    : wantStates && matching.length ? 'No tickets in these states.'
+                      : panelsQ || ownQ ? 'No matches.' : p.empty}
+                </div>
+              ) : (sortKey === 'last' ? withDayLines : (list, render) => list.map(render))(rows, item => (
+                <ConversationRow key={item.id} item={item} active={item.id === drawerId} terms={[panelsQ, ownQ]}
+                  online={!!item.username && live.online.has(item.username)}
+                  dbl onPick={() => setDrawerId(item.id)} onToggleFlag={toggleFlag} meUser={user.username} />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+
+  // what is on screen now, and how a clicked notification opens its conversation
+  openNowRef.current = (id) => (section === 'home' && homeView === 'panels' ? drawerId === id
+    : !narrow && selectedId === id && (section === 'home' || SECTION_KINDS[section]?.includes(left.items.find(i => i.id === id)?.kind)));
+  openFromNotice.current = (id) => {
+    if (section !== 'home') setSection('home');
+    if (homeView === 'panels') setDrawerId(id); else setSelectedId(id);
+  };
+  const notifyBanner = notify === 'ask' && (
+    <div role="status" style={{
+      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 20px', fontSize: 13, flexWrap: 'wrap',
+      background: 'var(--accent-soft)', color: 'var(--text)', borderBottom: '1px solid var(--border)',
+    }}>
+      <Bell size={16} style={{ color: 'var(--accent-strong)' }} />
+      <span style={{ flex: 1, minWidth: 200 }}>Get a desktop notification when a message arrives while Sila is open.</span>
+      <button onClick={() => enableNotify()} style={{
+        height: 30, padding: '0 12px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--on-accent)',
+        fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font)',
+      }}>Turn on</button>
+      <button onClick={disableNotify} style={{
+        height: 30, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)',
+        color: 'var(--text2)', fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font)',
+      }}>Not now</button>
+    </div>
+  );
+
+  const drawerItem = drawerId != null ? left.items.find(i => i.id === drawerId) : null;
+  const drawer = drawerItem && (
+    <>
+      <div aria-hidden="true" onMouseDown={() => setDrawerId(null)}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.25)', zIndex: 1000 }} />
+      <aside role="dialog" aria-label={drawerItem.title} style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: drawerItem.kind === 'ticket' ? 'min(1240px, 94vw)' : 'min(980px, 90vw)',
+        zIndex: 1001, background: 'var(--soft)', boxShadow: 'var(--shadow-lg)', display: 'flex',
+      }}>
+        <ChatPane key={drawerItem.id} item={drawerItem} onRead={markRead} onActivity={onActivity} isOnline={isOnline}
+          onTicketChange={onTicketChange} onLeave={onLeaveGroup} onFlagChange={onFlagChange} onClose={() => setDrawerId(null)} />
+      </aside>
+    </>
+  );
   const pane = !narrow && (['chat', 'group', 'ticket'].includes(selected?.kind) ? (
     <ChatPane key={selected.id} item={selected} onRead={markRead} onActivity={onActivity} isOnline={isOnline}
-      onTicketChange={onTicketChange} />
+      onTicketChange={onTicketChange} onLeave={onLeaveGroup} onFlagChange={onFlagChange} />
   ) : selected ? (
     <main style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--soft)' }}>
       <header style={{
@@ -507,14 +1053,38 @@ export default function HomeShell({ user, onSignOut }) {
       color: 'var(--text)', fontFamily: 'var(--font)', overflow: 'hidden',
     }}>
       {rail}
+      {newTicket && <NewTicketDialog onClose={() => setNewTicket(false)} onCreated={onTicketCreated} />}
       <div style={{ order: 1, flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <ConnectionBar live={live} />
-        <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-          {list}
-          {pane}
-        </div>
+        {notifyBanner}
+        {section === 'settings' && settingsAllowed ? (
+          <SystemSettings />
+        ) : section === 'reports' && reportsAllowed ? (
+          <Reports />
+        ) : section === 'channels' && channelsView !== 'conv' ? (
+          <ChannelsBoard view={channelsView} viewSwitch={channelsSwitch} isOnline={isOnline} me={user.username}
+            onNewTicket={() => setNewTicket(true)} openTicket={boardTicket} />
+        ) : section === 'home' && homeView === 'panels' ? (
+          <>
+            {homeBar}
+            {panels}
+            {drawer}
+          </>
+        ) : (
+          <>
+            {section === 'channels' && (
+              <div style={{
+                flexShrink: 0, padding: '12px 20px', background: 'var(--surface)', borderBottom: '1px solid var(--border)',
+                display: 'flex', alignItems: 'flex-end', gap: 12,
+              }}>{channelsSwitch}</div>
+            )}
+            <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+              {list}
+              {pane}
+            </div>
+          </>
+        )}
       </div>
-      {newGroupOpen && <NewGroupDialog onClose={() => setNewGroupOpen(false)} onCreated={onGroupCreated} />}
     </div>
   );
 }

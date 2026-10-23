@@ -77,6 +77,10 @@ export async function uploadFile({ file, entityType, entityKey, onProgress, sign
 // Opening a stored file: downloaded with the token, kept as an object URL for
 // the session. preview: an image's small JPEG (at most 480 px; the Files API
 // makes it once and keeps it) -- the original when the file has none.
+// Time limits: a file server that does not answer (e.g. :7500 unreachable)
+// fails the request instead of leaving thumbnails on "Loading" for minutes.
+const PREVIEW_TIMEOUT_MS = 15_000;
+const FILE_TIMEOUT_MS = 120_000;
 const blobs = new Map();   // "<attachmentId>:<p|f>" -> Promise<string>
 export function fileBlobUrl({ attachmentId, entityType, entityKey, preview = false }) {
   const key = `${attachmentId}:${preview ? 'p' : 'f'}`;
@@ -85,9 +89,19 @@ export function fileBlobUrl({ attachmentId, entityType, entityKey, preview = fal
       const token = await getAccessToken();
       const q = new URLSearchParams({ database: DATABASE, entityType, entityKey: String(entityKey), inline: 'true' });
       if (preview) q.set('preview', 'true');
-      const res = await fetch(`${FILES_BASE}/api/v2/attachments/${attachmentId}/download?${q}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const stop = new AbortController();
+      const timer = setTimeout(() => stop.abort(), preview ? PREVIEW_TIMEOUT_MS : FILE_TIMEOUT_MS);
+      let res;
+      try {
+        res = await fetch(`${FILES_BASE}/api/v2/attachments/${attachmentId}/download?${q}`, {
+          headers: { Authorization: `Bearer ${token}` }, signal: stop.signal,
+        });
+      } catch (err) {
+        throw new Error(err?.name === 'AbortError'
+          ? 'The file server did not answer. Try again later.' : 'Cannot reach the file server. Check your connection.');
+      } finally {
+        clearTimeout(timer);
+      }
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         throw new Error(errorText(res, body));
@@ -100,6 +114,34 @@ export function fileBlobUrl({ attachmentId, entityType, entityKey, preview = fal
   return blobs.get(key);
 }
 
+// Profile photos: the stored links (old photo server, office-only) are fetched
+// through the Files API with the user's token (GET /api/v2/photo, SilaApi
+// Photos/PhotoEndpoints.cs), kept as object URLs for the session. When the API
+// can't give it (not configured yet, another server), the stored link itself is
+// used, as before -- it opens inside the office; elsewhere the avatar keeps its
+// initials.
+const photos = new Map();   // stored link -> Promise<string>
+export function photoBlobUrl(url) {
+  if (!url || !/^https?:\/\//i.test(url)) return Promise.resolve('');
+  if (!photos.has(url)) {
+    photos.set(url, (async () => {
+      try {
+        const token = await getAccessToken();
+        const stop = new AbortController();
+        const timer = setTimeout(() => stop.abort(), PREVIEW_TIMEOUT_MS);
+        try {
+          const res = await fetch(`${FILES_BASE}/api/v2/photo?url=${encodeURIComponent(url)}`, {
+            headers: { Authorization: `Bearer ${token}` }, signal: stop.signal,
+          });
+          if (!res.ok) return url;
+          return URL.createObjectURL(await res.blob());
+        } finally { clearTimeout(timer); }
+      } catch { return url; }
+    })());
+  }
+  return photos.get(url);
+}
+
 // Saves the file under its own name (works for any type, opens nothing).
 export async function downloadFile(ref, name) {
   const url = await fileBlobUrl(ref);
@@ -109,4 +151,29 @@ export async function downloadFile(ref, name) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+// The Download buttons on attachments: a Files API file is downloaded with the
+// token; an older link (file server, Cloudinary) is fetched and saved when its
+// server allows it, else opened in a new tab (save from there).
+export async function saveAttachment({ file, entity }) {
+  const name = file.name || 'file';
+  if (isFilesApiUrl(file.url) && file.id && entity) {
+    await downloadFile({ attachmentId: file.id, ...entity }, name);
+    return;
+  }
+  try {
+    const res = await fetch(file.url, { mode: 'cors' });
+    if (!res.ok) throw new Error(String(res.status));
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch {
+    window.open(file.url, '_blank', 'noopener,noreferrer');
+  }
 }
