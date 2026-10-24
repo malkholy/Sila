@@ -25,6 +25,10 @@ GO
 --     channel, system lines, transactions, unread recount, Home-row clean-up.
 -- (4) 'Invite Member': ticket admins / team leaders only; IsAdmin in @LineMember
 --     also applies to someone brought back; the system line says "as admin".
+-- (5) 'New Chat': a reply to an admins-only note is saved admins-only.
+-- (6) Forward Ticket also for an In progress ticket; a rejected / cancelled
+--     forward puts the original back In progress if it had been started.
+-- (7) Forward Ticket: the ticket's CC people always join the copy, as CC.
 -- Every other operation, column and result set is as before.
 -- Not the rewrite in SQLScript/APITicketOperation.sql (that one still waits for
 -- the app owner's go-ahead).
@@ -239,7 +243,7 @@ begin
 		-- ===============================================================
 		-- Forwarding (rewritten 2026-10-23; same parameters and result sets
 		-- as before). The same rules as the web (CHA.APISilaWebTicketOperation):
-		--   * Forward Ticket: ticket admins / team leaders of a New ticket; the
+		--   * Forward Ticket: ticket admins / team leaders of a New or In progress ticket; the
 		--     target (@LineData = ChannelID) must be another active channel the
 		--     caller can see, in the SAME category as the ticket's own channel
 		--     (not the @ChannelID the app sends). The copy's members: the target
@@ -279,7 +283,7 @@ begin
 				set @State = 1 ; set @Message = 'Only ticket admins and team leaders can forward a ticket' ;
 				return ;
 			end
-			if @FwState <> 0
+			if @FwState not in ( 0 , 1 )   -- (6) New or In progress (2026-10-24)
 			begin
 				set @State = 1 ; set @Message = 'Ticket State is not Correct ' ;
 				return ;
@@ -319,6 +323,12 @@ begin
 				update @FwMembers set IsCreatedBy = 1 where UserID = @FwCreatorID
 				if @@rowcount = 0 insert into @FwMembers values ( @FwCreatorID , 0 , 0 , 1 , 0 )
 			end
+			-- (7) the ticket's CC people always come along, still as CC (2026-10-24)
+			insert into @FwMembers ( UserID , IsAdmin , IsTeamLeader , IsCreatedBy , IsCC )
+			select tm.UserID , 0 , 0 , 0 , 1
+			from cha.TicketMembers tm join UserMaster u on u.UserID = tm.UserID and u.IsNotActive = 0
+			where tm.TicketID = @TicketID and tm.IsLeft = 0 and tm.IsCC = 1
+			  and not exists ( select 1 from @FwMembers f where f.UserID = tm.UserID )
 			if not exists ( select 1 from @FwMembers where IsAdmin = 1 or IsTeamLeader = 1 )
 			begin
 				set @State = 1 ; set @Message = 'That channel has no admin or team leader to accept the ticket' ;
@@ -422,7 +432,7 @@ begin
 					delete from dbo.SilaTicketAssignment where TicketID = @TicketID
 					delete from SilaHistory where TicketID = @TicketID and RecordType = 'C'
 					delete from cha.TicketHistory where TicketID = @TicketID
-					update cha.TicketHistory set TicketState = 0 , LastMaintDate = getdate() , LastMaintByUser = @User where TicketID = @FwOrig
+					update cha.TicketHistory set TicketState = case when StartDate > '2000-01-01' then 1 else 0 end , LastMaintDate = getdate() , LastMaintByUser = @User where TicketID = @FwOrig   -- (6) back to where it was
 					set @ChatID = next value for dbo.ChatTicket
 					insert into cha.TicketChatHistory ( ChatID , TicketID , FromUserID , FromUserName , Text , TextStyle , ReplayMsgID , CreatedDate , AttachmentID , LocalChatID , ChannelID , IsSystem )
 					values ( @ChatID , @FwOrig , @UserID , @User , @FwText , @FwText , 0 , getdate() , 0 , 0 , @FwOrigChannel , 1 )
@@ -472,7 +482,7 @@ begin
 					delete from SilaHistory where TicketID = @ForwardedTicketID and RecordType = 'C'
 					delete from cha.TicketHistory where TicketID = @ForwardedTicketID
 				end
-				update cha.TicketHistory set TicketState = 0 , LastMaintDate = getdate() , LastMaintByUser = @User where TicketID = @TicketID
+				update cha.TicketHistory set TicketState = case when StartDate > '2000-01-01' then 1 else 0 end , LastMaintDate = getdate() , LastMaintByUser = @User where TicketID = @TicketID   -- (6) back to where it was
 				set @FwText = '@' + @FullName + ' has cancelled the forward of Ticket #' + convert(nvarchar, @TicketID)
 				set @ChatID = next value for dbo.ChatTicket
 				insert into cha.TicketChatHistory ( ChatID , TicketID , FromUserID , FromUserName , Text , TextStyle , ReplayMsgID , CreatedDate , AttachmentID , LocalChatID , ChannelID , IsSystem )
@@ -1070,6 +1080,10 @@ begin
 				from #TempChat;
 			
 				select @ChannelID=TicketChannelID from cha.TicketHistory where TicketID=@TicketID
+				-- (5) a reply to an admins-only note is admins-only too: its quote would show
+				-- the note to everyone (added 2026-10-24)
+				if isnull(@ReplayMsgID, 0) <> 0 and exists ( select 1 from cha.TicketChatHistory where ChatID=@ReplayMsgID and TicketID=@TicketID and IsAdmin=1 )
+					update #TempChat set IsAdmin = 1
 
 
 	

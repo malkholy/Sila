@@ -139,7 +139,7 @@ export default function GroupInfoPanel({ groupId, header, isOnline, onClose, onL
 
   const memberRow = (m) => (
     <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 48 }}>
-      <Avatar name={m.name} size={38} photoUrl={m.photoUrl} online={isOnline(m.username)} />
+      <Avatar name={m.name} size={38} photoUrl={m.photoUrl} online={isOnline(m.username)} userId={m.id} username={m.username} />
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <span dir="auto" style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {m.me ? 'You' : m.name}

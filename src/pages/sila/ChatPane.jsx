@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   Check, CheckCheck, FileText, Ban, Paperclip, Send, Mic, MoreHorizontal, Reply, Copy, Pencil, Trash2, X, Clock, AlertCircle,
   Users, Megaphone, Lock, Hash, LogOut, ShieldAlert, Play, Pause, Flag, RotateCcw, Archive, Type, Download, Forward, CheckCircle2, XCircle, Undo2,
+  BellRing,
 } from 'lucide-react';
 import RichComposer from './RichComposer.jsx';
 import { sanitizeForSend, sanitizeForShow, hasFormatting, toPlainText } from '../../shared/richText.js';
@@ -9,6 +10,9 @@ import { ACCEPT, checkFile, downloadFile, fileBlobUrl, fileEntity, isFilesApiUrl
 import Avatar from './Avatar.jsx';
 import { chatApi, formatSize, newLocalId, PAGE_SIZE, changeTicketState, answerForward, cancelForward, leaveTicket } from '../../shared/chat.js';
 import ForwardDialog from './ForwardDialog.jsx';
+import ForwardMessageDialog from './ForwardMessageDialog.jsx';
+import ReminderDialog from './ReminderDialog.jsx';
+import { dueText, quickTimes } from '../../shared/reminders.js';
 import { cacheKey, getCached, putCached, syncAnchor, applyDelta } from '../../shared/chatCache.js';
 import GroupInfoPanel from './GroupInfoPanel.jsx';
 import TicketInfoPanel from './TicketInfoPanel.jsx';
@@ -331,7 +335,7 @@ const actionButton = (primary) => ({
   color: primary ? 'var(--on-accent)' : 'var(--text)', fontWeight: 700, fontSize: 13, fontFamily: 'var(--font)', whiteSpace: 'nowrap',
 });
 
-function MessageMenu({ m, canChange, onReply, onCopy, onEdit, onDelete, onClose }) {
+function MessageMenu({ m, canChange, onReply, onCopy, onForward, onRemind, onEdit, onDelete, onClose }) {
   const ref = useRef(null);
   useEffect(() => {
     const away = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
@@ -349,13 +353,19 @@ function MessageMenu({ m, canChange, onReply, onCopy, onEdit, onDelete, onClose 
     }}>
       {canChange && <button role="menuitem" style={menuItemStyle()} onClick={act(onReply)}><Reply size={16} /> Reply</button>}
       {m.text && <button role="menuitem" style={menuItemStyle()} onClick={act(onCopy)}><Copy size={16} /> Copy</button>}
+      {/* admins-only notes stay in their ticket */}
+      {onForward && !m.adminNote && (m.text || m.file) && (
+        <button role="menuitem" style={menuItemStyle()} onClick={act(onForward)}><Forward size={16} /> Forward</button>
+      )}
+      {onRemind && <button role="menuitem" style={menuItemStyle()} onClick={act(onRemind)}><BellRing size={16} /> Remind me…</button>}
       {canChange && m.mine && m.text && <button role="menuitem" style={menuItemStyle()} onClick={act(onEdit)}><Pencil size={16} /> Edit</button>}
       {canChange && m.mine && <button role="menuitem" style={menuItemStyle(true)} onClick={act(onDelete)}><Trash2 size={16} /> Delete</button>}
     </div>
   );
 }
 
-function Bubble({ m, otherName, menuOpen, onMenu, actions, isGroup, canChange, online, entity, onView }) {
+// onJump(chatId): the quoted message was clicked -- scroll to the original; flash: briefly highlighted
+function Bubble({ m, otherName, menuOpen, onMenu, actions, isGroup, canChange, online, entity, onView, onJump, flash }) {
   const mine = m.mine;
   const canAct = !m.deleted && !m.pending;
   if (m.system) {
@@ -368,11 +378,14 @@ function Bubble({ m, otherName, menuOpen, onMenu, actions, isGroup, canChange, o
   }
   const sender = isGroup && !mine && m.from;
   return (
-    <div style={{ display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+    <div data-mid={m.sortId} style={{
+      display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', borderRadius: 12, margin: '-4px -8px', padding: '4px 8px',
+      background: flash ? 'var(--orange-soft)' : 'transparent', transition: 'background-color .6s',
+    }}>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, flexDirection: mine ? 'row-reverse' : 'row', maxWidth: 'min(600px, 86%)', minWidth: 0 }}>
         {sender && (
           <span style={{ marginRight: 6, display: 'flex', flexShrink: 0 }}>
-            <Avatar name={m.from.name} size={32} photoUrl={m.from.photoUrl} online={online(m.from.username)} />
+            <Avatar name={m.from.name} size={32} photoUrl={m.from.photoUrl} online={online(m.from.username)} userId={m.from.id} username={m.from.username} />
           </span>
         )}
         <div style={{
@@ -393,14 +406,16 @@ function Bubble({ m, otherName, menuOpen, onMenu, actions, isGroup, canChange, o
             </span>
           )}
           {m.reply && !m.deleted && (
-            <span style={{
-              display: 'flex', flexDirection: 'column', padding: '4px 10px', borderRadius: 8, fontSize: 12, minWidth: 0,
-              maxWidth: '100%', overflow: 'hidden',
-              background: mine ? 'rgba(255,255,255,.55)' : 'var(--soft)', borderInlineStart: '3px solid var(--accent)',
+            // the quoted message: a click scrolls to the original
+            <button type="button" onClick={() => onJump?.(m.reply.id)} disabled={!m.reply.id} title="Go to the original message" style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'stretch', padding: '4px 10px', borderRadius: 8, fontSize: 12, minWidth: 0,
+              maxWidth: '100%', overflow: 'hidden', border: 'none', borderInlineStart: '3px solid var(--accent)', textAlign: 'start',
+              background: mine ? 'rgba(255,255,255,.55)' : 'var(--soft)', cursor: m.reply.id ? 'pointer' : 'default',
+              font: 'inherit', color: 'inherit',
             }}>
               <span style={{ fontWeight: 700, color: 'var(--accent-strong)' }}>{m.reply.mine ? 'You' : (m.reply.name || otherName)}</span>
               <span dir="auto" style={{ color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.reply.text}</span>
-            </span>
+            </button>
           )}
           {m.deleted ? (
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontStyle: 'italic', color: 'var(--muted)' }}>
@@ -537,7 +552,9 @@ function ConfirmDelete({ m, busy, isGroup, onCancel, onConfirm }) {
 // onClose: shown as an X at the end of the header (the pane opened in a drawer, e.g. the Channels board)
 // onLeave: the user left this group / ticket (close it, refresh the list)
 // onFlagChange(id, flag): the user flagged / unflagged this ticket (lists show it at once)
-export default function ChatPane({ item, isOnline = () => false, onRead, onActivity, onTicketChange, onClose, onLeave, onFlagChange }) {
+// onChatStarted(sessionId): a new chat's first message created its conversation (item.draft)
+// homeItems: the Home list, where Forward can send a message; onForwarded: the list should refresh
+export default function ChatPane({ item, isOnline = () => false, onRead, onActivity, onTicketChange, onClose, onLeave, onFlagChange, onChatStarted, homeItems, onForwarded }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const api = useMemo(() => chatApi(item), [item.id]);
   const [state, setState] = useState({ status: 'loading', header: null, messages: [], hasMore: false, error: '' });
@@ -578,7 +595,9 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   const richRef = useRef(null);
   const [actionBusy, setActionBusy] = useState(null);  // ticket action key
   const [confirmAction, setConfirmAction] = useState(null);
-  const [flagPanel, setFlagPanel] = useState(0);   // bumped by the pinned flag note: opens the flag panel
+  const [flagPanel, setFlagPanel] = useState(0);
+  const [forwardMsg, setForwardMsg] = useState(null);   // the message being forwarded (ForwardMessageDialog)
+  const [remindMsg, setRemindMsg] = useState(null);     // "Remind me" on a message (ReminderDialog)   // bumped by the pinned flag note: opens the flag panel
   const [forwarding, setForwarding] = useState(false);   // the Forward dialog
 
   const flash = useCallback((text) => {
@@ -728,6 +747,42 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
       .finally(() => setOlder(false));
   };
 
+  // A quoted message was clicked: find the original (an edited one by its
+  // OrginalChatID), loading older pages until it is there (10 at most), then
+  // scroll it to the middle and highlight it for a moment.
+  const [flashMsg, setFlashMsg] = useState(null);   // sortId of the highlighted message
+  const jumpTo = async (rid) => {
+    if (!rid || older) return;
+    const match = (list) => list.find(x => x.id === rid || x.sortId === rid || x.original === rid);
+    let list = state.messages, more = state.hasMore, found = match(list);
+    const added = [];
+    const seq = loadSeq.current;
+    for (let i = 0; !found && more && list.length && i < 10; i++) {
+      setOlder(true);
+      try {
+        const page = await api.load(list[0].sortId);
+        if (seq !== loadSeq.current) return;
+        added.push(...page.messages);
+        list = [...page.messages, ...list].sort(bySort);
+        more = page.hasMore;
+        found = match(list);
+      } catch (err) { flash(err.message || 'Could not load older messages.'); break; }
+      finally { setOlder(false); }
+    }
+    if (added.length) {
+      const ids = new Set(added.map(x => x.id));
+      setState(s => ({ ...s, messages: [...added, ...s.messages.filter(x => !ids.has(x.id))].sort(bySort), hasMore: more }));
+    }
+    if (!found) { flash('The original message is no longer in this conversation.'); return; }
+    setFlashMsg(found.sortId);
+  };
+  useEffect(() => {
+    if (flashMsg == null) return undefined;
+    scrollRef.current?.querySelector(`[data-mid="${flashMsg}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const t = setTimeout(() => setFlashMsg(null), 1800);
+    return () => clearTimeout(t);
+  }, [flashMsg]);
+
   // newest page / own send: stick to the bottom; older page: keep the reader's place
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -753,12 +808,13 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
       stickBottom.current = true;
       setState(s => ({ ...s, messages: [...s.messages.filter(x => x.id !== saved.id), saved].sort(bySort) }));
       if (!saved.adminNote) onActivity?.(item.id, { preview: saved.text, at: saved.at || new Date() });
+      if (item.draft && saved.sessionId) onChatStarted?.(saved.sessionId);
       // a manager's first message starts a new ticket: pick up the new state
       if (isTicket && header?.state === 0 && !saved.adminNote) fullLoad(true);
     } catch (err) {
       setPending(list => list.map(x => (x.localId === p.localId ? { ...x, status: 'failed', error: err.message } : x)));
     }
-  }, [api, me, item.id, onActivity, isTicket, header?.state, fullLoad]);
+  }, [api, me, item.id, item.draft, onActivity, onChatStarted, isTicket, header?.state, fullLoad]);
 
   // ---- files: upload to the Files API (:7500), then post the message. A failed
   // step can be retried: an upload that already succeeded is not repeated.
@@ -798,8 +854,8 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
       if (problem) { problems.push(problem); continue; }
       const p = {
         localId: newLocalId(), kind: 'file', file, text: '', status: 'sending', stage: 'uploading', progress: 0,
-        at: new Date(), replyToId: replyTo?.id || 0, reply: replyTo ? { text: replyTo.text || 'Attachment', mine: replyTo.mine } : null,
-        adminOnly: isTicket && adminOnly,
+        at: new Date(), replyToId: replyTo?.id || 0, reply: replyTo ? { id: replyTo.id, text: replyTo.text || 'Attachment', mine: replyTo.mine } : null,
+        adminOnly: isTicket && (adminOnly || !!replyTo?.adminNote),   // a reply to an admins-only note stays admins-only
       };
       stickBottom.current = true;
       setPending(list => [...list, p]);
@@ -838,8 +894,8 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
     }
     const p = {
       localId: newLocalId(), text, html, status: 'sending', at: new Date(),
-      replyToId: replyTo?.id || 0, reply: replyTo ? { text: replyTo.text || 'Attachment', mine: replyTo.mine } : null,
-      adminOnly: isTicket && adminOnly,
+      replyToId: replyTo?.id || 0, reply: replyTo ? { id: replyTo.id, text: replyTo.text || 'Attachment', mine: replyTo.mine } : null,
+      adminOnly: isTicket && (adminOnly || !!replyTo?.adminNote),   // a reply to an admins-only note stays admins-only
     };
     clearComposer(); setReplyTo(null); setRichOpen(false);
     stickBottom.current = true;
@@ -881,7 +937,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
   };
 
   const actions = {
-    onReply: (m) => { setEditing(null); setReplyTo(m); inputRef.current?.focus(); },
+    onReply: (m) => { setEditing(null); setReplyTo(m); if (m.adminNote) setAdminOnly(true); inputRef.current?.focus(); },
     onCopy: (m) => {
       navigator.clipboard?.writeText(m.text).then(() => flash('Message copied'), () => flash('Copy is blocked in this browser'));
     },
@@ -895,6 +951,9 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
       }
     },
     onDelete: (m) => setConfirmDel(m),
+    onForward: homeItems ? (m) => setForwardMsg(m) : undefined,
+    // My Day: a reminder about this message (a new chat has no conversation to link yet)
+    onRemind: item.draft ? undefined : (m) => setRemindMsg(m),
     onRetry: (m) => {
       const p = pending.find(x => x.localId === m.localId);
       if (p) (p.kind === 'file' ? tryFile(p) : trySend(p));
@@ -1033,7 +1092,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
 
   const headerBody = isTicket ? ticketHeaderBody : (
     <>
-      <Avatar name={otherName} size={44} photoUrl={photoUrl} online={headerOnline} />
+      <Avatar name={otherName} size={44} photoUrl={photoUrl} online={headerOnline} username={!isGroup && !isTicket ? (header?.username || item.username) : undefined} />
       <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }} dir="auto">{otherName}</span>
         <span style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1139,7 +1198,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
         ) : (
           <Bubble key={r.key} m={r.m} otherName={otherName} menuOpen={menuFor === r.m.id}
             onMenu={setMenuFor} actions={actions} isGroup={multi} canChange={canWrite || (isTicket && header?.state < 50)} online={isOnline}
-            entity={entity} onView={setViewing} />
+            entity={entity} onView={setViewing} onJump={jumpTo} flash={flashMsg === r.m.sortId} />
         )))}
       </div>
 
@@ -1179,13 +1238,16 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
         display: 'flex', alignItems: 'flex-end', gap: 10,
       }}>
         <input ref={fileInputRef} type="file" multiple accept={ACCEPT} onChange={pickFiles} hidden />
-        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={state.status !== 'ready'}
+        {/* a new chat takes files once its first message has created it */}
+        {!item.draft && <button type="button" onClick={() => fileInputRef.current?.click()} disabled={state.status !== 'ready'}
           aria-label="Attach files" title="Attach files (PDF, images, Word, Excel, PowerPoint, TXT, CSV · up to 50 MB)" style={{
           width: 44, height: 44, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)',
           color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
-        }}><Paperclip size={20} /></button>
+        }}><Paperclip size={20} /></button>}
         {isTicket && header?.can.adminNote && (
-          <button type="button" onClick={() => setAdminOnly(v => !v)} aria-pressed={adminOnly} title="Admins-only note" style={{
+          // locked on while replying to an admins-only note: the reply stays admins-only
+          <button type="button" onClick={() => setAdminOnly(v => !v)} aria-pressed={adminOnly} disabled={!!replyTo?.adminNote}
+            title={replyTo?.adminNote ? 'A reply to an admins-only note stays admins-only' : 'Admins-only note'} style={{
             height: 44, padding: '0 12px', borderRadius: 12, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
             border: `1.5px solid ${adminOnly ? 'var(--amber)' : 'var(--border)'}`, background: adminOnly ? 'var(--amber-soft)' : 'var(--surface)',
             color: adminOnly ? 'var(--amber)' : 'var(--text2)', fontWeight: 700, fontSize: 12, fontFamily: 'var(--font)', cursor: 'pointer',
@@ -1279,6 +1341,23 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
         </div>
       )}
       {confirmDel && <ConfirmDelete m={confirmDel} busy={busy} isGroup={multi} onCancel={() => setConfirmDel(null)} onConfirm={doDelete} />}
+      {remindMsg && (
+        <ReminderDialog
+          reminder={{
+            title: (remindMsg.text || remindMsg.file?.name || 'Message').replace(/\s+/g, ' ').slice(0, 200),
+            linkKind: isTicket ? 'ticket' : isGroup ? 'group' : 'chat',
+            linkId: Number(isTicket ? item.raw?.TicketID : isGroup ? item.raw?.GroupID : item.raw?.SessionID) || 0,
+            linkTitle: header?.title || item.title, chatId: remindMsg.id,
+            date: quickTimes()[2].date, time: quickTimes()[2].time,
+          }}
+          onClose={() => setRemindMsg(null)}
+          onSaved={(r) => { setRemindMsg(null); flash(`Reminder set: ${dueText(r)}`); }} />
+      )}
+      {forwardMsg && (
+        <ForwardMessageDialog message={forwardMsg} source={entity} items={homeItems || []} currentId={item.id}
+          onClose={() => setForwardMsg(null)}
+          onDone={(n) => { setForwardMsg(null); flash(`Forwarded to ${n} conversation${n === 1 ? '' : 's'}`); onForwarded?.(); }} />
+      )}
     </main>
     {isTicket && showInfo && (
       <TicketInfoPanel ticketId={item.raw?.TicketID} header={header} isOnline={isOnline} actions={ticketActionsNode}

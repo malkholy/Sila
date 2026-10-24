@@ -201,6 +201,9 @@ builder.Services.AddHttpClient(FirebaseMessaging.ClientName, c => c.Timeout = Ti
 builder.Services.AddSingleton<IPushStore, SqlPushStore>();
 builder.Services.AddSingleton<IPushTransport, FirebaseMessaging>();
 builder.Services.AddHostedService<PushSender>();
+// My Day reminders: fired with the push sender (live pop-up + phone push), on when Push:Enabled.
+builder.Services.AddSingleton<IReminderStore, SqlReminderStore>();
+builder.Services.AddHostedService<ReminderSender>();
 var attachmentRequestLimit = (builder.Configuration.GetValue<long?>("Attachments:MaxFileSizeBytes")
     ?? 50L * 1024 * 1024) + 1024 * 1024;
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>

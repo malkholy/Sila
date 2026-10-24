@@ -35,7 +35,9 @@ function span(ms) {
 // the SLA's finish time; otherwise "Open for" = opened -> now.
 function History({ steps, nameOf, finished }) {
   const opened = steps[0]?.at;
-  const done = finished ? (steps.find(st => st.key === 'ended') || steps.find(st => st.key === 'closed')) : null;
+  // the LAST end (a ticket can be ended, reopened and ended again), else the last close
+  const last = (kind) => [...steps].reverse().find(st => st.kind === kind);
+  const done = finished ? (last('ended') || last('closed')) : null;
   const end = done ? done.at : new Date();
   return (
     <div>
@@ -159,7 +161,7 @@ export default function TicketInfoPanel({ ticketId, header, isOnline, actions, e
   const others = state.members.filter(m => !m.admin && !m.leader);
   const row = (m) => (
     <li key={m.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-      <Avatar name={m.name} size={36} photoUrl={m.photoUrl} online={isOnline(m.username)} />
+      <Avatar name={m.name} size={36} photoUrl={m.photoUrl} online={isOnline(m.username)} userId={m.id} username={m.username} />
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
         <span dir="auto" title={m.name} style={{ minWidth: 0, fontSize: 13, lineHeight: 1.45, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

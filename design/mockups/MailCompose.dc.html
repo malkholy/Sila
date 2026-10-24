@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — New mail</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button,input,textarea{font-family:inherit}
+</style>
+</helmet>
+<div style="width: 760px; height: 760px; box-sizing: border-box; padding: 24px; background: rgba(15,23,42,.4); display: flex; align-items: center; justify-content: center; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.5">
+  <form role="dialog" aria-modal="true" aria-labelledby="mc-title" onSubmit="{{send}}" style="width: 100%; height: 100%; box-sizing: border-box; border-radius: 16px; background: #ffffff; box-shadow: 0 20px 50px rgba(15,23,42,.25); display: flex; flex-direction: column; overflow: hidden">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid #e2e8f0">
+      <h2 id="mc-title" style="flex: 1; margin: 0; font-size: 17px; font-weight: 800">Reply · Quotation Q-2291 for 5,000 drums</h2>
+      <a href="Mail.dc.html" aria-label="Close" style="width: 34px; height: 34px; border-radius: 10px; border: 1px solid #e2e8f0; color: #475569; display: flex; align-items: center; justify-content: center; text-decoration: none">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+      </a>
+    </div>
+
+    <div style="padding: 6px 18px; border-bottom: 1px solid #e2e8f0">
+      <div style="display: flex; align-items: center; gap: 8px; min-height: 42px; border-bottom: 1px solid #f1f5f9; flex-wrap: wrap">
+        <span style="width: 34px; font-size: 13px; font-weight: 700; color: #475569">To</span>
+        <sc-for list="{{to}}" as="p" hint-placeholder-count="2">
+          <span style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 10px; border-radius: 999px; background: {{p.bg}}; color: {{p.fg}}; font-size: 12px; font-weight: 700">
+            {{p.label}}
+            <button type="button" onClick="{{p.remove}}" aria-label="Remove {{p.label}}" style="width: 20px; height: 20px; border-radius: 10px; border: none; background: transparent; color: inherit; cursor: pointer">x</button>
+          </span>
+        </sc-for>
+        <label for="mc-to" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Add recipient</label>
+        <input id="mc-to" value="{{toDraft}}" onInput="{{typeTo}}" placeholder="Name or email address" style="flex: 1; min-width: 160px; height: 30px; border: none; outline: none; font-size: 13px; color: #0f172a">
+      </div>
+      <sc-if value="{{showSuggest}}" hint-placeholder-val="{{true}}">
+        <div role="listbox" aria-label="Suggestions" style="margin: 4px 0 6px 42px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden">
+          <sc-for list="{{suggest}}" as="s" hint-placeholder-count="3">
+            <button type="button" role="option" onClick="{{s.add}}" style="width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: none; background: #ffffff; text-align: left; cursor: pointer">
+              <span style="width: 28px; height: 28px; border-radius: 14px; background: {{s.color}}; color: #ffffff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{s.initials}}</span>
+              <span style="flex: 1; display: flex; flex-direction: column">
+                <span style="font-size: 13px; font-weight: 700">{{s.name}}</span>
+                <span style="font-size: 12px; color: #64748b">{{s.address}}</span>
+              </span>
+              <span style="font-size: 11px; font-weight: 700; color: {{s.tagFg}}">{{s.tag}}</span>
+            </button>
+          </sc-for>
+        </div>
+      </sc-if>
+      <div style="display: flex; align-items: center; gap: 8px; min-height: 40px">
+        <span style="width: 34px; font-size: 13px; font-weight: 700; color: #475569">Cc</span>
+        <span style="display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 999px; background: #f1f5f9; font-size: 12px; font-weight: 700">Mona Hassan</span>
+        <span style="flex: 1"></span>
+        <button type="button" style="border: none; background: transparent; color: #c2410c; font-size: 12px; font-weight: 700; cursor: pointer">Bcc</button>
+      </div>
+    </div>
+
+    <div style="padding: 0 18px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 8px; min-height: 44px">
+      <label for="mc-subject" style="width: 60px; font-size: 13px; font-weight: 700; color: #475569">Subject</label>
+      <input id="mc-subject" value="RE: Quotation Q-2291 for 5,000 drums" style="flex: 1; border: none; outline: none; font-size: 14px; font-weight: 700; color: #0f172a">
+    </div>
+
+    <div style="padding: 6px 18px; display: flex; gap: 4px; border-bottom: 1px solid #f1f5f9" role="toolbar" aria-label="Formatting">
+      <button type="button" aria-label="Bold" style="width: 32px; height: 30px; border-radius: 8px; border: none; background: transparent; font-weight: 800; cursor: pointer">B</button>
+      <button type="button" aria-label="Italic" style="width: 32px; height: 30px; border-radius: 8px; border: none; background: transparent; font-style: italic; cursor: pointer">I</button>
+      <button type="button" aria-label="Bulleted list" style="width: 32px; height: 30px; border-radius: 8px; border: none; background: transparent; cursor: pointer">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"></path><circle cx="4.5" cy="6" r="1"></circle><circle cx="4.5" cy="12" r="1"></circle><circle cx="4.5" cy="18" r="1"></circle></svg>
+      </button>
+      <button type="button" aria-label="Insert link" style="width: 32px; height: 30px; border-radius: 8px; border: none; background: transparent; cursor: pointer">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"></path><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"></path></svg>
+      </button>
+    </div>
+    <label for="mc-body" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Message</label>
+    <textarea id="mc-body" style="flex: 1; min-height: 120px; padding: 14px 18px; border: none; outline: none; resize: none; font-size: 14px; color: #0f172a">Dear Delta Packaging team,
+
+Thank you for the quotation. Could you confirm delivery in 2 weeks instead of 3 for the first 2,000 drums?
+
+Best regards,
+Mohammad Al Kholy
+GLC Paints</textarea>
+    <div style="padding: 8px 18px; display: flex; gap: 8px; flex-wrap: wrap">
+      <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 10px; border: 1px solid #e2e8f0; font-size: 12px">
+        <span style="width: 22px; height: 26px; border-radius: 4px; background: #dc2626; color: #ffffff; font-size: 8px; font-weight: 800; display: flex; align-items: center; justify-content: center">PDF</span>
+        PO draft 7731.pdf · 96 KB
+      </span>
+      <sc-if value="{{quoted}}" hint-placeholder-val="{{true}}">
+        <span style="display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 10px; background: #f8fafc; color: #475569; font-size: 12px">Original message included below</span>
+      </sc-if>
+    </div>
+
+    <div style="padding: 12px 18px; border-top: 1px solid #e2e8f0; display: flex; align-items: center; gap: 8px">
+      <button type="submit" style="height: 40px; padding: 0 20px; border-radius: 10px; border: none; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 13px; cursor: pointer">Send</button>
+      <button type="button" aria-label="Attach files" title="Attach a file from your computer or from Sila" style="height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; cursor: pointer">Attach</button>
+      <span style="flex: 1; font-size: 12px; color: {{statusColor}}">{{status}}</span>
+      <button type="button" onClick="{{saveDraft}}" style="height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; font-weight: 700; font-size: 13px; cursor: pointer">Save draft</button>
+      <a href="Mail.dc.html" style="height: 40px; padding: 0 12px; border-radius: 10px; color: #b91c1c; font-weight: 700; font-size: 13px; display: flex; align-items: center; text-decoration: none">Discard</a>
+    </div>
+  </form>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":760}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { to: [{ label: 'sales@delta-packaging.example', external: true }], draft: 'ahm', status: 'Draft saved to Exchange at 11:58', sent: false };
+  }
+  renderVals() {
+    const st = this.state;
+    const PEOPLE = [
+      { name: 'Ahmed Ali', address: 'ahmed.ali@company.com', initials: 'AA', color: '#7c3aed', tag: 'Sila' },
+      { name: 'Ahmed Samy', address: 'ahmed.samy@company.com', initials: 'AS', color: '#0f766e', tag: 'Sila' },
+      { name: 'ahmed.hosny@delta-packaging.example', address: 'Recently used outside address', initials: '@', color: '#94a3b8', tag: 'External' }
+    ];
+    const q = st.draft.trim().toLowerCase();
+    const suggest = !q ? [] : PEOPLE.filter(p => (p.name + p.address).toLowerCase().includes(q)).map(p => ({
+      ...p, tagFg: p.tag === 'External' ? '#b45309' : '#15803d',
+      add: () => this.setState({ to: [...st.to, { label: p.name, external: p.tag === 'External' }], draft: '' })
+    }));
+    return {
+      to: st.to.map((p, i) => ({ label: p.label, bg: p.external ? '#fffbeb' : '#fff7ed', fg: p.external ? '#92400e' : '#9a3412',
+        remove: () => this.setState({ to: st.to.filter((_, j) => j !== i) }) })),
+      toDraft: st.draft, typeTo: (e) => this.setState({ draft: e.target.value }),
+      suggest, showSuggest: suggest.length > 0, quoted: true,
+      status: st.sent ? 'Sent through Exchange · saved in Sent' : st.status,
+      statusColor: st.sent ? '#15803d' : '#64748b',
+      saveDraft: () => this.setState({ status: 'Draft saved to Exchange just now' }),
+      send: (e) => { e.preventDefault(); this.setState({ sent: true }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

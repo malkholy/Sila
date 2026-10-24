@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Home, MessageCircle, Users, Hash, Settings, Search, LogOut, Wifi, WifiOff, RefreshCw, Mail, CheckSquare,
   ListChecks, User, LayoutList, Columns3, GripVertical, Bell, BellOff, X, Plus, Flag, UserCheck, BarChart3, Megaphone,
+  MessageCirclePlus, UsersRound, CalendarCheck,
 } from 'lucide-react';
 import { useLive, retryLiveNow, onLive } from '../../shared/live.js';
 import { loadLeftSide, mergeLeftSide, formatWhen } from '../../shared/leftSide.js';
@@ -20,6 +21,13 @@ import Reports from './Reports.jsx';
 import { FlagMark } from './TicketFlag.jsx';
 import { AssigneeTag } from './TicketAssign.jsx';
 import SlaBadge from './SlaBadge.jsx';
+import ProfileCard from './ProfileCard.jsx';
+import NewChatDialog from './NewChatDialog.jsx';
+import NewGroupDialog from './NewGroupDialog.jsx';
+import MyDay from './MyDay.jsx';
+import ReminderToast from './ReminderToast.jsx';
+import { myDayCount, MYDAY_CHANGED } from '../../shared/reminders.js';
+import Mark from './Mark.jsx';
 import silaLogo from '../../Assets/sila_logo.png';
 import { setTicketFlag } from '../../shared/ticketFlag.js';
 import { toBoardTicket } from '../../shared/chat.js';
@@ -66,6 +74,15 @@ const TICKET_SORT_FN = {
   },
   number: (a, b) => (Number(b.raw?.TicketID) || 0) - (Number(a.raw?.TicketID) || 0),
   channel: (a, b) => String(a.raw?.ChannelName || '').localeCompare(String(b.raw?.ChannelName || '')) || byTime(a, b),
+};
+// the New chat / New group buttons: icon-only in the list header, with a label in the Panels bar
+const newBtn = {
+  height: 36, minWidth: 36, padding: '0 6px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
+  color: 'var(--accent-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+};
+const newTextBtn = {
+  height: 36, padding: '0 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)',
+  display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, fontFamily: 'var(--font)', cursor: 'pointer', flexShrink: 0,
 };
 const KIND_ICON = { group: Users, ticket: Hash, mail: Mail, task: CheckSquare, other: MessageCircle };
 
@@ -114,15 +131,6 @@ function ticketPreview(text, ticketId) {
 // click focuses the row itself: Safari doesn't focus buttons on click.
 // The search text marked inside a row's name / channel / number / preview
 // (terms: the active searches, lower case; empty = plain text).
-function Mark({ text, terms }) {
-  const str = String(text ?? '');
-  const list = (terms || []).filter(Boolean);
-  if (!str || !list.length) return str;
-  const re = new RegExp(`(${list.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
-  return str.split(re).map((part, i) => (i % 2
-    ? <mark key={i} style={{ background: 'var(--amber-soft)', color: 'inherit', borderRadius: 3, padding: '0 1px', boxShadow: '0 0 0 1px var(--amber)' }}>{part}</mark>
-    : part));
-}
 
 // onToggleFlag(item): F on a selected ticket row flags / unflags it.
 function ConversationRow({ item, active, online, onPick, dbl = false, terms, onToggleFlag, meUser }) {
@@ -151,7 +159,7 @@ function ConversationRow({ item, active, online, onPick, dbl = false, terms, onT
       outline: 'none', boxShadow: focused ? 'inset 0 0 0 2px var(--accent)' : 'none',
       color: 'var(--text)', fontFamily: 'var(--font)',
     }}>
-      {item.kind === 'chat' ? <Avatar name={item.title} size={46} online={online} photoUrl={item.photoUrl} />
+      {item.kind === 'chat' ? <Avatar name={item.title} size={46} online={online} photoUrl={item.photoUrl} username={item.username} />
         : <KindBadge kind={item.kind} tone={item.tone} broadcast={item.broadcast} />}
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
@@ -378,6 +386,11 @@ export default function HomeShell({ user, onSignOut }) {
   const [left, setLeft] = useState({ status: 'loading', items: [], error: '' });
   const [panelSearch, setPanelSearch] = useState({});   // Panels view: each panel's own search text
   const [newTicket, setNewTicket] = useState(false);     // the quick + New ticket form
+  const [newChat, setNewChat] = useState(false);         // the New chat picker
+  const [myDayDue, setMyDayDue] = useState(0);           // My Day rail badge: reminders + flags due today or earlier
+  const [newGroup, setNewGroup] = useState(false);       // the New group form
+  const [draftChat, setDraftChat] = useState(null);      // a new chat, until its first message creates it
+  const openAfter = useRef(null);                        // { kind, key, id }: open once the list has its row
   const openTicketId = useRef(0);                        // a ticket just created: opened once its Home row arrives
   const [boardTicket, setBoardTicket] = useState(null);  // ... or, on the Channels board, opened in its drawer
   const [selectedId, setSelectedId] = useState(null);
@@ -489,7 +502,7 @@ export default function HomeShell({ user, onSignOut }) {
       && (section !== 'home' || filter !== 'Unread' || i.unread > 0)
       && (!q || [i.title, i.sub, i.preview, i.state].some(t => t && t.toLowerCase().includes(q))));
   }, [left.items, section, filter, query]);
-  const selected = left.items.find(i => i.id === selectedId) || null;
+  const selected = left.items.find(i => i.id === selectedId) || (draftChat && draftChat.id === selectedId ? draftChat : null);
 
   // re-render once a second while a retry countdown is showing
   const [, tick] = useState(0);
@@ -516,7 +529,16 @@ export default function HomeShell({ user, onSignOut }) {
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
         fontFamily: 'var(--font)', fontSize: 11, fontWeight: active ? 700 : 600,
       }}>
-        <Icon size={22} strokeWidth={1.8} />
+        <span style={{ position: 'relative', display: 'flex' }}>
+          <Icon size={22} strokeWidth={1.8} />
+          {s.badge > 0 && (
+            <span aria-label={`${s.badge} due`} style={{
+              position: 'absolute', top: -6, right: -12, minWidth: 18, height: 18, padding: '0 5px', borderRadius: 9, boxSizing: 'border-box',
+              background: active ? 'var(--on-accent)' : 'var(--accent)', color: active ? 'var(--accent-strong)' : 'var(--on-accent)',
+              fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>{s.badge > 99 ? '99+' : s.badge}</span>
+          )}
+        </span>
         {s.label}
       </button>
     );
@@ -538,6 +560,7 @@ export default function HomeShell({ user, onSignOut }) {
         marginBottom: narrow ? 0 : 8, flexShrink: 0, order: narrow ? 99 : undefined,
       }}><Plus size={22} strokeWidth={2.2} /></button>
       {SECTIONS.map(railItem)}
+      {railItem({ key: 'myday', label: 'My Day', icon: CalendarCheck, badge: myDayDue })}
       {!narrow && <div style={{ flex: 1 }} />}
       {reportsAllowed && (
         <button onClick={() => setSection('reports')} aria-label="Reports" title="Reports"
@@ -636,6 +659,12 @@ export default function HomeShell({ user, onSignOut }) {
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>Your conversations, in one place</span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {(section === 'home' || section === 'chats') && (
+            <button onClick={() => setNewChat(true)} aria-label="New chat" title="New chat" style={newBtn}><MessageCirclePlus size={18} /></button>
+          )}
+          {(section === 'home' || section === 'groups') && (
+            <button onClick={() => setNewGroup(true)} aria-label="New group" title="New group" style={newBtn}><UsersRound size={18} /><Plus size={11} strokeWidth={3} style={{ marginLeft: -4, marginTop: -10 }} /></button>
+          )}
           <button onClick={refreshAll} disabled={left.status === 'loading' || left.status === 'refreshing'}
             aria-label="Refresh conversations" title="Refresh" style={{
               width: 36, height: 36, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
@@ -762,6 +791,56 @@ export default function HomeShell({ user, onSignOut }) {
     setSection('home');
   }, [reload, section, channelsView]);
 
+  // My Day badge: on start, when something changes (MYDAY_CHANGED), and every 5 minutes
+  useEffect(() => {
+    const count = () => { myDayCount().then(setMyDayDue).catch(() => { /* next time */ }); };
+    count();
+    const t = setInterval(count, 5 * 60_000);
+    window.addEventListener(MYDAY_CHANGED, count);
+    return () => { clearInterval(t); window.removeEventListener(MYDAY_CHANGED, count); };
+  }, []);
+  // a reminder's (or a toast's) conversation: open it on Home, reloading the list when it isn't there yet
+  const openLink = useCallback(({ linkKind, linkId }) => {
+    const want = { kind: linkKind, key: linkKind === 'ticket' ? 'TicketID' : linkKind === 'group' ? 'GroupID' : 'SessionID', id: Number(linkId) };
+    const it = left.items.find(i => i.kind === want.kind && Number(i.raw?.[want.key]) === want.id);
+    if (it) { openFromNotice.current(it.id); return; }
+    openAfter.current = want;
+    reload();
+  }, [left.items, reload]);
+  // New chat / New group: open the conversation once the list has its row
+  useEffect(() => {
+    const want = openAfter.current;
+    if (!want) return;
+    const it = left.items.find(i => i.kind === want.kind && Number(i.raw?.[want.key]) === want.id);
+    if (!it) return;
+    openAfter.current = null;
+    setDraftChat(null);
+    openFromNotice.current(it.id);
+  }, [left.items]);
+  // a person picked in New chat: the conversation with them, or a new one (a
+  // draft the first message creates: ChatPane onChatStarted)
+  const startChat = (u) => {
+    setNewChat(false);
+    const have = left.items.find(i => i.kind === 'chat' && (Number(i.raw?.FromUserID) === u.id || i.username === u.username));
+    if (have) { openFromNotice.current(have.id); return; }
+    const d = {
+      id: `draft-${u.id}`, kind: 'chat', draft: true, title: u.name, username: u.username, photoUrl: u.photoUrl,
+      jobTitle: u.jobTitle, sub: u.jobTitle, at: new Date(), unread: 0, preview: '', seq: 0, hidden: false,
+      raw: { SessionID: 0, ToUserID: u.id, FromUserID: u.id },
+    };
+    setDraftChat(d);
+    openFromNotice.current(d.id);
+  };
+  const onChatStarted = useCallback((sessionId) => {
+    openAfter.current = { kind: 'chat', key: 'SessionID', id: Number(sessionId) };
+    reload();
+  }, [reload]);
+  const onGroupCreated = useCallback(({ groupId }) => {
+    setNewGroup(false);
+    openAfter.current = { kind: 'group', key: 'GroupID', id: Number(groupId) };
+    reload();
+  }, [reload]);
+
   // a ticket's state changed in the pane: refresh the list now (state label; a closed ticket leaves it)
   const onTicketChange = useCallback(() => syncLeftRef.current(), []);
   // the user left a group: close it and reload the list (a delta can't see a deleted row)
@@ -793,6 +872,8 @@ export default function HomeShell({ user, onSignOut }) {
               style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
             <ClearSearch value={query} onClear={() => setQuery('')} size={24} style={{ marginRight: -6 }} />
           </div>
+          <button onClick={() => setNewChat(true)} style={newTextBtn}><MessageCirclePlus size={15} /> New chat</button>
+          <button onClick={() => setNewGroup(true)} style={newTextBtn}><UsersRound size={15} /> New group</button>
           <button onClick={refreshAll} disabled={left.status === 'loading' || left.status === 'refreshing'}
             aria-label="Refresh conversations" title="Refresh" style={{
               width: 36, height: 36, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)',
@@ -954,7 +1035,7 @@ export default function HomeShell({ user, onSignOut }) {
     </div>
   );
 
-  const drawerItem = drawerId != null ? left.items.find(i => i.id === drawerId) : null;
+  const drawerItem = drawerId != null ? (left.items.find(i => i.id === drawerId) || (draftChat?.id === drawerId ? draftChat : null)) : null;
   const drawer = drawerItem && (
     <>
       <div aria-hidden="true" onMouseDown={() => setDrawerId(null)}
@@ -964,13 +1045,15 @@ export default function HomeShell({ user, onSignOut }) {
         zIndex: 1001, background: 'var(--soft)', boxShadow: 'var(--shadow-lg)', display: 'flex',
       }}>
         <ChatPane key={drawerItem.id} item={drawerItem} onRead={markRead} onActivity={onActivity} isOnline={isOnline}
-          onTicketChange={onTicketChange} onLeave={onLeaveGroup} onFlagChange={onFlagChange} onClose={() => setDrawerId(null)} />
+          onTicketChange={onTicketChange} onLeave={onLeaveGroup} onFlagChange={onFlagChange} onChatStarted={onChatStarted}
+          homeItems={left.items} onForwarded={onTicketChange} onClose={() => setDrawerId(null)} />
       </aside>
     </>
   );
   const pane = !narrow && (['chat', 'group', 'ticket'].includes(selected?.kind) ? (
     <ChatPane key={selected.id} item={selected} onRead={markRead} onActivity={onActivity} isOnline={isOnline}
-      onTicketChange={onTicketChange} onLeave={onLeaveGroup} onFlagChange={onFlagChange} />
+      onTicketChange={onTicketChange} onLeave={onLeaveGroup} onFlagChange={onFlagChange} onChatStarted={onChatStarted}
+      homeItems={left.items} onForwarded={onTicketChange} />
   ) : selected ? (
     <main style={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--soft)' }}>
       <header style={{
@@ -978,7 +1061,7 @@ export default function HomeShell({ user, onSignOut }) {
         display: 'flex', alignItems: 'center', gap: 14,
       }}>
         {selected.kind === 'chat'
-          ? <Avatar name={selected.title} size={44} photoUrl={selected.photoUrl}
+          ? <Avatar name={selected.title} size={44} photoUrl={selected.photoUrl} username={selected.username}
               online={!!selected.username && live.online.has(selected.username)} />
           : <KindBadge kind={selected.kind} size={44} broadcast={selected.broadcast} />}
         <div style={{ minWidth: 0 }}>
@@ -1049,11 +1132,18 @@ export default function HomeShell({ user, onSignOut }) {
       color: 'var(--text)', fontFamily: 'var(--font)', overflow: 'hidden',
     }}>
       {rail}
+      {/* the profile card any clickable avatar opens; the pop-up when a reminder fires */}
+      <ProfileCard />
+      <ReminderToast onOpen={openLink} />
       {newTicket && <NewTicketDialog onClose={() => setNewTicket(false)} onCreated={onTicketCreated} />}
+      {newChat && <NewChatDialog meUsername={user.username} onPick={startChat} onClose={() => setNewChat(false)} />}
+      {newGroup && <NewGroupDialog onClose={() => setNewGroup(false)} onCreated={onGroupCreated} />}
       <div style={{ order: 1, flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <ConnectionBar live={live} />
         {notifyBanner}
-        {section === 'settings' && settingsAllowed ? (
+        {section === 'myday' ? (
+          <MyDay onOpen={openLink} />
+        ) : section === 'settings' && settingsAllowed ? (
           <SystemSettings />
         ) : section === 'reports' && reportsAllowed ? (
           <Reports />

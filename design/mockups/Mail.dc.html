@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila — Mail</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#c2410c}a:hover{color:#9a3412}
+button{font-family:inherit}
+</style>
+</helmet>
+<div style="position: relative; height: 100vh; min-height: 640px; display: flex; flex-wrap: wrap; overflow-y: auto; background: #f1f5f9; color: #0f172a; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; font-size: 14px; line-height: 1.5">
+
+  <nav aria-label="Main" style="flex: 0 0 84px; background: #1a2332; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 0">
+    <div style="width: 44px; height: 44px; border-radius: 13px; background: #c2410c; color: #ffffff; font-weight: 800; font-size: 18px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px">S</div>
+    <a href="Home.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"></path><path d="M5 10v10h14V10"></path><path d="M10 20v-6h4v6"></path></svg>
+      Home
+    </a>
+    <a href="Main.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg>
+      Chats
+    </a>
+    <a href="Channels.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+      Channels
+    </a>
+    <a href="Mail.dc.html" aria-current="page" style="width: 68px; min-height: 60px; border-radius: 12px; background: #c2410c; color: #ffffff; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 700; position: relative">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="m3.5 7 8.5 6 8.5-6"></path></svg>
+      Mail
+      <span style="position: absolute; top: 6px; right: 8px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ffffff; color: #c2410c; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{unreadInbox}}</span>
+    </a>
+    <a href="MyDay.dc.html" style="width: 68px; min-height: 60px; border-radius: 12px; color: #cbd5e1; text-decoration: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 11px; font-weight: 600">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2.5"></rect><path d="M3.5 10h17M8 3v4M16 3v4"></path><path d="m9 15 2 2 4-4"></path></svg>
+      My Day
+    </a>
+  </nav>
+
+  <!-- Folders -->
+  <aside aria-label="Folders" style="flex: 0 0 220px; background: #ffffff; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; padding: 16px 10px; gap: 4px">
+    <a href="MailCompose.dc.html" style="height: 42px; margin: 0 4px 12px; border-radius: 12px; background: #c2410c; color: #ffffff; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"></path></svg>
+      New mail
+    </a>
+    <sc-for list="{{folders}}" as="f" hint-placeholder-count="6">
+      <button onClick="{{f.pick}}" aria-current="{{f.current}}" style="height: 38px; padding: 0 12px; border-radius: 10px; border: none; background: {{f.bg}}; color: {{f.fg}}; font-size: 13px; font-weight: {{f.weight}}; display: flex; align-items: center; gap: 10px; cursor: pointer; text-align: left">
+        <span style="flex: 1">{{f.label}}</span>
+        <sc-if value="{{f.hasCount}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; font-weight: 800; color: #c2410c">{{f.count}}</span></sc-if>
+      </button>
+    </sc-for>
+    <div style="flex: 1"></div>
+    <a href="MailConnect.dc.html" style="margin: 8px 4px 0; padding: 10px; border-radius: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; font-size: 12px; text-decoration: none; display: flex; flex-direction: column; gap: 2px">
+      <span style="display: flex; align-items: center; gap: 6px; font-weight: 800"><span style="width: 8px; height: 8px; border-radius: 4px; background: #16a34a"></span>Connected to Exchange</span>
+      <span style="color: #15803d">m.alkholy@company.com · synced 1 min ago</span>
+    </a>
+  </aside>
+
+  <!-- Message list -->
+  <section aria-label="Messages" style="flex: 1 1 360px; min-width: 0; background: #ffffff; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; min-height: 0">
+    <div style="padding: 16px 16px 10px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; align-items: center; gap: 8px">
+        <h1 style="margin: 0; flex: 1; font-size: 20px; font-weight: 800">{{folderName}}</h1>
+        <button aria-label="Refresh" style="width: 36px; height: 36px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #475569; display: flex; align-items: center; justify-content: center; cursor: pointer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"></path><path d="M20 4v5h-5"></path></svg>
+        </button>
+      </div>
+      <label for="mail-search" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search mail</label>
+      <div style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 10px; background: #f1f5f9; color: #64748b">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+        <input id="mail-search" placeholder="Search mail, people, attachments" style="flex: 1; min-width: 0; border: none; background: transparent; outline: none; font-size: 13px; color: #0f172a; font-family: inherit">
+      </div>
+      <div role="tablist" aria-label="Show" style="display: flex; gap: 6px">
+        <sc-for list="{{tabs}}" as="t" hint-placeholder-count="3">
+          <button role="tab" aria-selected="{{t.selected}}" onClick="{{t.pick}}" style="height: 30px; padding: 0 12px; border-radius: 999px; border: 1px solid {{t.border}}; background: {{t.bg}}; color: {{t.fg}}; font-size: 12px; font-weight: 700; cursor: pointer">{{t.label}}</button>
+        </sc-for>
+      </div>
+    </div>
+    <div style="flex: 1; overflow-y: auto; padding: 0 8px 12px">
+      <sc-for list="{{list}}" as="m" hint-placeholder-count="6">
+        <button onClick="{{m.pick}}" style="width: 100%; display: flex; gap: 10px; padding: 10px; border-radius: 12px; border: none; background: {{m.bg}}; text-align: left; cursor: pointer; color: #0f172a; border-left: 3px solid {{m.bar}}">
+          <span style="flex: 0 0 36px; width: 36px; height: 36px; border-radius: 18px; background: {{m.color}}; color: #ffffff; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center">{{m.initials}}</span>
+          <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+            <span style="display: flex; justify-content: space-between; gap: 8px; align-items: baseline">
+              <span style="font-weight: {{m.weight}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{m.from}}</span>
+              <span style="flex-shrink: 0; font-size: 12px; color: #64748b">{{m.time}}</span>
+            </span>
+            <span style="display: flex; align-items: center; gap: 6px">
+              <span style="flex: 1; min-width: 0; font-size: 13px; font-weight: {{m.weight}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{m.subject}}</span>
+              <sc-if value="{{m.hasAttach}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Has attachments"><path d="m21 11-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7"></path></svg></sc-if>
+              <sc-if value="{{m.flagged}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="#d97706" stroke="#d97706" stroke-width="2" role="img" aria-label="Flagged"><path d="M5 21V4h11l-1.5 4L16 12H5"></path></svg></sc-if>
+            </span>
+            <span style="font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{m.preview}}</span>
+            <sc-if value="{{m.hasTicket}}" hint-placeholder-val="{{false}}">
+              <span style="align-self: flex-start; margin-top: 3px; padding: 0 8px; border-radius: 999px; background: #fff7ed; color: #9a3412; font-size: 11px; font-weight: 700">Ticket #{{m.ticketId}}</span>
+            </sc-if>
+          </span>
+        </button>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- Reading pane -->
+  <main style="flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; background: #f8fafc; min-height: 0">
+    <div style="flex-shrink: 0; padding: 12px 24px; background: #ffffff; border-bottom: 1px solid #e2e8f0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+      <a href="MailCompose.dc.html" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; text-decoration: none">Reply</a>
+      <a href="MailCompose.dc.html" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; text-decoration: none">Reply all</a>
+      <a href="MailCompose.dc.html" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; text-decoration: none">Forward</a>
+      <span style="width: 1px; height: 24px; background: #e2e8f0"></span>
+      <a href="MailToTicket.dc.html" style="height: 36px; padding: 0 12px; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; text-decoration: none">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>
+        Create ticket
+      </a>
+      <a href="ReminderDialog.dc.html" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; color: #0f172a; font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; text-decoration: none">Remind me</a>
+      <button onClick="{{share}}" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; font-size: 13px; font-weight: 700; cursor: pointer">Share to chat</button>
+      <span style="flex: 1"></span>
+      <button onClick="{{toggleFlag}}" aria-pressed="{{flagPressed}}" aria-label="Flag" style="width: 36px; height: 36px; border-radius: 10px; border: 1px solid #e2e8f0; background: {{flagBg}}; color: #d97706; cursor: pointer; display: flex; align-items: center; justify-content: center">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="{{flagFill}}" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 21V4h11l-1.5 4L16 12H5"></path></svg>
+      </button>
+      <button onClick="{{archive}}" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #0f172a; font-size: 13px; font-weight: 700; cursor: pointer">Archive</button>
+      <button onClick="{{remove}}" aria-label="Delete" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; color: #b91c1c; font-size: 13px; font-weight: 700; cursor: pointer">Delete</button>
+    </div>
+    <div style="flex: 1; overflow-y: auto; padding: 22px 28px">
+      <h2 style="margin: 0 0 12px; font-size: 20px; font-weight: 800">{{cur.subject}}</h2>
+      <div style="display: flex; gap: 12px; align-items: flex-start; margin-bottom: 18px">
+        <span style="flex: 0 0 42px; width: 42px; height: 42px; border-radius: 21px; background: {{cur.color}}; color: #ffffff; font-weight: 700; display: flex; align-items: center; justify-content: center">{{cur.initials}}</span>
+        <div style="flex: 1; min-width: 0; font-size: 13px; color: #475569">
+          <div><b style="color: #0f172a">{{cur.from}}</b> &lt;{{cur.address}}&gt;</div>
+          <div>To: {{cur.to}}</div>
+          <sc-if value="{{cur.hasCc}}" hint-placeholder-val="{{false}}"><div>Cc: {{cur.cc}}</div></sc-if>
+        </div>
+        <span style="font-size: 12px; color: #64748b; white-space: nowrap">{{cur.date}}</span>
+      </div>
+      <sc-if value="{{cur.external}}" hint-placeholder-val="{{false}}">
+        <div role="note" style="margin-bottom: 14px; padding: 8px 12px; border-radius: 10px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 12px; font-weight: 600">From outside the company. Check links and attachments before opening them.</div>
+      </sc-if>
+      <div style="padding: 18px 20px; border-radius: 14px; background: #ffffff; border: 1px solid #e2e8f0; font-size: 14px; white-space: pre-line">{{cur.body}}</div>
+      <sc-if value="{{cur.hasAttach}}" hint-placeholder-val="{{false}}">
+        <div style="margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px">
+          <sc-for list="{{cur.attachments}}" as="f" hint-placeholder-count="2">
+            <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: #ffffff; border: 1px solid #e2e8f0; min-width: 220px">
+              <span style="width: 34px; height: 40px; border-radius: 6px; background: {{f.bg}}; color: #ffffff; font-size: 10px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{f.ext}}</span>
+              <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+                <span style="font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{f.name}}</span>
+                <span style="font-size: 12px; color: #64748b">{{f.size}}</span>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{cur.hasTicket}}" hint-placeholder-val="{{false}}">
+        <a href="Channels.dc.html" style="margin-top: 16px; display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; font-size: 13px; font-weight: 700; text-decoration: none">Ticket #{{cur.ticketId}} was opened from this mail · open it</a>
+      </sc-if>
+    </div>
+  </main>
+
+  <sc-if value="{{hasToast}}" hint-placeholder-val="{{false}}">
+    <div role="status" style="position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 16px; border-radius: 12px; background: #0f172a; color: #ffffff; font-size: 13px; font-weight: 600">{{toast}}</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    // Demo mail (made-up people and companies)
+    const M = [
+      { id: 1, folder: 'inbox', from: 'Delta Packaging', address: 'sales@delta-packaging.example', initials: 'DP', color: '#0f766e', external: true,
+        subject: 'Quotation Q-2291 for 5,000 drums', preview: 'Please find attached our quotation for the 20 L drums as requested…', time: '11:42', date: 'Sat 24 Oct 2026, 11:42',
+        to: 'Purchasing team', cc: 'Mona Hassan', unread: true, flagged: false,
+        body: 'Dear Purchasing team,\n\nPlease find attached our quotation Q-2291 for 5,000 drums (20 L, blue). Prices are valid until 15 November.\n\nDelivery: 3 weeks from the purchase order.\n\nBest regards,\nDelta Packaging — Sales',
+        attachments: [{ name: 'Q-2291 Quotation.pdf', size: '412 KB', ext: 'PDF', bg: '#dc2626' }, { name: 'Drum spec sheet.xlsx', size: '58 KB', ext: 'XLS', bg: '#16a34a' }] },
+      { id: 2, folder: 'inbox', from: 'Ahmed Ali', address: 'ahmed.ali@company.com', initials: 'AA', color: '#7c3aed',
+        subject: 'Order 4512 — delivery date', preview: 'Can you confirm the delivery date today? The customer is asking.', time: '10:05', date: 'Sat 24 Oct 2026, 10:05',
+        to: 'Mohammad Al Kholy', cc: '', unread: true, flagged: true,
+        body: 'Hi Mohammad,\n\nCan you confirm the delivery date for order 4512 today? The customer is asking.\n\nThanks,\nAhmed' , attachments: [] },
+      { id: 3, folder: 'inbox', from: 'IT Service Desk', address: 'servicedesk@company.com', initials: 'IT', color: '#1d4ed8',
+        subject: 'Printer on the 2nd floor is offline', preview: 'Reported by Sara Youssef at 09:12…', time: '09:20', date: 'Sat 24 Oct 2026, 09:20',
+        to: 'IT Support', cc: '', unread: false, flagged: false, ticketId: 2301862,
+        body: 'Reported by Sara Youssef at 09:12: the printer on the 2nd floor shows offline for everyone on the floor.', attachments: [] },
+      { id: 4, folder: 'inbox', from: 'Nile Freight', address: 'ops@nile-freight.example', initials: 'NF', color: '#b45309', external: true,
+        subject: 'Shipment ETA update — container MSKU 4410', preview: 'The vessel arrives Alexandria on 29 October…', time: 'Thu', date: 'Thu 22 Oct 2026, 15:31',
+        to: 'Logistics', cc: '', unread: false, flagged: false,
+        body: 'The vessel arrives at Alexandria port on 29 October. Customs papers are attached.', attachments: [{ name: 'Bill of lading.pdf', size: '233 KB', ext: 'PDF', bg: '#dc2626' }] },
+      { id: 5, folder: 'sent', from: 'To: Finance', address: 'finance@company.com', initials: 'FI', color: '#475569',
+        subject: 'Bank letter for the new supplier', preview: 'Please send the bank letter so we can create the vendor code.', time: 'Wed', date: 'Wed 21 Oct 2026, 13:02',
+        to: 'Finance', cc: '', unread: false, flagged: false, body: 'Please send the bank letter so we can create the vendor code.', attachments: [] }
+    ];
+    this.state = { items: M, folder: 'inbox', tab: 'all', sel: 1, toast: '' };
+  }
+  flash(t) { this.setState({ toast: t }); clearTimeout(this.tt); this.tt = setTimeout(() => this.setState({ toast: '' }), 1800); }
+  componentWillUnmount() { clearTimeout(this.tt); }
+  renderVals() {
+    const st = this.state;
+    const FOLDERS = [['inbox', 'Inbox'], ['flagged', 'Flagged'], ['sent', 'Sent'], ['drafts', 'Drafts'], ['archive', 'Archive'], ['deleted', 'Deleted']];
+    const inFolder = (m, f) => f === 'flagged' ? m.flagged && m.folder !== 'deleted' : m.folder === f;
+    const visible = st.items.filter(m => inFolder(m, st.folder)).filter(m => st.tab === 'all' || (st.tab === 'unread' ? m.unread : (m.attachments || []).length > 0));
+    const cur = st.items.find(m => m.id === st.sel) || visible[0] || st.items[0];
+    const upd = (id, f) => this.setState({ items: st.items.map(m => m.id === id ? f(m) : m) });
+    const move = (to, label) => { upd(cur.id, m => ({ ...m, folder: to })); this.flash(label); };
+    return {
+      unreadInbox: st.items.filter(m => m.folder === 'inbox' && m.unread).length,
+      folderName: (FOLDERS.find(f => f[0] === st.folder) || [])[1],
+      folders: FOLDERS.map(([k, label]) => {
+        const on = k === st.folder;
+        const count = st.items.filter(m => inFolder(m, k) && (k === 'inbox' ? m.unread : true)).length;
+        return { label, current: on ? 'page' : 'false', bg: on ? '#fff7ed' : 'transparent', fg: on ? '#9a3412' : '#334155', weight: on ? 800 : 600,
+          count, hasCount: count > 0 && (k === 'inbox' || k === 'drafts' || k === 'flagged'), pick: () => this.setState({ folder: k }) };
+      }),
+      tabs: [['all', 'All'], ['unread', 'Unread'], ['attach', 'With files']].map(([k, label]) => {
+        const on = k === st.tab;
+        return { label, selected: on ? 'true' : 'false', bg: on ? '#c2410c' : '#ffffff', fg: on ? '#ffffff' : '#475569', border: on ? '#c2410c' : '#e2e8f0', pick: () => this.setState({ tab: k }) };
+      }),
+      list: visible.map(m => ({ ...m, weight: m.unread ? 800 : 600, bg: m.id === cur.id ? '#fff7ed' : 'transparent', bar: m.unread ? '#c2410c' : 'transparent',
+        hasAttach: (m.attachments || []).length > 0, hasTicket: !!m.ticketId,
+        pick: () => this.setState({ sel: m.id, items: st.items.map(x => x.id === m.id ? { ...x, unread: false } : x) }) })),
+      cur: { ...cur, hasCc: !!cur.cc, hasAttach: (cur.attachments || []).length > 0, hasTicket: !!cur.ticketId, external: !!cur.external },
+      flagPressed: cur.flagged ? 'true' : 'false', flagBg: cur.flagged ? '#fffbeb' : '#ffffff', flagFill: cur.flagged ? 'currentColor' : 'none',
+      toggleFlag: () => upd(cur.id, m => ({ ...m, flagged: !m.flagged })),
+      archive: () => move('archive', 'Moved to Archive'),
+      remove: () => move('deleted', 'Moved to Deleted'),
+      share: () => this.flash('Shared to a chat as a mail card'),
+      toast: st.toast, hasToast: !!st.toast
+    };
+  }
+}
+</script>
+</body>
+</html>

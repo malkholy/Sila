@@ -2,18 +2,22 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { X, Hash, Search, Lock, Forward, Check } from 'lucide-react';
 import Avatar from './Avatar.jsx';
 import ClearSearch from './ClearSearch.jsx';
-import { forwardTicket, loadChannelMembers, loadChannels } from '../../shared/chat.js';
+import { forwardTicket, loadChannelMembers, loadChannels, loadTicketMembers } from '../../shared/chat.js';
 
-// Forward a New ticket: pick a channel of the SAME category (the SP refuses any
+// Forward a New or In progress ticket: pick a channel of the SAME category (the SP refuses any
 // other), then who joins the forwarded copy from that channel's members. Its
 // admins / team leaders always join (ticked and locked: they accept or reject
 // it), so does the ticket's creator; anyone else is optional, as a member or
-// CC. onDone() after the server forwarded it.
+// CC. Always join (locked; the SP adds them too): the target channel's
+// admins / team leaders, the ticket's creator and its CC people (as CC).
+// Optional: the ticket's other people and the target channel's other members.
+// onDone() after the server forwarded it.
 export default function ForwardDialog({ ticketId, channelId, categoryId, onClose, onDone }) {
   const [channels, setChannels] = useState({ status: 'loading', list: [], error: '' });
   const [toId, setToId] = useState(0);
   const [find, setFind] = useState('');
   const [people, setPeople] = useState({ status: 'idle', list: [], error: '' });
+  const [current, setCurrent] = useState([]);   // the ticket's own people
   const [picked, setPicked] = useState(() => new Map());   // optional members: id -> { cc }
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
@@ -28,13 +32,22 @@ export default function ForwardDialog({ ticketId, channelId, categoryId, onClose
   }, [categoryId, channelId]);
 
   useEffect(() => {
+    let alive = true;
+    loadTicketMembers(ticketId).then(list => { if (alive) setCurrent(list); }).catch(() => { /* none offered */ });
+    return () => { alive = false; };
+  }, [ticketId]);
+
+  useEffect(() => {
     if (!toId) { setPeople({ status: 'idle', list: [], error: '' }); return undefined; }
     let alive = true;
     setPeople({ status: 'loading', list: [], error: '' });
     setPicked(new Map());
     setQ('');
     loadChannelMembers(toId)
-      .then(list => { if (alive) setPeople({ status: 'ready', list, error: '' }); })
+      .then(list => {
+        if (!alive) return;
+        setPeople({ status: 'ready', list, error: '' });
+      })
       .catch(err => { if (alive) setPeople({ status: 'error', list: [], error: err.message || 'Could not load the members.' }); });
     return () => { alive = false; };
   }, [toId]);
@@ -52,7 +65,13 @@ export default function ForwardDialog({ ticketId, channelId, categoryId, onClose
   }, [channels.list, find]);
   const target = channels.list.find(c => c.id === toId);
   const managers = people.list.filter(m => m.admin || m.leader);
-  const others = people.list.filter(m => !m.admin && !m.leader)
+  const lockedIds = new Set(managers.map(m => m.id));
+  // always join with them: the creator and the ticket's CC people (the SP adds them too)
+  const creator = current.find(m => m.creator && !lockedIds.has(m.id));
+  const ccPeople = current.filter(m => m.cc && !m.creator && !lockedIds.has(m.id));
+  const fromTicket = current.filter(m => !m.creator && !m.cc && !lockedIds.has(m.id));
+  const fromTicketIds = new Set(current.map(m => m.id));
+  const others = people.list.filter(m => !m.admin && !m.leader && !fromTicketIds.has(m.id))
     .filter(m => !q.trim() || [m.name, m.username, m.jobTitle].some(v => v && v.toLowerCase().includes(q.trim().toLowerCase())));
 
   const toggle = (m) => setPicked(map => { const n = new Map(map); if (n.has(m.id)) n.delete(m.id); else n.set(m.id, { cc: false }); return n; });
@@ -67,7 +86,8 @@ export default function ForwardDialog({ ticketId, channelId, categoryId, onClose
     } catch (err) { setError(err.message || 'Could not forward the ticket.'); setBusy(false); }
   };
 
-  const row = (m, locked) => {
+  // locked: always joins, with its reason (Admin / Team leader / Creator / CC)
+  const row = (m, locked, why) => {
     const on = locked || picked.has(m.id);
     return (
       <li key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 46, padding: '4px 0', borderTop: '1px solid var(--border)' }}>
@@ -84,7 +104,7 @@ export default function ForwardDialog({ ticketId, channelId, categoryId, onClose
         </span>
         {locked ? (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '1px 8px', borderRadius: 999, background: 'var(--accent-soft)', color: 'var(--accent-strong)', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>
-            <Lock size={11} /> {m.admin ? 'Admin' : 'Team leader'}
+            <Lock size={11} /> {why || (m.admin ? 'Admin' : 'Team leader')}
           </span>
         ) : on && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: 'var(--text2)', cursor: 'pointer' }}>
@@ -169,16 +189,28 @@ export default function ForwardDialog({ ticketId, channelId, categoryId, onClose
               {people.status === 'error' && <div role="alert" style={{ marginTop: 12, fontSize: 13, color: 'var(--red)' }}>{people.error}</div>}
               {people.status === 'ready' && (
                 <>
-                  <h3 style={h3}>Always join · {managers.length}</h3>
-                  {managers.length === 0 ? (
+                  <h3 style={h3}>Always join · {managers.length + (creator ? 1 : 0) + ccPeople.length}</h3>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 2 }}>
+                    # <span dir="auto">{target.name}</span>'s admins and team leaders, the ticket's creator and its people in CC (still as CC). They can't be removed.
+                  </div>
+                  {managers.length === 0 && (
                     <div role="alert" style={{ fontSize: 13, color: 'var(--red)' }}># <span dir="auto">{target.name}</span> has no admin or team leader to accept the ticket.</div>
-                  ) : (
-                    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>{managers.map(m => row(m, true))}</ul>
                   )}
-                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>The ticket's creator joins too.</div>
+                  <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                    {managers.map(m => row(m, true))}
+                    {creator && row(creator, true, 'Creator')}
+                    {ccPeople.map(m => row(m, true, 'CC'))}
+                  </ul>
+                  {fromTicket.length > 0 && (
+                    <>
+                      <h3 style={h3}>Also from this ticket · {fromTicket.filter(m => picked.has(m.id)).length} of {fromTicket.length}</h3>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 2 }}>Pick who else comes along, as a member or CC.</div>
+                      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>{fromTicket.map(m => row(m, false))}</ul>
+                    </>
+                  )}
                   {people.list.length > managers.length && (
                     <>
-                      <h3 style={h3}>Also add from # <span dir="auto" style={{ textTransform: 'none' }}>{target.name}</span> · {picked.size} picked</h3>
+                      <h3 style={h3}>Also add from # <span dir="auto" style={{ textTransform: 'none' }}>{target.name}</span> · {[...picked.keys()].filter(id => !fromTicketIds.has(id)).length} picked</h3>
                       {people.list.length - managers.length > 8 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 34, padding: '0 10px', margin: '4px 0', borderRadius: 8, background: 'var(--bg)', color: 'var(--muted)' }}>
                           <Search size={14} />

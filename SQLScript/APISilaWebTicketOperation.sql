@@ -51,7 +51,8 @@ GO
 --                            rows (more = reload in full).
 --   Ticket messages       { TicketID, BeforeChatID?, AfterChatID?, Top? (1-200, 50) }
 --                            List0 = the ticket + the caller's role and allowed
---                            actions, List1 = messages newest first (SortID like groups).
+--                            actions, List1 = messages newest first (SortID like groups),
+--                            List2 = its state steps from the system lines (not on a page back).
 --                            A forwarded copy waiting for approval (state 3) also lists the
 --                            original ticket's messages (no admins-only notes), read-only.
 --                            Read-only: opening a ticket does NOT mark it read.
@@ -581,7 +582,7 @@ BEGIN
                    CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND th.TicketState IN (0, 1) THEN 1 ELSE 0 END AS CanEnd,
                    CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND th.TicketState IN (5, 10) THEN 1 ELSE 0 END AS CanReopen,
                    CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND th.TicketState IN (0, 10) THEN 1 ELSE 0 END AS CanClose,
-                   CASE WHEN @TIsManager = 1 AND th.TicketState = 0 THEN 1 ELSE 0 END AS CanForward,
+                   CASE WHEN @TIsManager = 1 AND th.TicketState IN (0, 1) THEN 1 ELSE 0 END AS CanForward,
                    CASE WHEN @TIsManager = 1 AND th.TicketState = 3 THEN 1 ELSE 0 END AS CanAnswerForward,
                    CASE WHEN (@TIsManager = 1 OR th.ForwardBy = @User) AND th.TicketState = 2 THEN 1 ELSE 0 END AS CanCancelForward,
                    CASE WHEN @TIsManager = 1 AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanInvite,
@@ -636,6 +637,28 @@ BEGIN
               AND (@MBefore = 0 OR CASE WHEN m.OrginalChatID > 0 THEN m.OrginalChatID ELSE m.ChatID END < @MBefore)
               AND (@MAfter = 0 OR m.ChatID > @MAfter)
             ORDER BY SortID DESC, m.ChatID DESC, m.ID DESC;
+
+            -- List2: the ticket's state steps, one per system line, oldest first --
+            -- every Start / Hold / Reopen / End / Close and forward step, from the web's
+            -- and the mobile app's own wording (the ticket row keeps only the latest
+            -- date of each, and none for a reopen). Not on a page back (BeforeChatID).
+            IF @MBefore = 0
+                SELECT s.ChatID, s.CreatedDate, s.ByUser, s.Step
+                FROM (SELECT c.ChatID, c.CreatedDate, c.FromUserName AS ByUser,
+                             CASE WHEN c.Text LIKE N'%re-opened%' OR c.Text LIKE N'%reopened%' THEN 'reopened'
+                                  WHEN c.Text LIKE N'%has started%' THEN 'started'
+                                  WHEN c.Text LIKE N'%holded%' OR c.Text LIKE N'%put on hold%' THEN 'hold'
+                                  WHEN c.Text LIKE N'%has ended%' THEN 'ended'
+                                  WHEN c.Text LIKE N'%has closed%' THEN 'closed'
+                                  WHEN c.Text LIKE N'%accepted forwarded%' THEN 'accepted'
+                                  WHEN c.Text LIKE N'%rejected forwarded%' THEN 'rejected'
+                                  WHEN c.Text LIKE N'%cancelled the forward%' THEN 'cancelled'
+                                  WHEN c.Text LIKE N'%Forwarded Ticket%' OR c.Text LIKE N'%forwarded this ticket%' THEN 'forwarded'
+                             END AS Step
+                      FROM CHA.TicketChatHistory c
+                      WHERE c.TicketID = @TicketID AND c.IsSystem = 1 AND ISNULL(c.OrginalChatID, 0) = 0) s
+                WHERE s.Step IS NOT NULL
+                ORDER BY s.ChatID;
             RETURN;
         END
 
@@ -721,6 +744,9 @@ BEGIN
             IF ISNULL(@SReply, 0) <> 0 AND NOT EXISTS (SELECT 1 FROM CHA.TicketChatHistory
                                                       WHERE ChatID = @SReply AND TicketID = @TicketID AND (IsAdmin = 0 OR @TIsManager = 1))
                 SET @SReply = 0;
+            -- a reply to an admins-only note is admins-only too (its quote would show the note to everyone)
+            IF ISNULL(@SReply, 0) <> 0 AND EXISTS (SELECT 1 FROM CHA.TicketChatHistory WHERE ChatID = @SReply AND TicketID = @TicketID AND IsAdmin = 1)
+                SET @SAdmin = 1;
 
             SELECT TOP (1) @RetChat = ChatID FROM CHA.TicketChatHistory
             WHERE FromUserID = @UserID AND LocalChatID = @SLocal AND TicketID = @TicketID ORDER BY ID;
@@ -854,8 +880,8 @@ BEGIN
             DECLARE @FTo INT = TRY_CAST(JSON_VALUE(@LineData, '$.ToChannelID') AS INT);
             IF @TIsManager = 0
             BEGIN SET @State = 403; SET @Message = N'Only ticket admins and team leaders can forward a ticket.'; RETURN; END
-            IF @TState <> 0
-            BEGIN SET @State = 1; SET @Message = N'Only a new ticket can be forwarded.'; RETURN; END
+            IF @TState NOT IN (0, 1)
+            BEGIN SET @State = 1; SET @Message = N'Only a new or in-progress ticket can be forwarded.'; RETURN; END
             IF @FTo = @TChannel OR NOT EXISTS (SELECT 1 FROM @Visible WHERE ChannelID = @FTo)
             BEGIN SET @State = 1; SET @Message = N'Pick another channel.'; RETURN; END
             IF (SELECT CategoryID FROM CHA.ChannelMaster WHERE ChannelID = @FTo)
@@ -863,7 +889,8 @@ BEGIN
             BEGIN SET @State = 1; SET @Message = N'A ticket can only be forwarded to a channel of the same category.'; RETURN; END
 
             -- members of the copy: the target channel's admins / team leaders, the listed users
-            -- (roles from the target channel), the ticket's creator; never the client's roles
+            -- (roles from the target channel), the ticket's creator and its CC people (always,
+            -- as CC); never the client's roles
             DECLARE @FMembers TABLE (UserID INT PRIMARY KEY, IsAdmin INT, IsTeamLeader INT, IsCreatedBy INT, IsCC INT);
             INSERT INTO @FMembers (UserID, IsAdmin, IsTeamLeader, IsCreatedBy, IsCC)
             SELECT cm.UserID, cm.IsAdmin, cm.IsTeamLeader, 0, 0
@@ -882,6 +909,15 @@ BEGIN
                 UPDATE @FMembers SET IsCreatedBy = 1 WHERE UserID = @FCreatorID;
                 IF @@ROWCOUNT = 0 INSERT INTO @FMembers VALUES (@FCreatorID, 0, 0, 1, 0);
             END
+            -- the ticket's CC people always come along, still as CC
+            UPDATE f SET f.IsCC = 1 FROM @FMembers f
+            JOIN CHA.TicketMembers tm ON tm.TicketID = @TicketID AND tm.UserID = f.UserID AND tm.IsLeft = 0 AND tm.IsCC = 1
+            WHERE f.IsAdmin = 0 AND f.IsTeamLeader = 0 AND f.IsCreatedBy = 0;
+            INSERT INTO @FMembers (UserID, IsAdmin, IsTeamLeader, IsCreatedBy, IsCC)
+            SELECT tm.UserID, 0, 0, 0, 1
+            FROM CHA.TicketMembers tm JOIN dbo.UserMaster u ON u.UserID = tm.UserID AND u.IsNotActive = 0
+            WHERE tm.TicketID = @TicketID AND tm.IsLeft = 0 AND tm.IsCC = 1
+              AND NOT EXISTS (SELECT 1 FROM @FMembers f WHERE f.UserID = tm.UserID);
             IF NOT EXISTS (SELECT 1 FROM @FMembers WHERE IsAdmin = 1 OR IsTeamLeader = 1)
             BEGIN SET @State = 1; SET @Message = N'That channel has no admin or team leader to accept the ticket.'; RETURN; END
 
@@ -976,7 +1012,8 @@ BEGIN
                 DELETE FROM dbo.SilaTicketAssignment WHERE TicketID = @TicketID;
                 DELETE FROM dbo.SilaHistory WHERE TicketID = @TicketID AND RecordType = 'C';
                 DELETE FROM CHA.TicketHistory WHERE TicketID = @TicketID;
-                UPDATE CHA.TicketHistory SET TicketState = 0, LastMaintDate = GETDATE(), LastMaintByUser = @User WHERE TicketID = @TOrig;
+                -- the original goes back to where it was: In progress if it had been started, else New
+                UPDATE CHA.TicketHistory SET TicketState = CASE WHEN StartDate > '2000-01-01' THEN 1 ELSE 0 END, LastMaintDate = GETDATE(), LastMaintByUser = @User WHERE TicketID = @TOrig;
                 SET @WChat = NEXT VALUE FOR dbo.ChatTicket;
                 INSERT INTO CHA.TicketChatHistory
                     (ChatID, ChannelID, TicketID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,
@@ -1012,7 +1049,8 @@ BEGIN
                 DELETE FROM dbo.SilaHistory WHERE TicketID = @KCopy AND RecordType = 'C';
                 DELETE FROM CHA.TicketHistory WHERE TicketID = @KCopy;
             END
-            UPDATE CHA.TicketHistory SET TicketState = 0, LastMaintDate = GETDATE(), LastMaintByUser = @User WHERE TicketID = @TicketID;
+            -- back to where it was: In progress if it had been started, else New
+            UPDATE CHA.TicketHistory SET TicketState = CASE WHEN StartDate > '2000-01-01' THEN 1 ELSE 0 END, LastMaintDate = GETDATE(), LastMaintByUser = @User WHERE TicketID = @TicketID;
             SET @KChat = NEXT VALUE FOR dbo.ChatTicket;
             INSERT INTO CHA.TicketChatHistory
                 (ChatID, ChannelID, TicketID, FromUserID, FromUserName, Text, TextStyle, ReplayMsgID, AttachmentID,

@@ -29,6 +29,7 @@ function toMessage(r, me) {
   const hasFile = Number(r.AttachmentID) > 0 && !!r.FileURL;
   return {
     id: r.ChatID, sortId: Number(r.SortID) || r.ChatID, original: Number(r.OrginalChatID) || 0,
+    sessionId: Number(r.SessionID) || 0,   // one-to-one writes return it: a new chat's first message makes the session
     localId: Number(r.LocalChatID) || 0, mine: r.FromUserID === me, at: parseDate(r.CreatedDate),
     text: String(r.Text ?? ''), deleted: Number(r.IsDeleted) > 0, system: Number(r.IsSystem) > 0,
     adminNote: Number(r.IsAdminNote) > 0,   // tickets: admins-only note (the SP sends them to managers only)
@@ -41,7 +42,7 @@ function toMessage(r, me) {
       username: String(r.FromUsername || '').toLowerCase(), photoUrl: r.FromPhotoURL || '', jobTitle: r.FromJobName || '',
     } : null,
     reply: Number(r.ReplayMsgID) > 0 && r.ReplyText != null
-      ? { text: String(r.ReplyText), mine: r.ReplyFromUserID === me, name: r.ReplyFromName || '' } : null,
+      ? { id: Number(r.ReplayMsgID), text: String(r.ReplyText), mine: r.ReplyFromUserID === me, name: r.ReplyFromName || '' } : null,
     file: hasFile ? {
       id: Number(r.AttachmentID), name: r.FileOrginalName || r.FileName || 'Attachment', ext, url: r.FileURL,
       size: Number(r.FileSize) || 0, sizeText: Number(r.FileSize) ? '' : String(r.FileSize || ''),   // AttachmentHistory: "104 KB"
@@ -65,11 +66,15 @@ const saved = (res, me) => {
 //   send / edit / del   -> the saved message (an edit / delete takes the original's place: same sortId)
 // header: { me, title, photoUrl, username, jobTitle, isGroup, locked, isAdmin, memberCount, broadcast }
 //         tickets add { isTicket, ticketId, state, stateLabel, channel, createdBy, can: {...} }
+// A new chat not started yet (item.draft: raw.ToUserID, no SessionID) loads
+// empty; its first Send chat carries ToUserID and the SP creates the session.
 export function chatApi(item) {
   const group = item.kind === 'group';
   const ticket = item.kind === 'ticket';
+  const draft = !ticket && !group && !item.raw?.SessionID && !!item.raw?.ToUserID;
   const proc = ticket ? TICKET_PROC : PROC;
-  const key = ticket ? { TicketID: item.raw?.TicketID } : group ? { GroupID: item.raw?.GroupID } : { SessionID: item.raw?.SessionID };
+  const key = ticket ? { TicketID: item.raw?.TicketID } : group ? { GroupID: item.raw?.GroupID }
+    : draft ? { ToUserID: item.raw.ToUserID } : { SessionID: item.raw?.SessionID };
   const op = ticket
     ? { load: 'Ticket messages', read: 'Mark ticket read', send: 'Send ticket chat', edit: 'Edit ticket chat', del: 'Delete ticket chat' }
     : group
@@ -80,11 +85,17 @@ export function chatApi(item) {
     isTicket: ticket,
     // before: page back (by sortId); after: only rows newer than this ChatID (cache delta)
     async load(before = 0, after = 0) {
+      if (draft) {
+        return {
+          header: { me: 0, isGroup: false, title: item.title, photoUrl: item.photoUrl || '', username: item.username || '', jobTitle: item.jobTitle || '' },
+          messages: [], hasMore: false,
+        };
+      }
       const res = await apiExec(proc, op.load, { ...key, BeforeChatID: before, AfterChatID: after, Top: PAGE_SIZE });
       const [h] = res?.data?.List0 || [];
       const rows = res?.data?.List1 || [];
       const me = h?.MeUserID;
-      const header = !h ? null : ticket ? ticketHeader(h, item) : group ? {
+      const header = !h ? null : ticket ? ticketHeader(h, item, res?.data?.List2) : group ? {
         me, isGroup: true, title: h.GroupName || item.title, photoUrl: h.GroupPhotoURL || '',
         locked: Number(h.ChatIsLocked) > 0, isAdmin: Number(h.IsAdmin) > 0, memberCount: Number(h.MemberCount) || 0,
         broadcast: Number(h.IsBroadcast) > 0,   // every active user is in it; admins send
@@ -96,6 +107,7 @@ export function chatApi(item) {
       return { header, messages: rows.map(r => toMessage(r, me)).reverse(), hasMore: rows.length === PAGE_SIZE };
     },
     async markRead() {
+      if (draft) return 0;
       const res = await apiExec(proc, op.read, key);
       return Number(res?.data?.List0?.[0]?.Cleared) || 0;
     },
@@ -133,15 +145,30 @@ function ticketDate(v) {
   return Number.isNaN(d.getTime()) || d.getFullYear() < 2000 ? null : d;
 }
 
-function ticketHeader(h, item) {
+const STEP_LABEL = {
+  opened: 'Opened', started: 'Started', hold: 'Put on hold', reopened: 'Reopened', ended: 'Ended', closed: 'Closed',
+  forwarded: 'Forwarded', accepted: 'Forward accepted', rejected: 'Forward rejected', cancelled: 'Forward cancelled',
+};
+// steps: 'Ticket messages' List2 -- every state step from the system lines (a
+// page-back load sends none, but only its messages are kept: loadOlder).
+function ticketHeader(h, item, steps) {
   const flag = (k) => Number(h[k]) > 0;
-  // the ticket's dated steps, oldest first; by = a username
-  const history = [
-    ['opened', 'Opened', h.CreatedDate, h.CreatedByUser], ['forwarded', 'Forwarded', h.ForwardDate, h.ForwardBy],
-    ['started', 'Started', h.StartDate, h.StartBy], ['hold', 'Put on hold', h.HoldDate, h.HoldBy],
-    ['ended', 'Ended', h.EndedDate, h.EndedBy], ['closed', 'Closed', h.ClosedDate, h.ClosedBy],
-  ].map(([key, label, at, by]) => ({ key, label, at: ticketDate(at), by: String(by || '').toLowerCase() }))
-    .filter(x => x.at).sort((a, b) => a.at - b.at);
+  // the ticket's dated steps, oldest first; kind = what happened, by = a username.
+  // The ticket row's dates (one per kind, the latest) fill in a kind with no
+  // system line, e.g. a start the old app made on a manager's first reply.
+  const fromLines = (steps || []).map(s => ({
+    key: `${s.Step}-${s.ChatID}`, kind: s.Step, label: STEP_LABEL[s.Step] || s.Step, at: ticketDate(s.CreatedDate),
+    by: String(s.ByUser || '').toLowerCase(),
+  })).filter(x => x.at);
+  const seen = new Set(fromLines.map(x => x.kind));
+  const fromRow = [
+    ['opened', h.CreatedDate, h.CreatedByUser], ['forwarded', h.ForwardDate, h.ForwardBy],
+    ['started', h.StartDate, h.StartBy], ['hold', h.HoldDate, h.HoldBy],
+    ['ended', h.EndedDate, h.EndedBy], ['closed', h.ClosedDate, h.ClosedBy],
+  ].filter(([kind]) => kind === 'opened' || !seen.has(kind))
+    .map(([kind, at, by]) => ({ key: kind, kind, label: STEP_LABEL[kind], at: ticketDate(at), by: String(by || '').toLowerCase() }))
+    .filter(x => x.at);
+  const history = [...fromRow, ...fromLines].sort((a, b) => a.at - b.at);
   return {
     me: h.MeUserID, isTicket: true, ticketId: h.TicketID, title: h.TicketSubject || item.title, photoUrl: '',
     state: Number(h.TicketState), stateLabel: h.StateDescription || '', channel: h.ChannelName || '',

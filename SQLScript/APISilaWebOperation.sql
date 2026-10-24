@@ -57,6 +57,10 @@ GO
 --   Add group members   LineData { GroupID, UserIDs: [int] }  group admins only (max 300).
 --   Remove group member LineData { GroupID, UserID }  group admins only; not the creator / self.
 --   Leave group         LineData { GroupID }  any member; not the last admin while others remain.
+--   My day / Save reminder / Reminder done / Delete reminder / My day count
+--                    the caller's own reminders (dbo.SilaReminder) -- see the block's comment
+--   User profile     LineData { UserID } or { Username }  the profile card: name, photo, job, department,
+--                    user group, mobile, local extension, HR employee id (any signed-in user)
 --   Find users       LineData { Search?, UserGroupID?, Top? (default 30; max 100, 300 with a group),
 --                    All?: 1 (max 2000: every active user, the app's cached people directory) }
 --   Settings channel { ChannelID }  one channel for the details drawer: List0 the channel,
@@ -899,6 +903,176 @@ BEGIN
         END
 
         -- -----------------------------------------------------------------
+        -- My Day (dbo.SilaReminder, SQLScript/SilaReminder.sql): the caller's own
+        -- reminders and notes -- private, nobody else reads or changes them --
+        -- plus his ticket flags on open tickets (dbo.SilaTicketFlag).
+        --   My day          {}  List0 reminders (open, and those done in the last
+        --                   day), List1 flags.
+        --   Save reminder   { ReminderID? (0 = new), Title, Note?, DueDate?
+        --                   (yyyy-mm-dd), DueTime? (HH:mm), Repeat? (day | week |
+        --                   month, needs a date), Push? 1|0, LinkKind? (chat |
+        --                   group | ticket) + LinkID (SessionID | GroupID |
+        --                   TicketID; the caller must be in it), ChatID? (a
+        --                   message of that conversation) }  -> List0 the row.
+        --   Reminder done   { ReminderID, Done: 1|0 }  a repeating one moves to
+        --                   its next date instead.  -> List0 the row.
+        --   Delete reminder { ReminderID }
+        --   My day count    {}  { Due }: open reminders and flags due today or
+        --                   earlier (the rail badge).
+        -- A time already passed never fires: saving or reopening one marks it fired.
+        -- -----------------------------------------------------------------
+        IF @Operation IN (N'My day', N'Save reminder', N'Reminder done', N'Delete reminder', N'My day count')
+        BEGIN
+            DECLARE @RID INT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.ReminderID') AS INT), 0);
+            DECLARE @RNow DATETIME = GETDATE();
+            IF @RID <> 0 AND NOT EXISTS (SELECT 1 FROM dbo.SilaReminder WHERE ReminderID = @RID AND UserID = @UserID)
+            BEGIN SET @State = 404; SET @Message = N'Reminder not found.'; RETURN; END
+
+            IF @Operation = N'My day count'
+            BEGIN
+                SELECT (SELECT COUNT(*) FROM dbo.SilaReminder r
+                        WHERE r.UserID = @UserID AND r.DoneAt IS NULL AND r.DueDate <= CAST(@RNow AS DATE))
+                     + (SELECT COUNT(*) FROM dbo.SilaTicketFlag f
+                        JOIN CHA.TicketHistory th ON th.TicketID = f.TicketID AND th.TicketState < 50
+                        JOIN CHA.TicketMembers tm ON tm.TicketID = f.TicketID AND tm.UserID = @UserID AND tm.IsLeft = 0
+                        WHERE f.UserID = @UserID AND f.DueDate <= CAST(@RNow AS DATE)) AS Due;
+                RETURN;
+            END
+
+            IF @Operation = N'Delete reminder'
+            BEGIN
+                IF @RID = 0 BEGIN SET @State = 404; SET @Message = N'Reminder not found.'; RETURN; END
+                DELETE FROM dbo.SilaReminder WHERE ReminderID = @RID AND UserID = @UserID;
+                SELECT @RID AS ReminderID, 1 AS Deleted;
+                RETURN;
+            END
+
+            IF @Operation = N'Reminder done'
+            BEGIN
+                IF @RID = 0 BEGIN SET @State = 404; SET @Message = N'Reminder not found.'; RETURN; END
+                DECLARE @RDone BIT = CASE WHEN TRY_CAST(JSON_VALUE(@LineData, '$.Done') AS INT) = 1 THEN 1 ELSE 0 END;
+                UPDATE r SET
+                    r.DoneAt = CASE WHEN @RDone = 1 AND r.RepeatKind IS NULL THEN @RNow WHEN @RDone = 0 THEN NULL ELSE r.DoneAt END,
+                    -- a repeating one skips to the occurrence after this one (or after now)
+                    r.DueDate = CASE WHEN @RDone = 1 AND r.RepeatKind IS NOT NULL
+                                     THEN dbo.fnSilaReminderNext(r.DueDate, r.DueTime, r.RepeatKind, CASE WHEN r.DueAt > @RNow THEN r.DueAt ELSE @RNow END)
+                                     ELSE r.DueDate END,
+                    r.NotifiedAt = CASE WHEN @RDone = 1 AND r.RepeatKind IS NOT NULL THEN NULL
+                                        WHEN @RDone = 0 AND r.DueAt <= @RNow THEN ISNULL(r.NotifiedAt, @RNow)
+                                        ELSE r.NotifiedAt END,
+                    r.LastMaintDate = @RNow
+                FROM dbo.SilaReminder r WHERE r.ReminderID = @RID AND r.UserID = @UserID;
+            END
+
+            IF @Operation = N'Save reminder'
+            BEGIN
+                DECLARE @RTitle NVARCHAR(MAX) = LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.Title'), N'')));
+                DECLARE @RNote NVARCHAR(MAX) = LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.Note'), N'')));
+                DECLARE @RDateText NVARCHAR(20) = NULLIF(LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.DueDate'), N''))), N'');
+                DECLARE @RTimeText NVARCHAR(20) = NULLIF(LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.DueTime'), N''))), N'');
+                DECLARE @RDate DATE = TRY_CONVERT(DATE, @RDateText, 23);
+                DECLARE @RTime TIME(0) = TRY_CONVERT(TIME(0), @RTimeText, 108);
+                DECLARE @RRepeat VARCHAR(10) = NULLIF(LOWER(LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.Repeat'), '')))), '');
+                DECLARE @RPush BIT = CASE WHEN TRY_CAST(JSON_VALUE(@LineData, '$.Push') AS INT) = 0 THEN 0 ELSE 1 END;
+                DECLARE @RLinkKind VARCHAR(10) = NULLIF(LOWER(LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.LinkKind'), '')))), '');
+                DECLARE @RLinkID INT = NULLIF(TRY_CAST(JSON_VALUE(@LineData, '$.LinkID') AS INT), 0);
+                DECLARE @RChatID INT = NULLIF(TRY_CAST(JSON_VALUE(@LineData, '$.ChatID') AS INT), 0);
+                IF @RTitle = N'' BEGIN SET @State = 1; SET @Message = N'Write what to remember.'; RETURN; END
+                IF LEN(@RTitle) > 200 BEGIN SET @State = 1; SET @Message = N'The title can be at most 200 characters.'; RETURN; END
+                IF LEN(@RNote) > 1000 BEGIN SET @State = 1; SET @Message = N'The note can be at most 1000 characters.'; RETURN; END
+                IF @RDateText IS NOT NULL AND @RDate IS NULL BEGIN SET @State = 1; SET @Message = N'The date is not valid.'; RETURN; END
+                IF @RTimeText IS NOT NULL AND @RTime IS NULL BEGIN SET @State = 1; SET @Message = N'The time is not valid.'; RETURN; END
+                IF @RTime IS NOT NULL AND @RDate IS NULL BEGIN SET @State = 1; SET @Message = N'Pick a date for the time.'; RETURN; END
+                IF @RRepeat IS NOT NULL AND @RRepeat NOT IN ('day', 'week', 'month') BEGIN SET @State = 1; SET @Message = N'Repeat must be every day, week or month.'; RETURN; END
+                IF @RRepeat IS NOT NULL AND @RDate IS NULL BEGIN SET @State = 1; SET @Message = N'A repeating reminder needs a date.'; RETURN; END
+                IF @RLinkKind IS NOT NULL AND @RLinkKind NOT IN ('chat', 'group', 'ticket') SET @RLinkKind = NULL;
+                IF @RLinkKind IS NULL SELECT @RLinkID = NULL, @RChatID = NULL;
+                -- a link only to a conversation the caller is in
+                IF @RLinkKind IS NOT NULL AND NOT (
+                       (@RLinkKind = 'chat' AND EXISTS (SELECT 1 FROM One.OneChatSession x WHERE x.SessionID = @RLinkID AND (x.UserID1 = @UserID OR x.UserID2 = @UserID)))
+                    OR (@RLinkKind = 'group' AND EXISTS (SELECT 1 FROM GRP.GroupMembers x WHERE x.GroupID = @RLinkID AND x.UserID = @UserID))
+                    OR (@RLinkKind = 'ticket' AND EXISTS (SELECT 1 FROM CHA.TicketMembers x WHERE x.TicketID = @RLinkID AND x.UserID = @UserID AND x.IsLeft = 0)))
+                BEGIN SET @State = 403; SET @Message = N'You can only link a conversation you are in.'; RETURN; END
+                IF @RChatID IS NOT NULL AND NOT (
+                       (@RLinkKind = 'chat' AND EXISTS (SELECT 1 FROM One.OneToOneChatHistory x WHERE x.ChatID = @RChatID AND x.SessionID = @RLinkID))
+                    OR (@RLinkKind = 'group' AND EXISTS (SELECT 1 FROM GRP.GroupChatHistory x WHERE x.ChatID = @RChatID AND x.GroupID = @RLinkID))
+                    OR (@RLinkKind = 'ticket' AND EXISTS (SELECT 1 FROM CHA.TicketChatHistory x WHERE x.ChatID = @RChatID AND x.TicketID = @RLinkID)))
+                    SET @RChatID = NULL;
+                -- a repeating one whose first time has passed starts at its next time
+                IF @RRepeat IS NOT NULL SET @RDate = dbo.fnSilaReminderNext(@RDate, @RTime, @RRepeat, DATEADD(MINUTE, -1, @RNow));
+                DECLARE @RDueAt DATETIME = CASE WHEN @RDate IS NULL THEN NULL
+                    ELSE DATEADD(MINUTE, ISNULL(DATEPART(HOUR, @RTime) * 60 + DATEPART(MINUTE, @RTime), 540), CAST(@RDate AS DATETIME)) END;
+                IF @RID = 0
+                BEGIN
+                    INSERT INTO dbo.SilaReminder (UserID, Title, Note, DueDate, DueTime, RepeatKind, LinkKind, LinkID, ChatID, Push, NotifiedAt)
+                    VALUES (@UserID, @RTitle, @RNote, @RDate, @RTime, @RRepeat, @RLinkKind, @RLinkID, @RChatID, @RPush,
+                            CASE WHEN @RDueAt <= @RNow AND @RRepeat IS NULL THEN @RNow END);
+                    SET @RID = SCOPE_IDENTITY();
+                END
+                ELSE
+                    UPDATE dbo.SilaReminder SET Title = @RTitle, Note = @RNote, DueDate = @RDate, DueTime = @RTime, RepeatKind = @RRepeat,
+                           LinkKind = @RLinkKind, LinkID = @RLinkID, ChatID = @RChatID, Push = @RPush,
+                           NotifiedAt = CASE WHEN @RDueAt <= @RNow AND @RRepeat IS NULL THEN @RNow END, LastMaintDate = @RNow
+                    WHERE ReminderID = @RID AND UserID = @UserID;
+            END
+
+            -- the reminders (one after a write, else all open + done in the last day)
+            SELECT r.ReminderID, r.Title, r.Note, CONVERT(VARCHAR(10), r.DueDate, 23) AS DueDate,
+                   CONVERT(VARCHAR(5), r.DueTime, 108) AS DueTime, r.DueAt, ISNULL(r.RepeatKind, '') AS RepeatKind,
+                   ISNULL(r.LinkKind, '') AS LinkKind, ISNULL(r.LinkID, 0) AS LinkID, ISNULL(r.ChatID, 0) AS ChatID,
+                   r.Push, r.DoneAt, r.LastFiredAt, r.CreatedDate,
+                   CASE r.LinkKind WHEN 'chat' THEN ISNULL(NULLIF(ou.FullName, N''), ou.Username) WHEN 'group' THEN g.Name
+                                   WHEN 'ticket' THEN th.TicketSubject END AS LinkTitle,
+                   CASE r.LinkKind WHEN 'ticket' THEN N'# ' + ISNULL(cm.Name, N'') + N' · #' + CAST(th.TicketID AS NVARCHAR(20)) ELSE N'' END AS LinkSub
+            FROM dbo.SilaReminder r
+            LEFT JOIN One.OneChatSession cs ON r.LinkKind = 'chat' AND cs.SessionID = r.LinkID
+            LEFT JOIN dbo.UserMaster ou ON ou.UserID = CASE WHEN cs.UserID1 = @UserID THEN cs.UserID2 ELSE cs.UserID1 END
+            LEFT JOIN GRP.GroupMaster g ON r.LinkKind = 'group' AND g.GroupID = r.LinkID
+            LEFT JOIN CHA.TicketHistory th ON r.LinkKind = 'ticket' AND th.TicketID = r.LinkID
+            LEFT JOIN CHA.ChannelMaster cm ON cm.ChannelID = th.TicketChannelID
+            WHERE r.UserID = @UserID
+              AND (CASE WHEN @Operation = N'My day' THEN 0 ELSE r.ReminderID END = CASE WHEN @Operation = N'My day' THEN 0 ELSE @RID END)
+              AND (@Operation <> N'My day' OR r.DoneAt IS NULL OR r.DoneAt >= DATEADD(DAY, -1, @RNow))
+            ORDER BY CASE WHEN r.DueAt IS NULL THEN 1 ELSE 0 END, r.DueAt, r.ReminderID;
+
+            IF @Operation = N'My day'
+                SELECT f.TicketID, CONVERT(VARCHAR(10), f.DueDate, 23) AS DueDate, f.Note, f.CreatedDate, f.LastMaintDate,
+                       th.TicketSubject, th.TicketState, ts.StateDescription, cm.Name AS ChannelName
+                FROM dbo.SilaTicketFlag f
+                JOIN CHA.TicketHistory th ON th.TicketID = f.TicketID AND th.TicketState < 50
+                JOIN CHA.TicketMembers tm ON tm.TicketID = f.TicketID AND tm.UserID = @UserID AND tm.IsLeft = 0
+                LEFT JOIN CHA.TicketState ts ON ts.StateID = th.TicketState
+                LEFT JOIN CHA.ChannelMaster cm ON cm.ChannelID = th.TicketChannelID
+                WHERE f.UserID = @UserID
+                ORDER BY CASE WHEN f.DueDate IS NULL THEN 1 ELSE 0 END, f.DueDate, f.TicketID;
+            RETURN;
+        END
+
+        -- -----------------------------------------------------------------
+        -- User profile (read-only): one person's card -- name, photo, job,
+        -- department, user group, mobile, local extension and HR employee id.
+        -- LineData { UserID } or { Username }. Any signed-in user, like the
+        -- mobile app's dbo.V_UserMaster_1 (the same view); the employee id is
+        -- quick.QUK.UserMaster.EmployeeID, the link that view joins HR on.
+        -- -----------------------------------------------------------------
+        IF @Operation = N'User profile'
+        BEGIN
+            DECLARE @PUId INT = TRY_CAST(JSON_VALUE(@LineData, '$.UserID') AS INT);
+            DECLARE @PUName NVARCHAR(50) = NULLIF(LTRIM(RTRIM(ISNULL(JSON_VALUE(@LineData, '$.Username'), N''))), N'');
+            IF @PUId IS NULL AND @PUName IS NOT NULL
+                SELECT @PUId = UserID FROM dbo.UserMaster WHERE Username = @PUName;
+            IF @PUId IS NULL OR NOT EXISTS (SELECT 1 FROM dbo.UserMaster WHERE UserID = @PUId)
+            BEGIN SET @State = 404; SET @Message = N'User not found.'; RETURN; END
+            SELECT TOP (1) v.UserID, v.Username, v.FullName, v.MobileNumber, v.LocalNumber, v.JobName, v.DepartmentName,
+                   v.GroupName AS UserGroupName, v.IsNotActive, v.FileURL AS PhotoURL, q.EmployeeID
+            FROM dbo.V_UserMaster_1 v
+            OUTER APPLY (SELECT TOP (1) x.EmployeeID FROM quick.QUK.UserMaster x WHERE x.UserID = v.UserID) q
+            WHERE v.UserID = @PUId
+            ORDER BY CASE WHEN v.FileURL IS NULL THEN 1 ELSE 0 END;
+            RETURN;
+        END
+
+        -- -----------------------------------------------------------------
         -- Find users (read-only): active users for pickers (new group, new
         -- chat). Any signed-in user may search the directory, as the mobile
         -- app's 'System Users and Groups' already returns every user.
@@ -1556,6 +1730,12 @@ USING (VALUES
     (N'dbo.APISilaWebOperation', N'Remove group member', N'Groups: admins remove a member (not the creator, not themselves), posts a system line'),
     (N'dbo.APISilaWebOperation', N'Leave group',         N'Groups: a member leaves (not the last admin while others remain), posts a system line'),
     (N'dbo.APISilaWebOperation', N'Find users',        N'Pickers: active users by name / username / user group (photo, job)'),
+    (N'dbo.APISilaWebOperation', N'My day',            N'My Day: the caller''s own reminders (dbo.SilaReminder) and ticket flags'),
+    (N'dbo.APISilaWebOperation', N'Save reminder',     N'My Day: create / edit the caller''s reminder (links only to conversations he is in)'),
+    (N'dbo.APISilaWebOperation', N'Reminder done',     N'My Day: mark the caller''s reminder done / not done (repeating: next date)'),
+    (N'dbo.APISilaWebOperation', N'Delete reminder',   N'My Day: delete the caller''s reminder'),
+    (N'dbo.APISilaWebOperation', N'My day count',      N'My Day: the rail badge, reminders and flags due today or earlier'),
+    (N'dbo.APISilaWebOperation', N'User profile',      N'Profile card: one user''s job, department, mobile, extension, HR employee id (V_UserMaster_1)'),
     (N'dbo.APISilaWebOperation', N'User groups',       N'Pickers: user groups (quick, via V_SilaUserTitle) with their active user counts'),
     (N'dbo.APISilaWebOperation', N'Settings users',       N'System Settings (mhd only, checked in the SP): user master, read-only, no hash'),
     (N'dbo.APISilaWebOperation', N'Settings user groups', N'System Settings (mhd only, checked in the SP): dbo.UserGroupMaster, read-only'),

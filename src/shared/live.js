@@ -7,6 +7,9 @@
 //   onLive(type, fn)   subscribe to one frame type; returns the unsubscribe
 //
 // Reconnects with backoff (2 s .. 60 s, at once when the network returns).
+// The browser's online/offline flag is only a hint (VPNs, Wi-Fi changes and
+// sleep make it wrong): it never stops a connection attempt or marks an open
+// socket as down -- only the socket itself does.
 // Close 4401 = the session ended: refresh once, and if that fails the app is
 // signed out ('sila:signed-out' from auth.js).
 import { useSyncExternalStore } from 'react';
@@ -59,8 +62,9 @@ function scheduleReconnect() {
 
 export async function connectLive() {
   wanted = true;
-  if (connecting || (ws && ws.readyState <= WebSocket.OPEN)) return;
-  if (!navigator.onLine) { set({ status: 'waiting', retryAt: null }); return; }
+  if (connecting) return;
+  if (ws && ws.readyState === WebSocket.OPEN) { set({ status: 'connected', retryAt: null }); return; }
+  if (ws && ws.readyState === WebSocket.CONNECTING) return;
   connecting = true;
   set({ status: 'connecting', retryAt: null });
   try {
@@ -76,7 +80,8 @@ export async function connectLive() {
       if (frame && typeof frame.type === 'string') dispatch(frame);
     };
     socket.onclose = () => {
-      if (ws === socket) ws = null;
+      if (ws !== socket) return;   // replaced by a newer socket (Retry now): not news
+      ws = null;
       set({ online: new Set() });
       // 4401 included: the next ticket request refreshes the token, or signs out.
       if (wanted) scheduleReconnect(); else set({ status: 'idle' });
@@ -91,9 +96,13 @@ export async function connectLive() {
   }
 }
 
+// "Retry now", the network coming back, the tab waking up: try at once. A
+// socket stuck half-open (no answer since) is dropped so a fresh one opens.
 export function retryLiveNow() {
+  if (!wanted) return;
   attempts = 0;
   clearTimeout(retryTimer);
+  if (ws && ws.readyState !== WebSocket.OPEN) { const old = ws; ws = null; try { old.close(); } catch { /* gone */ } }
   connectLive();
 }
 
@@ -111,5 +120,8 @@ export function sendLive(frame) {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(frame));
 }
 
-window.addEventListener('online', () => { if (wanted) retryLiveNow(); });
-window.addEventListener('offline', () => { if (wanted) set({ status: 'waiting', retryAt: null }); });
+window.addEventListener('online', () => { if (wanted && state.status !== 'connected') retryLiveNow(); });
+// back to the tab after sleep / a long time away: reconnect now instead of waiting out the backoff
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && wanted && state.status === 'waiting') retryLiveNow();
+});

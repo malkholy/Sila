@@ -153,7 +153,7 @@ export default function Reports() {
             {d.people.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>No assigned tickets yet. Assign tickets to see who carries what.</div> : (
               <Table initial={{ key: 'late', desc: true }} rows={d.people} cols={[
                 { key: 'name', label: 'Person', sort: p => p.name.toLowerCase(), render: p => (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={p.name} size={26} photoUrl={p.photoUrl} /><span dir="auto" style={{ fontWeight: 700 }}>{p.name}</span></span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><Avatar name={p.name} size={26} photoUrl={p.photoUrl} userId={p.id} /><span dir="auto" style={{ fontWeight: 700 }}>{p.name}</span></span>
                 ) },
                 { key: 'open', label: 'Open now', align: 'right', sort: p => p.openNow, render: p => p.openNow },
                 { key: 'late', label: 'Late now', align: 'right', sort: p => p.lateNow, render: p => (p.lateNow ? <span style={{ color: 'var(--red)', fontWeight: 800 }}>{p.lateNow}</span> : 0) },

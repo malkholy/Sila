@@ -991,7 +991,7 @@ export default function SystemSettings() {
   const userCols = [
     { key: 'name', label: 'User', sort: u => u.name.toLowerCase(), render: u => (
       <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 200 }}>
-        <Avatar name={u.name} size={32} photoUrl={u.photoUrl} />
+        <Avatar name={u.name} size={32} photoUrl={u.photoUrl} userId={u.id} />
         <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <span style={{ fontWeight: 700, color: 'var(--text)' }}><span dir="auto">{u.name}</span></span>
           <span style={muted}>@{u.username} · #{u.id}</span>
