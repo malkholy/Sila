@@ -1133,7 +1133,7 @@ export default function HomeShell({ user, onSignOut }) {
     }}>
       {rail}
       {/* the profile card any clickable avatar opens; the pop-up when a reminder fires */}
-      <ProfileCard />
+      <ProfileCard meUsername={user.username} onChat={startChat} />
       <ReminderToast onOpen={openLink} />
       {newTicket && <NewTicketDialog onClose={() => setNewTicket(false)} onCreated={onTicketCreated} />}
       {newChat && <NewChatDialog meUsername={user.username} onPick={startChat} onClose={() => setNewChat(false)} />}

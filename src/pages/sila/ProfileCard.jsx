@@ -1,14 +1,16 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { X, Phone, Copy, Check, Briefcase, Users, IdCard, AtSign } from 'lucide-react';
+import { X, Phone, Copy, Check, Briefcase, Users, IdCard, AtSign, MessageCircle } from 'lucide-react';
 import Avatar from './Avatar.jsx';
 import { loadUserProfile } from '../../shared/profile.js';
 
 // The profile card: opens beside an avatar that was clicked (the
 // 'sila:profile' event from openProfile in shared/profile.js). Mounted once in
-// HomeShell. Esc or a click outside closes it.
+// HomeShell. Esc or a click outside closes it. onChat(user) opens the one-to-one
+// chat with the person (HomeShell's New chat path); not offered for yourself
+// or an inactive user.
 const WIDTH = 300;
 
-export default function ProfileCard() {
+export default function ProfileCard({ meUsername = '', onChat }) {
   const [open, setOpen] = useState(null);   // { userId, username, name, photoUrl, rect }
   const [state, setState] = useState({ status: 'idle', p: null, error: '' });
   const [pos, setPos] = useState({ left: 0, top: 0 });
@@ -107,6 +109,15 @@ export default function ProfileCard() {
           {row(Users, 'User group', p.userGroup)}
           {!p.job && !p.department && row(Briefcase, 'Job', '')}
         </div>
+      )}
+      {p && onChat && p.active && p.username && p.username !== String(meUsername).toLowerCase() && (
+        <button type="button" onClick={() => {
+          setOpen(null);
+          onChat({ id: Number(p.id), username: p.username, name: p.name, photoUrl: p.photoUrl, jobTitle: [p.job, p.department].filter(Boolean).join(' · ') });
+        }} style={{
+          height: 40, borderRadius: 10, border: 'none', background: 'var(--accent)', color: 'var(--on-accent)', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontSize: 14, fontWeight: 700, fontFamily: 'var(--font)',
+        }}><MessageCircle size={16} /> Message {p.name.split(' ')[0]}</button>
       )}
     </div>
   );

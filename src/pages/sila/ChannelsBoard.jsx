@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Flag, Hash, Plus, RefreshCw, X } from 'lucide-react';
-import { loadTickets } from '../../shared/chat.js';
+import { loadChannelMembers, loadChannels, loadTickets } from '../../shared/chat.js';
 import { formatWhen, preview } from '../../shared/leftSide.js';
 import { onLive } from '../../shared/live.js';
 import Avatar from './Avatar.jsx';
@@ -238,7 +238,7 @@ function SortTh({ label, k, sort, onSort, align = 'left' }) {
 // A click selects a row, Up / Down move the selection (also into the next
 // group), Enter or a double-click opens the ticket, F flags / unflags it.
 // sort / onSort: the column sort shared by every group (else kept here).
-function TicketTable({ rows, show, onOpen, onPerson, onToggleFlag, me, sort: sortProp, onSort }) {
+function TicketTable({ rows, show, onOpen, onPerson, onChannel, onToggleFlag, me, sort: sortProp, onSort }) {
   const [sel, setSel] = useState(null);
   const [ownSort, setOwnSort] = useState(null);
   const sort = onSort ? sortProp : ownSort;
@@ -292,7 +292,16 @@ function TicketTable({ rows, show, onOpen, onPerson, onToggleFlag, me, sort: sor
                 ...td, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text2)',
                 textAlign: 'left',
               }}><span dir="auto">{preview(t.lastMessage) || '-'}</span></td>
-              {show.channel && <td style={{ ...td, textAlign: 'left', color: 'var(--text2)' }}># <span dir="auto">{t.channel}</span></td>}
+              {show.channel && (
+                <td style={{ ...td, textAlign: 'left', color: 'var(--text2)' }}>
+                  {onChannel ? (
+                    <button onClick={() => onChannel(t.channelId)} style={{
+                      padding: 0, border: 'none', background: 'none', color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
+                      textDecoration: 'underline', textDecorationColor: 'var(--border2)', fontFamily: 'var(--font)',
+                    }}># <span dir="auto">{t.channel}</span></button>
+                  ) : <># <span dir="auto">{t.channel}</span></>}
+                </td>
+              )}
               {show.status && <td style={td}><Pill state={t.state}>{t.stateLabel || undefined}</Pill></td>}
               {show.creator && (
                 <td style={td}>
@@ -329,8 +338,9 @@ function Figure({ label, children, color }) {
   );
 }
 
-// Every ticket one person created (all loaded tickets, the panel filters ignored).
-function PersonDrawer({ person, tickets, blocked, onOpen, onClose }) {
+// A drawer of tickets (all loaded tickets, the panel filters ignored): head,
+// optional extra block, summary cards, status chips and the ticket table.
+function TicketsDrawer({ label, head, extra, tickets, show, blocked, onOpen, onClose }) {
   const [chip, setChip] = useState('all');
   useEffect(() => {
     // Esc closes it, unless a ticket drawer is open on top of it
@@ -354,23 +364,19 @@ function PersonDrawer({ person, tickets, blocked, onOpen, onClose }) {
   return (
     <>
       <div aria-hidden="true" onMouseDown={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.35)', zIndex: 990 }} />
-      <aside role="dialog" aria-label={`Tickets created by ${person.name}`} style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(680px, 100%)', zIndex: 991, background: 'var(--surface)',
+      <aside role="dialog" aria-label={label} style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(720px, 100%)', zIndex: 991, background: 'var(--surface)',
         boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', fontFamily: 'var(--font)',
       }}>
         <header style={{ padding: '18px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Avatar name={person.name} size={56} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>Created by · all their tickets you can see</div>
-            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: 'var(--text)' }} dir="auto">{person.name}</h2>
-            <div style={{ fontSize: 13, color: 'var(--text2)' }}>@{person.username}</div>
-          </div>
+          {head}
           <button onClick={onClose} aria-label="Close" style={{
             width: 44, height: 44, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)',
-            color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
           }}><X size={18} /></button>
         </header>
         <div data-rowlist style={{ flex: 1, overflowY: 'auto', padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {extra}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
             {cards.map(([k, v]) => (
               <div key={k} style={{ padding: '12px 14px', borderRadius: 12, background: 'var(--bg)', border: '1px solid var(--border)' }}>
@@ -384,12 +390,81 @@ function PersonDrawer({ person, tickets, blocked, onOpen, onClose }) {
             {states.map(s => chipBtn(s, `${stateOf(s).label} · ${tickets.filter(t => t.state === s).length}`, chip === s))}
           </div>
           <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
-            <TicketTable rows={rows} show={{ channel: true, status: true }} onOpen={onOpen} onPerson={() => {}} />
+            <TicketTable rows={rows} show={show} onOpen={onOpen} onPerson={() => {}} />
             {rows.length === 0 && <div style={{ padding: 18, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>No tickets in this status.</div>}
           </div>
         </div>
       </aside>
     </>
+  );
+}
+
+// Every ticket one person created.
+function PersonDrawer({ person, tickets, blocked, onOpen, onClose }) {
+  return (
+    <TicketsDrawer label={`Tickets created by ${person.name}`} tickets={tickets} show={{ channel: true, status: true }}
+      blocked={blocked} onOpen={onOpen} onClose={onClose} head={(
+        <>
+          <Avatar name={person.name} size={56} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>Created by · all their tickets you can see</div>
+            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: 'var(--text)' }} dir="auto">{person.name}</h2>
+            <div style={{ fontSize: 13, color: 'var(--text2)' }}>@{person.username}</div>
+          </div>
+        </>
+      )} />
+  );
+}
+
+// Every ticket of one channel, with the channel's purpose and its admins /
+// team leaders (they join each new ticket).
+function ChannelDrawer({ channel, tickets, blocked, onOpen, onClose }) {
+  const [info, setInfo] = useState({ purpose: '', managers: null });
+  useEffect(() => {
+    let live = true;
+    loadChannels().then(list => {
+      const c = list.find(x => x.id === channel.id);
+      if (live && c) setInfo(i => ({ ...i, purpose: c.purpose, private: c.private }));
+    }).catch(() => {});
+    loadChannelMembers(channel.id).then(list => {
+      if (live) setInfo(i => ({ ...i, managers: list.filter(m => m.admin || m.leader) }));
+    }).catch(() => { if (live) setInfo(i => ({ ...i, managers: [] })); });
+    return () => { live = false; };
+  }, [channel.id]);
+  const extra = (info.purpose || info.managers?.length) ? (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {info.purpose && <div style={{ fontSize: 13, color: 'var(--text2)' }} dir="auto">{info.purpose}</div>}
+      {info.managers?.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginRight: 2 }}>Admins and team leaders</span>
+          {info.managers.map(m => (
+            <span key={m.id} title={m.jobTitle || m.username} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 10px 0 3px', borderRadius: 999,
+              background: 'var(--soft)', fontSize: 12, color: 'var(--text2)',
+            }}>
+              <Avatar name={m.name} size={22} photoUrl={m.photoUrl} />
+              <span dir="auto">{m.name}</span>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent-strong)' }}>{m.admin ? 'Admin' : 'Team leader'}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  ) : null;
+  return (
+    <TicketsDrawer label={`Tickets in # ${channel.name}`} tickets={tickets} show={{ status: true, creator: true, assignee: true, unread: true }}
+      blocked={blocked} onOpen={onOpen} onClose={onClose} extra={extra} head={(
+        <>
+          <span style={{
+            width: 56, height: 56, borderRadius: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            background: 'var(--accent-soft)', border: '1.5px solid var(--accent-line)', color: 'var(--accent-strong)',
+          }}><Hash size={26} strokeWidth={1.8} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>Channel · all its tickets you can see{info.private ? ' · private' : ''}</div>
+            <h2 style={{ margin: 0, fontSize: 19, fontWeight: 800, color: 'var(--text)' }} dir="auto"># {channel.name}</h2>
+          </div>
+        </>
+      )} />
   );
 }
 
@@ -441,6 +516,7 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
   const [expanded, setExpanded] = useState(() => new Set());
   const [ticket, setTicket] = useState(null);
   const [personKey, setPersonKey] = useState(null);
+  const [channelKey, setChannelKey] = useState(null);   // the channel drawer
   const seq = useRef(0);
 
   const pick = (list) => { setPicked(list); store.set('silaBoardStatus', list); };
@@ -649,6 +725,10 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
     const mine = all.filter(t => t.createdBy === personKey);
     return { username: personKey, name: mine[0]?.createdByName || personKey, tickets: mine };
   })() : null;
+  const channel = channelKey != null ? (() => {
+    const its = all.filter(t => t.channelId === channelKey);
+    return { id: channelKey, name: its[0]?.channel || `Channel ${channelKey}`, tickets: its };
+  })() : null;
 
   const show = { channel: view !== 'channel', status: view !== 'status', creator: view !== 'creator', assignee: view !== 'assignee', unread: true };
   const loading = open.status === 'loading';
@@ -772,8 +852,8 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
                   }}>?</span>
                 ))}
                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                  {view === 'creator' ? (
-                    <button onClick={() => setPersonKey(g.key)} style={{
+                  {view === 'creator' || view === 'channel' ? (
+                    <button onClick={() => (view === 'creator' ? setPersonKey(g.key) : setChannelKey(g.key))} style={{
                       padding: 0, border: 'none', background: 'none', textAlign: 'left', fontSize: 15, fontWeight: 800,
                       color: 'var(--text)', textDecoration: 'underline', textDecorationColor: 'var(--border2)', cursor: 'pointer',
                       fontFamily: 'var(--font)',
@@ -803,7 +883,7 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
               </div>
               {exp && (
                 <div style={{ borderTop: '1px solid var(--border)' }}>
-                  <TicketTable rows={g.rows} show={show} onOpen={setTicket} onPerson={setPersonKey} onToggleFlag={toggleFlag} me={me}
+                  <TicketTable rows={g.rows} show={show} onOpen={setTicket} onPerson={setPersonKey} onChannel={setChannelKey} onToggleFlag={toggleFlag} me={me}
                     sort={colSort} onSort={pickColSort} />
                 </div>
               )}
@@ -812,6 +892,9 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
         })}
       </div>
 
+      {channel && (
+        <ChannelDrawer channel={channel} tickets={channel.tickets} blocked={!!ticket} onOpen={setTicket} onClose={() => setChannelKey(null)} />
+      )}
       {person && (
         <PersonDrawer person={person} tickets={person.tickets} blocked={!!ticket} onOpen={setTicket} onClose={() => setPersonKey(null)} />
       )}
