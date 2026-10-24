@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Flag, Hash, Plus, RefreshCw, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Flag, Hash, Plus, RefreshCw, X } from 'lucide-react';
 import { loadTickets } from '../../shared/chat.js';
 import { formatWhen, preview } from '../../shared/leftSide.js';
 import { onLive } from '../../shared/live.js';
@@ -186,29 +186,84 @@ function Checklist({ label, options, picked, onChange, allText, unit, searchable
   );
 }
 
+// Column sort: key -> [value of a row, first click descending?]. Text sorts
+// A-Z first; numbers and dates newest / biggest first.
+const COL_SORT = {
+  id: [(t) => t.id, true],
+  subject: [(t) => t.subject || '', false],
+  message: [(t) => preview(t.lastMessage) || '', false],
+  channel: [(t) => t.channel || '', false],
+  status: [(t) => t.state, false],
+  creator: [(t) => t.createdByName || '', false],
+  assignee: [(t) => t.assignee?.name || '', false],
+  last: [(t) => t.last?.getTime() || 0, true],
+  unread: [(t) => t.unread || 0, true],
+};
+function sortRows(rows, sort) {
+  const col = sort && COL_SORT[sort.key];
+  if (!col) return rows;
+  const [val] = col;
+  const dir = sort.desc ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const x = val(a), y = val(b);
+    const c = typeof x === 'string' ? x.localeCompare(y, undefined, { sensitivity: 'base', numeric: true }) : x - y;
+    return c * dir || (b.last?.getTime() || 0) - (a.last?.getTime() || 0);
+  });
+}
+// Click a header: sort by it; again: reverse; a third time: back to the
+// default order (last update, newest first).
+function nextColSort(cur, key) {
+  if (cur?.key !== key) return { key, desc: COL_SORT[key][1] };
+  if (cur.desc === COL_SORT[key][1]) return { key, desc: !cur.desc };
+  return null;
+}
+
+function SortTh({ label, k, sort, onSort, align = 'left' }) {
+  const on = sort?.key === k;
+  const Arrow = on && sort.desc ? ArrowDown : ArrowUp;
+  return (
+    <th scope="col" aria-sort={on ? (sort.desc ? 'descending' : 'ascending') : 'none'} style={{ ...th, textAlign: align, padding: 0 }}>
+      <button type="button" onClick={() => onSort(k)} title={`Sort by ${label.toLowerCase()}`} style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 4, justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+        padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', letterSpacing: 'inherit',
+        textTransform: 'inherit', color: on ? 'var(--accent-strong)' : 'inherit', whiteSpace: 'nowrap',
+      }}>
+        {label}
+        <Arrow size={12} strokeWidth={2.6} aria-hidden="true" style={{ opacity: on ? 1 : 0, flexShrink: 0 }} />
+      </button>
+    </th>
+  );
+}
+
 // A click selects a row, Up / Down move the selection (also into the next
 // group), Enter or a double-click opens the ticket, F flags / unflags it.
-function TicketTable({ rows, show, onOpen, onPerson, onToggleFlag, me }) {
+// sort / onSort: the column sort shared by every group (else kept here).
+function TicketTable({ rows, show, onOpen, onPerson, onToggleFlag, me, sort: sortProp, onSort }) {
   const [sel, setSel] = useState(null);
+  const [ownSort, setOwnSort] = useState(null);
+  const sort = onSort ? sortProp : ownSort;
+  const pickSort = (k) => (onSort ? onSort(k) : setOwnSort(s => nextColSort(s, k)));
+  const shown = useMemo(() => sortRows(rows, sort), [rows, sort]);
   const bg = (t) => (sel === t.id ? 'var(--accent-soft)' : '');
+  const h = { sort, onSort: pickSort };
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ background: 'var(--bg)' }}>
-            <th scope="col" style={th}>Ticket</th>
-            <th scope="col" style={th}>Subject</th>
-            <th scope="col" style={th}>Last message</th>
-            {show.channel && <th scope="col" style={th}>Channel</th>}
-            {show.status && <th scope="col" style={th}>Status</th>}
-            {show.creator && <th scope="col" style={th}>Created by</th>}
-            {show.assignee && <th scope="col" style={th}>Assigned to</th>}
-            <th scope="col" style={th}>Last update</th>
-            {show.unread && <th scope="col" style={{ ...th, textAlign: 'right' }}>Unread</th>}
+            <SortTh label="Ticket" k="id" {...h} />
+            <SortTh label="Subject" k="subject" {...h} />
+            <SortTh label="Last message" k="message" {...h} />
+            {show.channel && <SortTh label="Channel" k="channel" {...h} />}
+            {show.status && <SortTh label="Status" k="status" {...h} />}
+            {show.creator && <SortTh label="Created by" k="creator" {...h} />}
+            {show.assignee && <SortTh label="Assigned to" k="assignee" {...h} />}
+            <SortTh label="Last update" k="last" {...h} />
+            {show.unread && <SortTh label="Unread" k="unread" align="right" {...h} />}
           </tr>
         </thead>
         <tbody>
-          {rows.map(t => (
+          {shown.map(t => (
             <tr key={t.id} data-row tabIndex={0} aria-selected={sel === t.id}
               onMouseDown={noWordSelect} onDoubleClick={() => onOpen(t)}
               onKeyDown={e => {
@@ -382,6 +437,7 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
   const pickPeriod = (key) => { setPeriod(key); store.set('silaBoardPeriod', key); };
   const [q, setQ] = useState('');
   const [sort, setSort] = useState(() => store.get('silaBoardSort', { key: 'last', desc: true }));
+  const [colSort, setColSort] = useState(() => store.get('silaTicketColSort', null));   // the ticket tables' column sort
   const [expanded, setExpanded] = useState(() => new Set());
   const [ticket, setTicket] = useState(null);
   const [personKey, setPersonKey] = useState(null);
@@ -391,6 +447,11 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
   const pickSort = (key) => setSort(s => {
     const next = s.key === key ? { key, desc: !s.desc } : { key, desc: key !== 'name' };
     store.set('silaBoardSort', next);
+    return next;
+  });
+  const pickColSort = (key) => setColSort(s => {
+    const next = nextColSort(s, key);
+    store.set('silaTicketColSort', next);
     return next;
   });
 
@@ -742,7 +803,8 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
               </div>
               {exp && (
                 <div style={{ borderTop: '1px solid var(--border)' }}>
-                  <TicketTable rows={g.rows} show={show} onOpen={setTicket} onPerson={setPersonKey} onToggleFlag={toggleFlag} me={me} />
+                  <TicketTable rows={g.rows} show={show} onOpen={setTicket} onPerson={setPersonKey} onToggleFlag={toggleFlag} me={me}
+                    sort={colSort} onSort={pickColSort} />
                 </div>
               )}
             </section>
