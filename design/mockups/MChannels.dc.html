@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila Mobile — Channels</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button,input{font-family:inherit}
+.tb{display:flex;border-top:1px solid #e2e8f0;background:#ffffff;padding:4px 4px 20px}
+.tb a{flex:1;min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:600;color:#64748b;text-decoration:none}
+.tb a.on{color:#c2410c;font-weight:800}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: #ffffff; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; overflow: hidden">
+  <header style="padding: 48px 16px 8px; display: flex; align-items: center; gap: 10px">
+    <h1 style="flex: 1; margin: 0; font-size: 22px; font-weight: 800">Channels</h1>
+    <button aria-label="Search tickets" style="width: 44px; height: 44px; border-radius: 12px; border: none; background: #f1f5f9; color: #0f172a; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg></button>
+  </header>
+  <div aria-label="Channel" role="tablist" style="display: flex; gap: 8px; padding: 0 16px 10px; overflow: hidden">
+    <sc-for list="{{channels}}" as="c" hint-placeholder-count="4">
+      <button role="tab" aria-selected="{{c.sel}}" onClick="{{c.pick}}" style="flex-shrink: 0; display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px; border-radius: 12px; border: 1.5px solid {{c.border}}; background: {{c.bg}}; color: #0f172a; font-size: 14px; font-weight: 700; cursor: pointer">
+        # {{c.name}}
+        <sc-if value="{{c.count}}" hint-placeholder-val="{{true}}"><span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{c.count}}</span></sc-if>
+      </button>
+    </sc-for>
+  </div>
+  <div style="padding: 0 16px 8px; font-size: 12px; color: #475569">{{purpose}}</div>
+  <div role="tablist" aria-label="State" style="display: flex; gap: 6px; padding: 0 16px 10px; overflow: hidden; border-bottom: 1px solid #f1f5f9">
+    <sc-for list="{{states}}" as="s" hint-placeholder-count="5">
+      <button role="tab" aria-selected="{{s.sel}}" onClick="{{s.pick}}" style="flex-shrink: 0; height: 32px; padding: 0 11px; border-radius: 999px; border: none; background: {{s.bg}}; color: {{s.fg}}; font-size: 12px; font-weight: 700; cursor: pointer">{{s.label}}</button>
+    </sc-for>
+  </div>
+  <div style="flex: 1; overflow: hidden">
+    <sc-for list="{{tickets}}" as="t" hint-placeholder-count="6">
+      <a href="MTicket.dc.html" style="display: flex; gap: 12px; padding: 10px 16px; border-bottom: 1px solid #f1f5f9; text-decoration: none; color: #0f172a">
+        <span style="width: 48px; height: 48px; box-sizing: border-box; border-radius: 13px; background: {{t.tBg}}; border: 1.5px solid {{t.tLine}}; color: {{t.tFg}}; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"></path></svg>
+        </span>
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+          <span style="display: flex; align-items: center; gap: 6px">
+            <span style="flex: 1; min-width: 0; font-size: 15px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{t.subject}}</span>
+            <span style="padding: 0 9px; border-radius: 999px; background: {{t.stBg}}; color: {{t.stFg}}; font-size: 11px; font-weight: 700; white-space: nowrap">{{t.state}}</span>
+          </span>
+          <span style="display: flex; align-items: center; gap: 8px; min-width: 0">
+            <span style="display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border-radius: 7px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; max-width: 150px"># {{t.channel}}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #475569">#{{t.no}}</span>
+            <sc-if value="{{t.late}}" hint-placeholder-val="{{false}}"><span style="padding: 0 8px; border-radius: 999px; background: #fef2f2; color: #b91c1c; font-size: 11px; font-weight: 700">Late</span></sc-if>
+          </span>
+          <span style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: #64748b; min-width: 0">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Created by <b style="color: #334155">{{t.creator}}</b></span>
+            <span style="flex: 1"></span>
+            <sc-if value="{{t.unread}}" hint-placeholder-val="{{false}}"><span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{t.unread}}</span></sc-if>
+            <span style="color: {{t.timeColor}}; font-weight: {{t.timeWeight}}; white-space: nowrap">{{t.age}}</span>
+          </span>
+        </span>
+      </a>
+    </sc-for>
+  </div>
+  <a href="MNewTicket.dc.html" aria-label="New ticket" style="position: absolute; right: 16px; bottom: 96px; height: 52px; padding: 0 18px; border-radius: 26px; background: #c2410c; color: #ffffff; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; text-decoration: none; box-shadow: 0 8px 20px rgba(194,65,12,.35)">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>New ticket
+  </a>
+  <nav class="tb" aria-label="Main">
+    <a href="MHome.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+    <a href="MChannels.dc.html" class="on" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>Channels</a>
+    <a href="MMyDay.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>My Day</a>
+    <a href="MMail.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="m3.5 7 8.5 6 8.5-6"></path></svg>Mail</a>
+    <a href="MMe.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>Me</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { ch: 'Purchasing', st: 'Open' }; }
+  renderVals() {
+    const st = this.state;
+    const C = [['Purchasing', 3, 'Quotations, POs, vendor codes'], ['IT', 1, 'Devices, accounts, access'], ['Logistics', 0, 'Freight, shipments, customs'], ['Finance', 0, 'Payments, invoices']];
+    const S = { 'New': ['#eff6ff', '#1d4ed8'], 'In progress': ['#f0fdf4', '#15803d'], 'Forwarded': ['#fff7ed', '#9a3412'], 'Hold': ['#fffbeb', '#b45309'], 'Ended': ['#f1f5f9', '#334155'] };
+    const T = [
+      { no: '2301855', state: 'In progress', subject: 'Vendor code for Delta Packaging', creator: 'Mona Hassan', initials: 'MH', color: '#7c3aed', age: '2 h', unread: 1 },
+      { no: '2301860', state: 'New', subject: 'Quotation Q-2291, 5,000 drums', creator: 'Mohammad Al Kholy', initials: 'MK', color: '#c2410c', age: '25 min', unread: 0 },
+      { no: '2301849', state: 'In progress', subject: 'PO 7731 price difference', creator: 'Khaled Nabil', initials: 'KN', color: '#2563eb', age: '3 d', late: true, unread: 2 },
+      { no: '2301852', state: 'Forwarded', subject: 'Approve vendor code V-10442', creator: 'Hany Farouk', initials: 'HF', color: '#b45309', age: '20 min', unread: 1 },
+      { no: '2301840', state: 'Hold', subject: 'Blue pigment supplier change', creator: 'Salma Morsy', initials: 'SM', color: '#be185d', age: '5 d', unread: 0 },
+      { no: '2301801', state: 'Ended', subject: 'Customs papers for shipment 44', creator: 'Mona Hassan', initials: 'MH', color: '#7c3aed', age: 'Mon', unread: 0 }
+    ];
+    const f = st.st;
+    const list = T.filter(t => f === 'All' || (f === 'Open' ? t.state !== 'Ended' : f === 'Mine' ? /Mohammad|Mona/.test(t.creator) : t.state === f));
+    return {
+      channels: C.map(([name, count]) => { const on = name === st.ch; return { name, count: count || false, sel: on ? 'true' : 'false', border: on ? '#c2410c' : '#e2e8f0', bg: on ? '#fff7ed' : '#ffffff', pick: () => this.setState({ ch: name }) }; }),
+      purpose: C.find(c => c[0] === st.ch)[2],
+      states: ['Open', 'Mine', 'New', 'In progress', 'Forwarded', 'Hold', 'Ended'].map(l => { const on = l === f; return { label: l, sel: on ? 'true' : 'false', bg: on ? '#0f172a' : '#f1f5f9', fg: on ? '#ffffff' : '#334155', pick: () => this.setState({ st: l }) }; }),
+      tickets: list.map(t => {
+        const toned = t.state !== 'Ended';
+        return { ...t, channel: st.ch, stBg: S[t.state][0], stFg: S[t.state][1], late: !!t.late, unread: t.unread || false,
+          tBg: toned ? S[t.state][0] : '#fff7ed', tFg: toned ? S[t.state][1] : '#9a3412', tLine: toned ? S[t.state][1] : '#fdba74',
+          timeColor: t.unread ? '#9a3412' : '#64748b', timeWeight: t.unread ? '700' : '400' };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

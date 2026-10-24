@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila Mobile — Ticket info</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font-family:inherit}
+.ib{width:44px;height:44px;border-radius:12px;border:none;background:transparent;color:#0f172a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;text-decoration:none}
+.lbl{margin:0;font-size:11px;font-weight:800;color:#475569;letter-spacing:.06em;text-transform:uppercase}
+.act{min-height:64px;border-radius:12px;border:1px solid #e2e8f0;background:#ffffff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:700;color:#0f172a;cursor:pointer;text-decoration:none}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:6px 0;border-bottom:1px solid #f1f5f9}
+.kv span:first-child{color:#64748b}
+.kv span:last-child{font-weight:700;text-align:right}
+.m{display:flex;align-items:center;gap:10px;min-height:52px}
+.av{width:36px;height:36px;border-radius:18px;color:#ffffff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.role{padding:1px 8px;border-radius:999px;font-size:11px;font-weight:700}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: #f1f5f9; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; overflow: hidden">
+  <header style="padding: 48px 6px 8px; display: flex; align-items: center; gap: 4px; background: #ffffff; border-bottom: 1px solid #e2e8f0">
+    <a href="MTicket.dc.html" class="ib" aria-label="Back"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"></path></svg></a>
+    <h1 style="flex: 1; margin: 0; font-size: 17px; font-weight: 800">Ticket <span style="font-family: 'JetBrains Mono', monospace">#2301855</span></h1>
+  </header>
+  <div style="flex: 1; overflow: hidden; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px">
+    <section style="display: flex; flex-direction: column; gap: 8px">
+      <h2 class="lbl">Actions</h2>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px">
+        <button class="act" onClick="{{ask}}" style="background: #c2410c; border-color: #c2410c; color: #ffffff"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21V4h11l-1 4h6v9h-8l1-4H4"></path></svg>End</button>
+        <button class="act" onClick="{{ask}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 5v14M15 5v14"></path></svg>Hold</button>
+        <a href="MForward.dc.html" class="act"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"></path><path d="M20 9H9a5 5 0 0 0-5 5v6"></path></svg>Forward</a>
+        <button class="act" onClick="{{ask}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="9" cy="8" r="4"></circle><path d="M2 21a7 7 0 0 1 14 0M19 8v6M16 11h6"></path></svg>Assign</button>
+        <button class="act" onClick="{{ask}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Invite</button>
+        <button class="act" onClick="{{ask}}" style="color: #b91c1c"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"></path></svg>Leave</button>
+      </div>
+      <details style="font-size: 12px; color: #334155; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 12px">
+        <summary style="font-weight: 700; cursor: pointer; min-height: 28px">Who sees which button (server Can* flags)</summary>
+        <div style="display: flex; flex-direction: column; gap: 4px; padding-top: 6px">
+          <span><b>Creator:</b> Close while New · Reopen when Ended</span>
+          <span><b>Admin / team leader:</b> Start while New · End and Hold while In progress · Reopen when Hold or Ended · Forward while New or In progress</span>
+          <span><b>Every member:</b> Invite until the ticket is Ended (only admins / team leaders can invite someone as ticket admin)</span>
+          <span>Shown here: an admin on an In progress ticket.</span>
+        </div>
+      </details>
+    </section>
+
+    <section style="background: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; padding: 10px 14px">
+      <div class="kv"><span>State</span><span><span style="padding: 0 8px; border-radius: 999px; background: #f0fdf4; color: #15803d; font-size: 12px">In progress</span></span></div>
+      <div class="kv"><span>Channel</span><span># Purchasing</span></div>
+      <div class="kv"><span>Created</span><span>Mona Hassan · today 09:45</span></div>
+      <div class="kv"><span>Assigned to</span><span>Ahmed Samy</span></div>
+      <div class="kv"><span>Open for</span><span>2 h 10 min</span></div>
+      <div class="kv" style="border-bottom: none"><span>Service level</span><span style="color: #15803d">On time · due 14:00</span></div>
+    </section>
+
+    <section style="background: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; padding: 10px 14px; display: flex; flex-direction: column">
+      <h2 class="lbl" style="padding-bottom: 4px">Members · 5</h2>
+      <div class="m"><span class="av" style="background: #0f766e">AS</span><span style="flex: 1; font-weight: 700">Ahmed Samy</span><span class="role" style="background: #fff7ed; color: #9a3412">Admin</span></div>
+      <div class="m"><span class="av" style="background: #2563eb">KN</span><span style="flex: 1; font-weight: 700">Khaled Nabil</span><span class="role" style="background: #eff6ff; color: #1d4ed8">Team leader</span></div>
+      <div class="m"><span class="av" style="background: #7c3aed">MH</span><span style="flex: 1; font-weight: 700">Mona Hassan</span><span class="role" style="background: #f1f5f9; color: #334155">Creator</span></div>
+      <div class="m"><span class="av" style="background: #be185d">SM</span><span style="flex: 1; font-weight: 700">Salma Morsy</span><span class="role" style="background: #f1f5f9; color: #334155">CC</span></div>
+    </section>
+
+    <section style="background: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; padding: 10px 14px; display: flex; flex-direction: column; gap: 6px">
+      <h2 class="lbl">History</h2>
+      <div style="font-size: 13px"><b>09:45</b> Created by Mona Hassan</div>
+      <div style="font-size: 13px"><b>10:02</b> Started by Ahmed Samy</div>
+      <div style="font-size: 13px"><b>11:10</b> Hold · <b>11:30</b> Reopened</div>
+    </section>
+  </div>
+
+  <sc-if value="{{confirm}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: flex-end">
+      <div role="alertdialog" aria-modal="true" aria-labelledby="cf-t" style="width: 100%; background: #ffffff; border-radius: 20px 20px 0 0; padding: 20px 20px 30px; display: flex; flex-direction: column; gap: 12px">
+        <h2 id="cf-t" style="margin: 0; font-size: 18px; font-weight: 800">End this ticket?</h2>
+        <p style="margin: 0; font-size: 14px; color: #475569">The creator is told it is done. It can still be reopened.</p>
+        <button onClick="{{cancel}}" style="height: 50px; border: none; border-radius: 12px; background: #c2410c; color: #ffffff; font-size: 16px; font-weight: 700; cursor: pointer">End ticket</button>
+        <button onClick="{{cancel}}" style="height: 46px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff; color: #0f172a; font-size: 15px; font-weight: 700; cursor: pointer">Cancel</button>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { c: false }; }
+  renderVals() {
+    return { confirm: this.state.c, ask: () => this.setState({ c: true }), cancel: () => this.setState({ c: false }) };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila Mobile — Forward ticket</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button,input,textarea,select{font-family:inherit}
+.ib{width:44px;height:44px;border-radius:12px;border:none;background:transparent;color:#0f172a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;text-decoration:none}
+.lbl{margin:0;font-size:11px;font-weight:800;color:#475569;letter-spacing:.06em;text-transform:uppercase}
+.p{display:flex;align-items:center;gap:10px;min-height:48px}
+.av{width:32px;height:32px;border-radius:16px;color:#ffffff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.why{padding:1px 8px;border-radius:999px;background:#f1f5f9;color:#334155;font-size:11px;font-weight:700}
+.box{width:22px;height:22px;accent-color:#c2410c}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #ffffff; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; overflow: hidden">
+  <header style="padding: 48px 8px 8px; display: flex; align-items: center; gap: 4px; border-bottom: 1px solid #f1f5f9">
+    <a href="MTicketInfo.dc.html" class="ib" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></a>
+    <span style="flex: 1; display: flex; flex-direction: column">
+      <h1 style="margin: 0; font-size: 18px; font-weight: 800">Forward ticket</h1>
+      <span style="font-size: 12px; color: #475569">#2301855 · from # Purchasing</span>
+    </span>
+  </header>
+  <div style="flex: 1; overflow: hidden; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px">
+    <label style="display: flex; flex-direction: column; gap: 6px">
+      <span class="lbl">To channel</span>
+      <select style="height: 46px; padding: 0 12px; border-radius: 10px; border: 1.5px solid #c2410c; background: #fff7ed; font-size: 15px; font-weight: 700; color: #0f172a">
+        <option># Finance</option><option># Logistics</option><option># IT</option>
+      </select>
+    </label>
+
+    <section style="display: flex; flex-direction: column">
+      <h2 class="lbl" style="display: flex; align-items: center; gap: 6px">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M7 11V7a5 5 0 0 1 10 0v4"></path><rect x="4" y="11" width="16" height="10" rx="2"></rect></svg>
+        Always join · can't be removed
+      </h2>
+      <div class="p"><span class="av" style="background: #b45309">HF</span><span style="flex: 1; font-weight: 700">Hany Farouk</span><span class="why" style="background: #fff7ed; color: #9a3412">Finance admin</span></div>
+      <div class="p"><span class="av" style="background: #15803d">RA</span><span style="flex: 1; font-weight: 700">Rania Adel</span><span class="why" style="background: #eff6ff; color: #1d4ed8">Finance team leader</span></div>
+      <div class="p"><span class="av" style="background: #7c3aed">MH</span><span style="flex: 1; font-weight: 700">Mona Hassan</span><span class="why">Creator</span></div>
+      <div class="p"><span class="av" style="background: #be185d">SM</span><span style="flex: 1; font-weight: 700">Salma Morsy</span><span class="why">CC</span></div>
+    </section>
+
+    <section style="display: flex; flex-direction: column">
+      <h2 class="lbl">Also from this ticket · optional</h2>
+      <label class="p"><span class="av" style="background: #0f766e">AS</span><span style="flex: 1; font-weight: 700">Ahmed Samy</span><input type="checkbox" class="box" checked aria-label="Include Ahmed Samy"></label>
+      <label class="p"><span class="av" style="background: #2563eb">KN</span><span style="flex: 1; font-weight: 700">Khaled Nabil</span><input type="checkbox" class="box" aria-label="Include Khaled Nabil"></label>
+    </section>
+
+    <section style="display: flex; flex-direction: column">
+      <h2 class="lbl">Also add from # Finance · optional</h2>
+      <label class="p"><span class="av" style="background: #475569">YM</span><span style="flex: 1; font-weight: 700">Yasser Mahmoud</span><input type="checkbox" class="box" aria-label="Include Yasser Mahmoud"></label>
+    </section>
+
+  </div>
+  <div style="padding: 10px 16px 28px; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 6px">
+    <span style="font-size: 12px; color: #64748b; text-align: center">New and In progress tickets can be forwarded.</span>
+    <a href="MTicket.dc.html" style="height: 50px; border-radius: 12px; background: #c2410c; color: #ffffff; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; text-decoration: none">Forward to # Finance</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

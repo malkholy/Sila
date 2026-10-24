@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila Mobile — Home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button,input{font-family:inherit}
+.ib{width:44px;height:44px;border-radius:12px;border:none;background:transparent;color:#0f172a;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.tb{display:flex;border-top:1px solid #e2e8f0;background:#ffffff;padding:4px 4px 20px}
+.tb a{flex:1;min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:600;color:#64748b;text-decoration:none}
+.tb a.on{color:#c2410c;font-weight:800}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #ffffff; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.5; display: flex; flex-direction: column; overflow: hidden">
+  <header style="padding: 48px 12px 8px 16px; display: flex; align-items: center; gap: 10px">
+    <img src="/_blob/675c5e79e89591485bc5a1234cb13379" alt="" style="width: 32px; height: 32px; object-fit: contain">
+    <h1 style="flex: 1; margin: 0; font-size: 22px; font-weight: 800">Home</h1>
+    <a href="MNewChat.dc.html" class="ib" aria-label="New chat, group or ticket" style="background: #c2410c; color: #ffffff; text-decoration: none">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    </a>
+  </header>
+  <div style="padding: 0 16px 8px">
+    <label style="display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px; border-radius: 10px; background: #f1f5f9; color: #64748b">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <input aria-label="Search people, groups, tickets" placeholder="Search people, groups, tickets" style="flex: 1; border: none; outline: none; background: transparent; font-size: 15px; color: #0f172a">
+    </label>
+  </div>
+  <div role="tablist" aria-label="Show" style="display: flex; gap: 6px; padding: 0 16px 10px; overflow: hidden">
+    <sc-for list="{{chips}}" as="c" hint-placeholder-count="6">
+      <button role="tab" aria-selected="{{c.sel}}" onClick="{{c.pick}}" style="height: 34px; padding: 0 12px; border-radius: 999px; border: 1px solid {{c.border}}; background: {{c.bg}}; color: {{c.fg}}; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer">{{c.label}}</button>
+    </sc-for>
+  </div>
+  <div style="flex: 1; overflow: hidden; border-top: 1px solid #f1f5f9">
+    <sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+      <sc-if value="{{r.notTicket}}" hint-placeholder-val="{{true}}">
+      <a href="{{r.href}}" style="display: flex; align-items: center; gap: 12px; padding: 10px 16px; text-decoration: none; color: #0f172a; border-bottom: 1px solid #f1f5f9; background: {{r.rowBg}}">
+        <span style="position: relative; width: 48px; height: 48px; box-sizing: border-box; border-radius: {{r.radius}}; background: {{r.color}}; border: {{r.border}}; color: {{r.fg}}; font-size: 15px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+          <sc-if value="{{r.showInitials}}" hint-placeholder-val="{{true}}">{{r.initials}}</sc-if>
+          <sc-if value="{{r.isGroup}}" hint-placeholder-val="{{false}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></sc-if>
+          <sc-if value="{{r.isBcast}}" hint-placeholder-val="{{false}}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 11 18-5v12L3 14v-3z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path></svg></sc-if>
+          <sc-if value="{{r.tag}}" hint-placeholder-val="{{false}}">
+            <span aria-hidden="true" style="position: absolute; right: -4px; bottom: -4px; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 4px; border-radius: 9px; background: #c2410c; color: #ffffff; border: 2px solid #ffffff; font-size: 10px; font-weight: 800; line-height: 14px; text-align: center">{{r.tag}}</span>
+          </sc-if>
+          <sc-if value="{{r.online}}" hint-placeholder-val="{{false}}">
+            <span style="position: absolute; right: 0; bottom: 0; width: 12px; height: 12px; border-radius: 6px; background: #16a34a; border: 2px solid #ffffff"></span>
+          </sc-if>
+        </span>
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px">
+          <span style="display: flex; align-items: center; gap: 6px">
+            <span style="flex: 1; min-width: 0; font-size: 15px; font-weight: {{r.weight}}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.name}}</span>
+            <span style="font-size: 12px; color: {{r.timeColor}}; font-weight: {{r.timeWeight}}">{{r.time}}</span>
+          </span>
+          <span style="display: flex; align-items: center; gap: 6px">
+            <sc-if value="{{r.state}}" hint-placeholder-val="{{false}}">
+              <span style="padding: 0 7px; border-radius: 999px; background: {{r.stateBg}}; color: {{r.stateFg}}; font-size: 11px; font-weight: 700; white-space: nowrap">{{r.state}}</span>
+            </sc-if>
+            <span style="flex: 1; min-width: 0; font-size: 13px; color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.last}}</span>
+            <sc-if value="{{r.unread}}" hint-placeholder-val="{{false}}">
+              <span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{r.unread}}</span>
+            </sc-if>
+          </span>
+        </span>
+      </a>
+      </sc-if>
+      <sc-if value="{{r.isTicket}}" hint-placeholder-val="{{false}}">
+      <a href="{{r.href}}" style="display: flex; gap: 12px; padding: 10px 16px; text-decoration: none; color: #0f172a; border-bottom: 1px solid #f1f5f9">
+        <span style="width: 48px; height: 48px; box-sizing: border-box; border-radius: 13px; background: {{r.tBg}}; border: 1.5px solid {{r.tLine}}; color: {{r.tFg}}; display: flex; align-items: center; justify-content: center; flex-shrink: 0">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"></path></svg>
+        </span>
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px">
+          <span style="display: flex; align-items: center; gap: 6px">
+            <span style="flex: 1; min-width: 0; font-size: 15px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.subject}}</span>
+            <span style="padding: 0 9px; border-radius: 999px; background: {{r.stateBg}}; color: {{r.stateFg}}; font-size: 11px; font-weight: 700; white-space: nowrap">{{r.state}}</span>
+          </span>
+          <span style="display: flex; align-items: center; gap: 8px; min-width: 0">
+            <span style="display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 7px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; max-width: 170px"># {{r.channel}}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #475569">#{{r.no}}</span>
+          </span>
+          <span style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: #64748b; min-width: 0">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>
+            <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Created by <b style="color: #334155">{{r.creator}}</b></span>
+            <span style="flex: 1"></span>
+            <sc-if value="{{r.unread}}" hint-placeholder-val="{{false}}">
+              <span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center">{{r.unread}}</span>
+            </sc-if>
+            <span style="color: {{r.timeColor}}; font-weight: {{r.timeWeight}}; white-space: nowrap">{{r.time}}</span>
+          </span>
+        </span>
+      </a>
+      </sc-if>
+    </sc-for>
+  </div>
+  <nav class="tb" aria-label="Main">
+    <a href="MHome.dc.html" class="on" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+    <a href="MChannels.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>Channels</a>
+    <a href="MMyDay.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>My Day</a>
+    <a href="MMail.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="m3.5 7 8.5 6 8.5-6"></path></svg>Mail</a>
+    <a href="MMe.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>Me</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { f: 'All' }; }
+  renderVals() {
+    const ST = { 'New': ['#eff6ff', '#1d4ed8'], 'In progress': ['#f0fdf4', '#15803d'], 'Hold': ['#fffbeb', '#b45309'], 'Ended': ['#f1f5f9', '#334155'] };
+    const R = [
+      { k: 'Chats', name: 'Mona Hassan', initials: 'MH', color: '#7c3aed', last: 'Can you check the drum order?', time: '11:58', unread: 2, online: true, href: 'MChat.dc.html' },
+      { k: 'Tickets', subject: 'Vendor code for Delta Packaging', channel: 'Purchasing', no: '2301855', creator: 'Mona Hassan', state: 'In progress', time: '11:40', unread: 1, href: 'MTicket.dc.html' },
+      { k: 'Groups', name: 'GLC Public', initials: 'GP', color: '#c2410c', tag: 'B', last: 'HR: Office closes at 2 pm on Thursday', time: '10:15', href: 'MGroup.dc.html' },
+      { k: 'Groups', name: 'Purchasing team', initials: 'PT', color: '#0f766e', tag: 'G', last: 'Samy: price list attached', time: '09:31', unread: 5, href: 'MGroup.dc.html' },
+      { k: 'Mail', name: 'Delta Packaging', initials: '@', color: '#2563eb', last: 'Quotation Q-2291 for 5,000 drums', time: '09:12', unread: 1, href: 'MMailRead.dc.html' },
+      { k: 'Tickets', subject: 'Phone Replacement', channel: 'IT Operations', no: '174769', creator: 'Hossam Abdel Fattah', state: 'New', time: 'Yesterday', href: 'MTicket.dc.html' },
+      { k: 'Chats', name: 'Ahmed Samy', initials: 'AS', color: '#0f766e', last: 'Voice note · 0:24', time: 'Yesterday', href: 'MChat.dc.html' },
+      { k: 'Tickets', subject: 'Customs papers for shipment 44', channel: 'Logistics', no: '2301801', creator: 'Khaled Nabil', state: 'Ended', time: 'Mon', href: 'MTicket.dc.html' },
+      { k: 'Chats', name: 'Khaled Nabil', initials: 'KN', color: '#b45309', last: 'Thanks!', time: 'Sun', href: 'MChat.dc.html' }
+    ];
+    const f = this.state.f;
+    const rows = R.filter(r => f === 'All' || (f === 'Unread' ? r.unread : r.k === f)).map(r => ({
+      ...r, radius: r.tag ? '13px' : '24px', tag: r.tag || false, online: !!r.online,
+      isTicket: r.k === 'Tickets', notTicket: r.k !== 'Tickets',
+      tFg: r.state && r.state !== 'Ended' ? ST[r.state][1] : '#9a3412', tBg: r.state && r.state !== 'Ended' ? ST[r.state][0] : '#fff7ed', tLine: r.state && r.state !== 'Ended' ? ST[r.state][1] : '#fdba74',
+      isGroup: r.tag === 'G', isBcast: r.tag === 'B', showInitials: !r.tag,
+      color: r.tag === 'G' ? '#f8fafc' : r.tag === 'B' ? '#fff7ed' : r.color,
+      border: r.tag === 'G' ? '1.5px solid #e2e8f0' : r.tag === 'B' ? '1.5px solid #fdba74' : 'none',
+      fg: r.tag === 'G' ? '#475569' : r.tag === 'B' ? '#9a3412' : '#ffffff',
+      unread: r.unread || false, weight: r.unread ? '800' : '600', timeColor: r.unread ? '#9a3412' : '#64748b', timeWeight: r.unread ? '700' : '400',
+      state: r.state || false, stateBg: r.state ? ST[r.state][0] : '', stateFg: r.state ? ST[r.state][1] : '', rowBg: '#ffffff'
+    }));
+    return {
+      chips: ['All', 'Unread', 'Chats', 'Groups', 'Tickets', 'Mail'].map(l => {
+        const on = l === f;
+        return { label: l, sel: on ? 'true' : 'false', bg: on ? '#c2410c' : '#ffffff', fg: on ? '#ffffff' : '#0f172a', border: on ? '#c2410c' : '#e2e8f0', pick: () => this.setState({ f: l }) };
+      }),
+      rows
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -289,7 +289,7 @@ export default function TicketInfoPanel({ ticketId, header, isOnline, actions, e
         <MediaSection ticketId={ticketId} entity={entity} onView={onView} heading={heading} />
       </div>
       {inviting && (
-        <AddMembersDialog title="Invite to ticket" verb="Invite" where="ticket" adminLabel="Ticket admin" existingIds={state.members.map(m => m.id)}
+        <AddMembersDialog title="Invite to ticket" verb="Invite" where="ticket" adminLabel={header?.isManager ? 'Ticket admin' : ''} existingIds={state.members.map(m => m.id)}
           onAdd={invite} onClose={() => setInviting(false)} />
       )}
     </aside>

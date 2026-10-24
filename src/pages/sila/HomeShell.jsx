@@ -180,14 +180,14 @@ function ConversationRow({ item, active, online, onPick, dbl = false, terms, onT
           // where it lives, the number quieter in mono
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', minWidth: 0 }}>
             {item.raw?.ChannelName && (
-              // the channel as a chip: # icon + name, cut with "..." when long
+              // Let long channel names wrap so the destination stays readable.
               <span title={item.raw.ChannelName} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, maxWidth: '100%', height: 20, padding: '0 8px 0 6px',
-                borderRadius: 6, background: 'var(--soft)', border: '1px solid var(--border)', color: 'var(--text2)',
-                fontSize: 11.5, fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, maxWidth: '100%', minHeight: 26, padding: '3px 9px',
+                borderRadius: 7, background: 'var(--soft)', border: '1px solid var(--border2)', color: 'var(--text)',
+                fontSize: 13, lineHeight: 1.4, fontWeight: 700,
               }}>
-                <Hash size={11} strokeWidth={2.4} style={{ flexShrink: 0, color: 'var(--muted)' }} />
-                <span dir="auto" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                <Hash size={14} strokeWidth={2.2} style={{ flexShrink: 0, color: 'var(--text2)' }} />
+                <span dir="auto" style={{ overflowWrap: 'anywhere', minWidth: 0 }}>
                   <Mark text={item.raw.ChannelName} terms={terms} />
                 </span>
               </span>

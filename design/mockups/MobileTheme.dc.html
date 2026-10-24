@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila Mobile — Theme</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font-family:inherit}
+.sw{display:flex;align-items:center;gap:10px;font-size:12px}
+.chip{width:34px;height:34px;border-radius:9px;border:1px solid rgba(15,23,42,.12);flex-shrink:0}
+.tk{font-family:'JetBrains Mono',monospace;font-size:11px;color:#475569}
+.h{margin:0;font-size:12px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.06em}
+.card{background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.pill{padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700}
+</style>
+</helmet>
+<div style="width: 1200px; height: 844px; box-sizing: border-box; padding: 28px; background: #f1f5f9; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.5; display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 16px">
+
+  <div style="display: flex; flex-direction: column; gap: 16px">
+    <div class="card" style="flex-direction: row; align-items: center; gap: 14px">
+      <img src="/_blob/675c5e79e89591485bc5a1234cb13379" alt="Sila logo" style="width: 56px; height: 56px; object-fit: contain">
+      <div style="display: flex; flex-direction: column">
+        <span style="font-size: 20px; font-weight: 800">Sila mobile theme</span>
+        <span style="font-size: 12px; color: #475569">Same tokens as the web app (src/index.css). Light and dark.</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3 class="h">Colours · light / dark</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px">
+        <div class="sw"><span class="chip" style="background: #c2410c"></span><span><b>accent</b><br><span class="tk">#c2410c / #ea580c</span></span></div>
+        <div class="sw"><span class="chip" style="background: #9a3412"></span><span><b>accent-strong</b><br><span class="tk">#9a3412 / #fdba74</span></span></div>
+        <div class="sw"><span class="chip" style="background: #fff7ed"></span><span><b>accent-soft</b><br><span class="tk">#fff7ed / ea580c 14%</span></span></div>
+        <div class="sw"><span class="chip" style="background: linear-gradient(135deg,#f97316,#ea580c)"></span><span><b>brand gradient</b><br><span class="tk">#f97316 → #ea580c</span></span></div>
+        <div class="sw"><span class="chip" style="background: #f1f5f9"></span><span><b>bg</b><br><span class="tk">#f1f5f9 / #0d1117</span></span></div>
+        <div class="sw"><span class="chip" style="background: #ffffff"></span><span><b>surface</b><br><span class="tk">#ffffff / #161b22</span></span></div>
+        <div class="sw"><span class="chip" style="background: #f8fafc"></span><span><b>soft</b><br><span class="tk">#f8fafc / #1c2333</span></span></div>
+        <div class="sw"><span class="chip" style="background: #1a2332"></span><span><b>rail / header dark</b><br><span class="tk">#1a2332</span></span></div>
+        <div class="sw"><span class="chip" style="background: #0f172a"></span><span><b>text</b><br><span class="tk">#0f172a / #e6edf3</span></span></div>
+        <div class="sw"><span class="chip" style="background: #475569"></span><span><b>text2</b><br><span class="tk">#475569 / #a5b4c3</span></span></div>
+        <div class="sw"><span class="chip" style="background: #64748b"></span><span><b>muted</b><br><span class="tk">#64748b / #8b949e</span></span></div>
+        <div class="sw"><span class="chip" style="background: #e2e8f0"></span><span><b>border</b><br><span class="tk">#e2e8f0 / #30363d</span></span></div>
+        <div class="sw"><span class="chip" style="background: #16a34a"></span><span><b>green / online</b><br><span class="tk">#16a34a</span></span></div>
+        <div class="sw"><span class="chip" style="background: #dc2626"></span><span><b>red</b><br><span class="tk">#dc2626</span></span></div>
+        <div class="sw"><span class="chip" style="background: #d97706"></span><span><b>amber</b><br><span class="tk">#d97706</span></span></div>
+        <div class="sw"><span class="chip" style="background: #2563eb"></span><span><b>blue</b><br><span class="tk">#2563eb</span></span></div>
+      </div>
+      <div style="font-size: 12px; color: #475569">White text goes on <b>accent #c2410c</b> (5:1). Use the orange gradient only for the logo, never behind text.</div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 16px">
+    <div class="card">
+      <h3 class="h">Type · Plus Jakarta Sans</h3>
+      <div style="font-size: 22px; font-weight: 800; line-height: 1.2">Screen title 22 / 800</div>
+      <div style="font-size: 17px; font-weight: 800">Header 17 / 800</div>
+      <div style="font-size: 15px; font-weight: 700">Row title 15 / 700</div>
+      <div style="font-size: 14px; font-weight: 500">Body and messages 14 / 500</div>
+      <div style="font-size: 13px; color: #475569">Secondary line 13 / 400</div>
+      <div style="font-size: 12px; color: #64748b">Caption, times 12 / 400</div>
+      <div style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: .06em">Section label 11 / 800 caps</div>
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700">#2301855 · numbers JetBrains Mono</div>
+      <div style="font-size: 12px; color: #475569">Arabic: the same sizes with the system Arabic font; mirror the layout for RTL.</div>
+    </div>
+    <div class="card">
+      <h3 class="h">Shape and spacing</h3>
+      <div style="display: flex; gap: 10px; align-items: flex-end">
+        <span style="width: 54px; height: 40px; border-radius: 14px; background: #fff7ed; border: 1px solid #fdba74; font-size: 11px; display: flex; align-items: center; justify-content: center">14</span>
+        <span style="width: 54px; height: 40px; border-radius: 10px; background: #fff7ed; border: 1px solid #fdba74; font-size: 11px; display: flex; align-items: center; justify-content: center">10</span>
+        <span style="width: 54px; height: 40px; border-radius: 7px; background: #fff7ed; border: 1px solid #fdba74; font-size: 11px; display: flex; align-items: center; justify-content: center">7</span>
+        <span style="width: 54px; height: 40px; border-radius: 999px; background: #fff7ed; border: 1px solid #fdba74; font-size: 11px; display: flex; align-items: center; justify-content: center">pill</span>
+      </div>
+      <div style="font-size: 12px; color: #475569">Cards and sheets 14 · inputs and buttons 10 · chips 7 · tags pill. Spacing 4 · 8 · 12 · 16 · 20 · 24. Screen side padding 16. Touch targets at least 44 × 44.</div>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 16px">
+    <div class="card">
+      <h3 class="h">Buttons and fields</h3>
+      <button style="height: 48px; border: none; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 15px; font-weight: 700">Primary · 48</button>
+      <button style="height: 44px; border: 1px solid #e2e8f0; border-radius: 10px; background: #ffffff; color: #0f172a; font-size: 14px; font-weight: 700">Secondary · 44</button>
+      <button style="height: 44px; border: 1px solid #fecaca; border-radius: 10px; background: #fef2f2; color: #b91c1c; font-size: 14px; font-weight: 700">Destructive · 44</button>
+      <label style="display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 11px; font-weight: 700; color: #475569; letter-spacing: .08em; text-transform: uppercase">Field label</span>
+        <input value="Input 46 · soft background" style="height: 46px; box-sizing: border-box; padding: 0 14px; border: 1.5px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 14px; font-family: inherit; color: #0f172a">
+      </label>
+    </div>
+    <div class="card">
+      <h3 class="h">Ticket states</h3>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px">
+        <span class="pill" style="background: #eff6ff; color: #1d4ed8">0 New</span>
+        <span class="pill" style="background: #f0fdf4; color: #15803d">1 In progress</span>
+        <span class="pill" style="background: #fff7ed; color: #9a3412">2 Forwarded</span>
+        <span class="pill" style="background: #fffbeb; color: #b45309">3 Approve waiting</span>
+        <span class="pill" style="background: #fffbeb; color: #b45309">5 Hold</span>
+        <span class="pill" style="background: #f1f5f9; color: #334155">10 Ended</span>
+        <span class="pill" style="background: #e2e8f0; color: #475569">50 Closed</span>
+      </div>
+      <h3 class="h">Tags and badges</h3>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+        <span style="position: relative; width: 40px; height: 40px; box-sizing: border-box; border-radius: 13px; background: #f8fafc; border: 1.5px solid #e2e8f0; color: #475569; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg><span style="position: absolute; right: -4px; bottom: -4px; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 4px; border-radius: 9px; background: #c2410c; color: #ffffff; border: 2px solid #ffffff; font-size: 10px; font-weight: 800; line-height: 14px; text-align: center">G</span></span><span style="font-size: 12px">group (Users icon)</span>
+        <span style="position: relative; width: 40px; height: 40px; box-sizing: border-box; border-radius: 13px; background: #fff7ed; border: 1.5px solid #fdba74; color: #9a3412; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 11 18-5v12L3 14v-3z"></path><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"></path></svg><span style="position: absolute; right: -4px; bottom: -4px; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 4px; border-radius: 9px; background: #c2410c; color: #ffffff; border: 2px solid #ffffff; font-size: 10px; font-weight: 800; line-height: 14px; text-align: center">B</span></span><span style="font-size: 12px">broadcast (Megaphone icon)</span>
+        <span style="min-width: 20px; height: 20px; padding: 0 6px; box-sizing: border-box; border-radius: 10px; background: #c2410c; color: #ffffff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center">3</span><span style="font-size: 12px">unread</span>
+        <span style="padding: 1px 8px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 11px; font-weight: 700">Admins only</span>
+      </div>
+      <h3 class="h">Avatars</h3>
+      <div style="display: flex; gap: 8px; align-items: center">
+        <span style="position: relative; width: 44px; height: 44px; border-radius: 22px; background: #7c3aed; color: #ffffff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">MH<span style="position: absolute; right: 0; bottom: 0; width: 11px; height: 11px; border-radius: 6px; background: #16a34a; border: 2px solid #ffffff"></span></span>
+        <span style="width: 44px; height: 44px; border-radius: 22px; background: #0f766e; color: #ffffff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">AS</span>
+        <span style="width: 44px; height: 44px; border-radius: 14px; background: #1a2332; color: #ffffff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">#</span>
+        <span style="font-size: 12px; color: #475569">People round, channels rounded square. Photo when the user has one.</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1200,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

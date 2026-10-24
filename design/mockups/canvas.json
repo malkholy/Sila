@@ -155,6 +155,125 @@
       "w": 760,
       "h": 680,
       "title": "Connect to Exchange (Microsoft 365)"
+    },
+    "MobileTheme.dc.html": {
+      "x": 0,
+      "y": 5900,
+      "w": 1200,
+      "h": 844,
+      "title": "Mobile — theme for developers"
+    },
+    "MLogin.dc.html": {
+      "x": 1280,
+      "y": 5900,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Login"
+    },
+    "MHome.dc.html": {
+      "x": 1750,
+      "y": 5900,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Home"
+    },
+    "MChat.dc.html": {
+      "x": 2220,
+      "y": 5900,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Chat"
+    },
+    "MGroup.dc.html": {
+      "x": 2690,
+      "y": 5900,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Group / broadcast"
+    },
+    "MProfile.dc.html": {
+      "x": 3160,
+      "y": 5900,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Profile card"
+    },
+    "MNewChat.dc.html": {
+      "x": 3630,
+      "y": 5900,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — New chat / group"
+    },
+    "MChannels.dc.html": {
+      "x": 0,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Channels"
+    },
+    "MTicket.dc.html": {
+      "x": 470,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Ticket chat"
+    },
+    "MTicketInfo.dc.html": {
+      "x": 940,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Ticket info + actions"
+    },
+    "MNewTicket.dc.html": {
+      "x": 1410,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — New ticket"
+    },
+    "MForward.dc.html": {
+      "x": 1880,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Forward ticket"
+    },
+    "MMyDay.dc.html": {
+      "x": 2350,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — My Day"
+    },
+    "MReminder.dc.html": {
+      "x": 2820,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — New reminder"
+    },
+    "MMail.dc.html": {
+      "x": 3290,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Mail inbox"
+    },
+    "MMailRead.dc.html": {
+      "x": 3760,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Read mail"
+    },
+    "MMe.dc.html": {
+      "x": 4230,
+      "y": 7044,
+      "w": 390,
+      "h": 844,
+      "title": "Mobile — Me / settings"
     }
   },
   "order": [
@@ -175,7 +294,24 @@
     "Mail.dc.html",
     "MailCompose.dc.html",
     "MailToTicket.dc.html",
-    "MailConnect.dc.html"
+    "MailConnect.dc.html",
+    "MobileTheme.dc.html",
+    "MLogin.dc.html",
+    "MHome.dc.html",
+    "MChat.dc.html",
+    "MGroup.dc.html",
+    "MProfile.dc.html",
+    "MNewChat.dc.html",
+    "MChannels.dc.html",
+    "MTicket.dc.html",
+    "MTicketInfo.dc.html",
+    "MNewTicket.dc.html",
+    "MForward.dc.html",
+    "MMyDay.dc.html",
+    "MReminder.dc.html",
+    "MMail.dc.html",
+    "MMailRead.dc.html",
+    "MMe.dc.html"
   ],
   "notes": {
     "flows": {
@@ -198,6 +334,20 @@
       "text": "Mail — connected to Exchange",
       "kind": "title1",
       "maxW": 3800
+    },
+    "mobile1": {
+      "x": 0,
+      "y": 5640,
+      "text": "Mobile app — theme, chats, groups",
+      "kind": "title1",
+      "maxW": 4020
+    },
+    "mobile2": {
+      "x": 0,
+      "y": 6800,
+      "text": "Mobile app — tickets, My Day, mail",
+      "kind": "title1",
+      "maxW": 4620
     }
   },
   "designSystems": []

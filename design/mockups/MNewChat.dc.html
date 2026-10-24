@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila Mobile — New chat or group</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button,input,select{font-family:inherit}
+.ib{width:44px;height:44px;border-radius:12px;border:none;background:transparent;color:#0f172a;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;text-decoration:none}
+.lbl{font-size:11px;font-weight:800;color:#475569;letter-spacing:.06em;text-transform:uppercase}
+mark{background:#fed7aa;color:inherit;border-radius:3px;padding:0 1px}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #ffffff; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; overflow: hidden">
+  <header style="padding: 48px 8px 8px; display: flex; align-items: center; gap: 4px">
+    <a href="MHome.dc.html" class="ib" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></a>
+    <h1 style="flex: 1; margin: 0; font-size: 18px; font-weight: 800">{{title}}</h1>
+  </header>
+  <div role="tablist" aria-label="Type" style="margin: 0 16px 10px; padding: 4px; border-radius: 12px; background: #f1f5f9; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px">
+    <sc-for list="{{modes}}" as="m" hint-placeholder-count="3">
+      <button role="tab" aria-selected="{{m.sel}}" onClick="{{m.pick}}" style="height: 38px; border: none; border-radius: 9px; background: {{m.bg}}; color: {{m.fg}}; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: {{m.shadow}}">{{m.label}}</button>
+    </sc-for>
+  </div>
+  <sc-if value="{{isTicket}}" hint-placeholder-val="{{false}}">
+    <a href="MNewTicket.dc.html" style="margin: 0 16px; padding: 14px; border-radius: 14px; background: #fff7ed; border: 1px solid #fdba74; color: #9a3412; font-weight: 700; text-decoration: none">Continue to New ticket →</a>
+  </sc-if>
+  <sc-if value="{{isGroup}}" hint-placeholder-val="{{true}}">
+    <div style="padding: 0 16px 8px; display: flex; flex-direction: column; gap: 8px">
+      <label style="display: flex; flex-direction: column; gap: 6px">
+        <span class="lbl">Group name</span>
+        <input value="Drum suppliers" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1.5px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 15px; color: #0f172a">
+      </label>
+      <span class="lbl">Selected · {{count}}</span>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap">
+        <sc-for list="{{chosen}}" as="c" hint-placeholder-count="3">
+          <button onClick="{{c.remove}}" aria-label="Remove {{c.name}}" style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 6px 0 4px; border-radius: 999px; border: 1px solid #fdba74; background: #fff7ed; color: #9a3412; font-size: 12px; font-weight: 700; cursor: pointer">
+            <span style="width: 24px; height: 24px; border-radius: 12px; background: {{c.color}}; color: #ffffff; font-size: 10px; display: flex; align-items: center; justify-content: center">{{c.initials}}</span>{{c.name}}{{c.admin}} ×
+          </button>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+  <div style="padding: 4px 16px 8px; display: flex; gap: 8px">
+    <label style="flex: 1; display: flex; align-items: center; gap: 8px; height: 42px; padding: 0 12px; border-radius: 10px; background: #f1f5f9; color: #64748b">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+      <input aria-label="Search people" value="{{q}}" onInput="{{type}}" placeholder="Search people" style="flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-size: 15px; color: #0f172a">
+    </label>
+    <label style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)" for="ug">User group</label>
+    <select id="ug" style="height: 42px; max-width: 120px; padding: 0 8px; border-radius: 10px; border: 1px solid #e2e8f0; background: #ffffff; font-size: 13px; font-weight: 700; color: #0f172a">
+      <option>All users</option><option>Purchasing</option><option>Finance</option>
+    </select>
+  </div>
+  <div style="flex: 1; overflow: hidden">
+    <sc-for list="{{people}}" as="p" hint-placeholder-count="7">
+      <button onClick="{{p.toggle}}" aria-pressed="{{p.pressed}}" style="width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 16px; min-height: 60px; border: none; border-bottom: 1px solid #f1f5f9; background: #ffffff; text-align: left; cursor: pointer; color: #0f172a">
+        <span style="width: 44px; height: 44px; border-radius: 22px; background: {{p.color}}; color: #ffffff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0">{{p.initials}}</span>
+        <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+          <span style="font-size: 15px; font-weight: 700">{{p.pre}}<mark>{{p.hit}}</mark>{{p.post}}</span>
+          <span style="font-size: 12px; color: #64748b">{{p.title}}</span>
+        </span>
+        <span aria-hidden="true" style="width: 24px; height: 24px; border-radius: 12px; border: 2px solid {{p.ring}}; background: {{p.fill}}; color: #ffffff; display: flex; align-items: center; justify-content: center; box-sizing: border-box">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5 9-10"></path></svg>
+        </span>
+      </button>
+    </sc-for>
+  </div>
+  <div style="padding: 10px 16px 28px; border-top: 1px solid #e2e8f0">
+    <a href="{{doneHref}}" style="height: 50px; border-radius: 12px; background: #c2410c; color: #ffffff; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; text-decoration: none">{{doneLabel}}</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { mode: 'Group', q: 'mo', picked: ['Mona Hassan', 'Ahmed Samy'] }; }
+  renderVals() {
+    const st = this.state;
+    const P = [
+      ['Mona Hassan', 'MH', '#7c3aed', 'Purchasing Specialist'], ['Mohamed Adel', 'MA', '#b45309', 'Store Keeper'],
+      ['Ahmed Samy', 'AS', '#0f766e', 'Buyer'], ['Khaled Nabil', 'KN', '#2563eb', 'Logistics'],
+      ['Salma Morsy', 'SM', '#be185d', 'Accountant'], ['Omar Fathy', 'OF', '#475569', 'IT Support'], ['Nour Emad', 'NE', '#15803d', 'HR']
+    ];
+    const q = st.q.trim().toLowerCase();
+    const group = st.mode === 'Group';
+    const list = P.filter(p => !q || p[0].toLowerCase().includes(q)).map(([name, initials, color, title]) => {
+      const i = q ? name.toLowerCase().indexOf(q) : -1;
+      const on = st.picked.includes(name);
+      return {
+        name, initials, color, title,
+        pre: i < 0 ? name : name.slice(0, i), hit: i < 0 ? '' : name.slice(i, i + q.length), post: i < 0 ? '' : name.slice(i + q.length),
+        pressed: on ? 'true' : 'false', ring: on ? '#c2410c' : '#cbd5e1', fill: on ? '#c2410c' : '#ffffff',
+        toggle: () => this.setState({ picked: on ? st.picked.filter(n => n !== name) : (group ? [...st.picked, name] : [name]) })
+      };
+    });
+    return {
+      title: st.mode === 'Chat' ? 'New chat' : st.mode === 'Group' ? 'New group' : 'New ticket',
+      modes: ['Chat', 'Group', 'Ticket'].map(m => {
+        const on = m === st.mode;
+        return { label: m, sel: on ? 'true' : 'false', bg: on ? '#ffffff' : 'transparent', fg: on ? '#0f172a' : '#475569', shadow: on ? '0 1px 3px rgba(15,23,42,.12)' : 'none', pick: () => this.setState({ mode: m }) };
+      }),
+      isGroup: group, isTicket: st.mode === 'Ticket', count: st.picked.length,
+      chosen: st.picked.map((n, i) => { const p = P.find(x => x[0] === n); return { name: n, initials: p[1], color: p[2], admin: i === 0 ? ' · admin' : '', remove: () => this.setState({ picked: st.picked.filter(x => x !== n) }) }; }),
+      q: st.q, type: (e) => this.setState({ q: e.target.value }), people: list,
+      doneLabel: group ? 'Create group' : 'Start chat', doneHref: group ? 'MGroup.dc.html' : 'MChat.dc.html'
+    };
+  }
+}
+</script>
+</body>
+</html>

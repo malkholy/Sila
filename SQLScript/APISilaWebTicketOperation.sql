@@ -72,7 +72,7 @@ GO
 --   Forward ticket        { TicketID, ToChannelID, Members?: [ { UserID, IsCC } ] }
 --   Answer forward        { TicketID (the forwarded copy), Accept: 1|0 }
 --   Cancel forward        { TicketID (the original) }
---   Invite ticket members { TicketID, Members: [ { UserID, IsCC, IsAdmin? } ] }   admins / team leaders
+--   Invite ticket members { TicketID, Members: [ { UserID, IsCC, IsAdmin? } ] }   any member until ended; IsAdmin from admins / TL only
 --                            only; IsAdmin = 1 makes the invitee a ticket admin (else the channel's role)
 --   Remove ticket member  { TicketID, UserID }   managers, or yourself (leave)
 --   Leave ticket          { TicketID }   any member; not the last admin / team leader of an
@@ -579,13 +579,13 @@ BEGIN
                    @TIsManager AS CanWriteAdminNote,
                    CASE WHEN @TIsManager = 1 AND th.TicketState = 0 THEN 1 ELSE 0 END AS CanStart,
                    CASE WHEN @TIsManager = 1 AND th.TicketState = 1 THEN 1 ELSE 0 END AS CanHold,
-                   CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND th.TicketState IN (0, 1) THEN 1 ELSE 0 END AS CanEnd,
-                   CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND th.TicketState IN (5, 10) THEN 1 ELSE 0 END AS CanReopen,
-                   CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND th.TicketState IN (0, 10) THEN 1 ELSE 0 END AS CanClose,
+                   CASE WHEN @TIsManager = 1 AND th.TicketState = 1 THEN 1 ELSE 0 END AS CanEnd,
+                   CASE WHEN (@TIsManager = 1 AND th.TicketState IN (5, 10)) OR (@TIsCreator = 1 AND th.TicketState = 10) THEN 1 ELSE 0 END AS CanReopen,
+                   CASE WHEN @TIsCreator = 1 AND th.TicketState = 0 THEN 1 ELSE 0 END AS CanClose,
                    CASE WHEN @TIsManager = 1 AND th.TicketState IN (0, 1) THEN 1 ELSE 0 END AS CanForward,
                    CASE WHEN @TIsManager = 1 AND th.TicketState = 3 THEN 1 ELSE 0 END AS CanAnswerForward,
                    CASE WHEN (@TIsManager = 1 OR th.ForwardBy = @User) AND th.TicketState = 2 THEN 1 ELSE 0 END AS CanCancelForward,
-                   CASE WHEN @TIsManager = 1 AND th.TicketState < 50 THEN 1 ELSE 0 END AS CanInvite,
+                   CASE WHEN th.TicketState < 10 THEN 1 ELSE 0 END AS CanInvite,   -- any member, until ended
                    @TIsManager AS CanRemoveMembers,
                    CASE WHEN @TIsManager = 1 AND th.TicketState < 50
                          AND (SELECT COUNT(*) FROM CHA.TicketMembers x WHERE x.TicketID = th.TicketID AND x.IsLeft = 0
@@ -825,16 +825,18 @@ BEGIN
             DECLARE @AAllowed INT = CASE
                 WHEN @AAction = N'Start'  THEN CASE WHEN @TIsManager = 1 AND @TState = 0 THEN 1 ELSE 0 END
                 WHEN @AAction = N'Hold'   THEN CASE WHEN @TIsManager = 1 AND @TState = 1 THEN 1 ELSE 0 END
-                WHEN @AAction = N'End'    THEN CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND @TState IN (0, 1) THEN 1 ELSE 0 END
-                WHEN @AAction = N'Reopen' THEN CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND @TState IN (5, 10) THEN 1 ELSE 0 END
-                WHEN @AAction = N'Close'  THEN CASE WHEN (@TIsManager = 1 OR @TIsCreator = 1) AND @TState IN (0, 10) THEN 1 ELSE 0 END
+                WHEN @AAction = N'End'    THEN CASE WHEN @TIsManager = 1 AND @TState = 1 THEN 1 ELSE 0 END
+                WHEN @AAction = N'Reopen' THEN CASE WHEN (@TIsManager = 1 AND @TState IN (5, 10)) OR (@TIsCreator = 1 AND @TState = 10) THEN 1 ELSE 0 END
+                WHEN @AAction = N'Close'  THEN CASE WHEN @TIsCreator = 1 AND @TState = 0 THEN 1 ELSE 0 END
                 ELSE 0 END;
             IF @AAllowed = 0
             BEGIN
                 SET @State = 403;
-                SET @Message = CASE WHEN @AAction IN (N'Start', N'Hold') AND @TIsManager = 0
+                SET @Message = CASE WHEN @AAction IN (N'Start', N'Hold', N'End') AND @TIsManager = 0
                                       THEN N'Only ticket admins and team leaders can do that.'
-                                    WHEN @AAction IN (N'End', N'Reopen', N'Close') AND @TIsManager = 0 AND @TIsCreator = 0
+                                    WHEN @AAction = N'Close' AND @TIsCreator = 0
+                                      THEN N'Only the ticket''s creator can close it.'
+                                    WHEN @AAction = N'Reopen' AND @TIsManager = 0 AND @TIsCreator = 0
                                       THEN N'Only ticket admins, team leaders or the creator can do that.'
                                     ELSE N'That isn''t possible in the ticket''s current state.' END;
                 RETURN;
@@ -1062,22 +1064,20 @@ BEGIN
         END
 
         -- -----------------------------------------------------------------
-        -- Invite ticket members (admins / team leaders only). Roles from the
-        -- channel. Someone who had left is brought back (his Home row re-added:
+        -- Invite ticket members: any member, until the ticket is ended. Roles
+        -- from the channel; only admins / team leaders may make someone a ticket admin. Someone who had left is brought back (his Home row re-added:
         -- the update trigger only handles leaving).
         -- -----------------------------------------------------------------
         IF @Operation = N'Invite ticket members'
         BEGIN
-            IF @TIsManager = 0
-            BEGIN SET @State = 403; SET @Message = N'Only ticket admins and team leaders can invite people.'; RETURN; END
-            IF @TState >= 50
-            BEGIN SET @State = 1; SET @Message = N'This ticket is closed.'; RETURN; END
-            -- roles from the channel; the inviting manager may also make someone a TICKET
-            -- admin (Members[].IsAdmin = 1) -- only managers get this far
+            IF @TState >= 10
+            BEGIN SET @State = 1; SET @Message = N'This ticket has ended. Reopen it to invite people.'; RETURN; END
+            -- roles from the channel; an inviting admin / team leader may also make someone a
+            -- TICKET admin (Members[].IsAdmin = 1) -- ignored from anyone else
             DECLARE @IList TABLE (UserID INT PRIMARY KEY, IsAdmin INT, IsTeamLeader INT, IsCC INT, FullName NVARCHAR(MAX), Existing INT);
             INSERT INTO @IList (UserID, IsAdmin, IsTeamLeader, IsCC, FullName, Existing)
             SELECT x.UserID,
-                   CASE WHEN MAX(CASE WHEN x.IsAdmin = 1 THEN 1 ELSE 0 END) = 1 THEN 1 ELSE ISNULL(MAX(cm.IsAdmin), 0) END,
+                   CASE WHEN MAX(CASE WHEN x.IsAdmin = 1 AND @TIsManager = 1 THEN 1 ELSE 0 END) = 1 THEN 1 ELSE ISNULL(MAX(cm.IsAdmin), 0) END,
                    ISNULL(MAX(cm.IsTeamLeader), 0), MAX(CASE WHEN x.IsCC = 1 THEN 1 ELSE 0 END),
                    MAX(ISNULL(NULLIF(u.FullName, N''), u.Username)),
                    MAX(CASE WHEN tm.UserID IS NULL THEN 0 WHEN tm.IsLeft = 1 THEN 1 ELSE 2 END)
@@ -1321,7 +1321,7 @@ USING (VALUES
     (N'CHA.APISilaWebTicketOperation', N'Forward ticket',        N'Managers forward a new ticket to a channel of the same category'),
     (N'CHA.APISilaWebTicketOperation', N'Answer forward',        N'Managers of the waiting copy accept / reject it'),
     (N'CHA.APISilaWebTicketOperation', N'Cancel forward',        N'Managers or the forwarder cancel a pending forward'),
-    (N'CHA.APISilaWebTicketOperation', N'Invite ticket members', N'Admins / team leaders invite active users; roles from the channel'),
+    (N'CHA.APISilaWebTicketOperation', N'Invite ticket members', N'Members invite active users until the ticket ends; roles from the channel'),
     (N'CHA.APISilaWebTicketOperation', N'Remove ticket member',  N'Managers remove members (not the creator); anyone may leave'),
     (N'CHA.APISilaWebTicketOperation', N'Leave ticket',          N'The caller leaves a ticket; not the last admin / team leader of an open one'),
     (N'CHA.APISilaWebTicketOperation', N'Set ticket flag',       N'The caller''s own follow-up flag on a ticket he is in (due date, note)'),

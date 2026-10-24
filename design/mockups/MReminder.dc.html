@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila Mobile — New reminder</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button,input,textarea,select{font-family:inherit}
+.lbl{font-size:12px;font-weight:700;color:#475569}
+.inp{box-sizing:border-box;width:100%;height:46px;padding:0 12px;border:1.5px solid #e2e8f0;border-radius:10px;background:#f8fafc;font-size:15px;color:#0f172a}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: #f1f5f9; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.45; overflow: hidden">
+  <div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(15,23,42,.45)"></div>
+  <a href="MMyDay.dc.html" aria-label="Close" style="position: absolute; left: 0; right: 0; top: 0; height: 110px"></a>
+  <form role="dialog" aria-modal="true" aria-labelledby="rm-t" onSubmit="{{save}}" style="position: absolute; left: 0; right: 0; bottom: 0; background: #ffffff; border-radius: 20px 20px 0 0; padding: 10px 16px 28px; display: flex; flex-direction: column; gap: 12px">
+    <span style="align-self: center; width: 40px; height: 4px; border-radius: 2px; background: #cbd5e1"></span>
+    <h2 id="rm-t" style="margin: 0; font-size: 18px; font-weight: 800">New reminder</h2>
+    <label style="display: flex; flex-direction: column; gap: 6px">
+      <span class="lbl">Title</span>
+      <input class="inp" value="Call Mona about the drum order">
+    </label>
+    <label style="display: flex; flex-direction: column; gap: 6px">
+      <span class="lbl">Details (optional)</span>
+      <textarea rows="2" style="box-sizing: border-box; padding: 10px 12px; border: 1.5px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 14px; color: #0f172a; resize: none">Ask for 2 weeks delivery on the first 2,000.</textarea>
+    </label>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span class="lbl">When</span>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap">
+        <sc-for list="{{quick}}" as="q" hint-placeholder-count="4">
+          <button type="button" onClick="{{q.pick}}" aria-pressed="{{q.sel}}" style="height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid {{q.border}}; background: {{q.bg}}; color: {{q.fg}}; font-size: 13px; font-weight: 700; cursor: pointer">{{q.label}}</button>
+        </sc-for>
+      </div>
+      <div style="display: flex; gap: 8px">
+        <label style="flex: 1.3; display: flex; flex-direction: column; gap: 4px"><span class="lbl">Date</span><input class="inp" value="{{date}}"></label>
+        <label style="flex: 1; display: flex; flex-direction: column; gap: 4px"><span class="lbl">Time</span><input class="inp" value="{{time}}"></label>
+      </div>
+      <span style="font-size: 12px; color: #64748b">No date: it stays on your list without a reminder. Date only: you are reminded at 9:00.</span>
+    </div>
+    <label style="display: flex; flex-direction: column; gap: 6px">
+      <span class="lbl">Repeat</span>
+      <select class="inp"><option>Never</option><option>Every day</option><option>Every week</option><option>Every month</option></select>
+    </label>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span class="lbl">Linked to</span>
+      <span style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px 0 12px; border-radius: 10px; background: #f0fdf4; border: 1px solid #bbf7d0; font-size: 13px; font-weight: 700">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"></path></svg>
+        <span style="flex: 1">Mona Hassan · a message</span>
+        <button type="button" aria-label="Remove link" style="width: 44px; height: 44px; border: none; background: transparent; color: #475569; cursor: pointer">×</button>
+      </span>
+    </div>
+    <label style="display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 14px">
+      <input type="checkbox" checked style="width: 20px; height: 20px; accent-color: #c2410c">
+      Also notify my phone
+    </label>
+    <button type="submit" style="height: 50px; border: none; border-radius: 12px; background: #c2410c; color: #ffffff; font-size: 16px; font-weight: 700; cursor: pointer">{{saveLabel}}</button>
+  </form>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { q: 'Later today', saved: false }; }
+  renderVals() {
+    const Q = { 'In 1 hour': ['Sat 24 Oct', '13:00'], 'Later today': ['Sat 24 Oct', '17:00'], 'Tomorrow': ['Sun 25 Oct', '09:00'], 'Next week': ['Sat 31 Oct', '09:00'] };
+    const [date, time] = Q[this.state.q];
+    return {
+      quick: Object.keys(Q).map(l => { const on = l === this.state.q; return { label: l, sel: on ? 'true' : 'false', bg: on ? '#fff7ed' : '#ffffff', fg: on ? '#9a3412' : '#0f172a', border: on ? '#c2410c' : '#e2e8f0', pick: () => this.setState({ q: l, saved: false }) }; }),
+      date, time,
+      saveLabel: this.state.saved ? 'Saved to My Day' : 'Save',
+      save: (e) => { e.preventDefault(); this.setState({ saved: true }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

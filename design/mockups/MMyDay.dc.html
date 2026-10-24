@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sila Mobile — My Day</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+button{font-family:inherit}
+.tb{display:flex;border-top:1px solid #e2e8f0;background:#ffffff;padding:4px 4px 20px}
+.tb a{flex:1;min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:600;color:#64748b;text-decoration:none}
+.tb a.on{color:#c2410c;font-weight:800}
+.sec{margin:0;padding:12px 16px 4px;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: #ffffff; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; color: #0f172a; font-size: 14px; line-height: 1.45; display: flex; flex-direction: column; overflow: hidden">
+  <header style="padding: 48px 16px 8px; display: flex; align-items: center; gap: 10px">
+    <span style="flex: 1; display: flex; flex-direction: column">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800">My Day</h1>
+      <span style="font-size: 13px; color: #475569">Saturday, 24 October</span>
+    </span>
+    <div role="tablist" aria-label="View" style="padding: 3px; border-radius: 10px; background: #f1f5f9; display: flex; gap: 2px">
+      <button role="tab" aria-selected="true" style="height: 34px; padding: 0 12px; border: none; border-radius: 8px; background: #ffffff; color: #0f172a; font-size: 13px; font-weight: 700; box-shadow: 0 1px 3px rgba(15,23,42,.12)">List</button>
+      <button role="tab" aria-selected="false" style="height: 34px; padding: 0 12px; border: none; border-radius: 8px; background: transparent; color: #475569; font-size: 13px; font-weight: 700">Calendar</button>
+    </div>
+  </header>
+  <div role="tablist" aria-label="Show" style="display: flex; gap: 6px; padding: 0 16px 8px">
+    <sc-for list="{{filters}}" as="f" hint-placeholder-count="4">
+      <button role="tab" aria-selected="{{f.sel}}" onClick="{{f.pick}}" style="height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid {{f.border}}; background: {{f.bg}}; color: {{f.fg}}; font-size: 13px; font-weight: 700; cursor: pointer">{{f.label}}</button>
+    </sc-for>
+  </div>
+  <div style="flex: 1; overflow: hidden">
+    <sc-for list="{{groups}}" as="g" hint-placeholder-count="3">
+      <h2 class="sec" style="color: {{g.color}}">{{g.title}} · {{g.count}}</h2>
+      <sc-for list="{{g.items}}" as="i" hint-placeholder-count="2">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 6px 16px 6px 8px; min-height: 60px; border-bottom: 1px solid #f1f5f9">
+          <button onClick="{{i.toggle}}" aria-label="{{i.doneLabel}}" style="width: 44px; height: 44px; border: none; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0">
+            <span style="width: 24px; height: 24px; box-sizing: border-box; border-radius: 12px; border: 2px solid {{i.ring}}; background: {{i.fill}}; color: #ffffff; display: flex; align-items: center; justify-content: center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"></path></svg>
+            </span>
+          </button>
+          <a href="{{i.href}}" style="flex: 1; min-width: 0; display: flex; flex-direction: column; text-decoration: none; color: #0f172a">
+            <span style="font-size: 15px; font-weight: 700; text-decoration: {{i.strike}}; color: {{i.titleColor}}">{{i.title}}</span>
+            <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569">
+              <span style="padding: 0 7px; border-radius: 999px; background: {{i.kindBg}}; color: {{i.kindFg}}; font-weight: 700">{{i.kind}}</span>
+              <span style="color: {{i.whenColor}}; font-weight: 600">{{i.when}}</span>
+              <sc-if value="{{i.repeat}}" hint-placeholder-val="{{false}}"><span>· {{i.repeat}}</span></sc-if>
+            </span>
+          </a>
+        </div>
+      </sc-for>
+    </sc-for>
+  </div>
+  <a href="MReminder.dc.html" aria-label="New reminder or note" style="position: absolute; right: 16px; bottom: 96px; width: 56px; height: 56px; border-radius: 28px; background: #c2410c; color: #ffffff; display: flex; align-items: center; justify-content: center; box-shadow: 0 8px 20px rgba(194,65,12,.35)">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+  </a>
+  <nav class="tb" aria-label="Main">
+    <a href="MHome.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"></path></svg>Home</a>
+    <a href="MChannels.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"></path></svg>Channels</a>
+    <a href="MMyDay.dc.html" class="on" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M3 10h18M8 3v4M16 3v4"></path></svg>My Day</a>
+    <a href="MMail.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"></rect><path d="m3.5 7 8.5 6 8.5-6"></path></svg>Mail</a>
+    <a href="MMe.dc.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21a8 8 0 0 1 16 0"></path></svg>Me</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { f: 'All', done: [] }; }
+  renderVals() {
+    const st = this.state;
+    const K = { Ticket: ['#fff7ed', '#9a3412'], Note: ['#eff6ff', '#1d4ed8'], Message: ['#f0fdf4', '#15803d'] };
+    const I = [
+      { id: 1, b: 'Overdue', title: 'Send PO 7731 to Delta', kind: 'Ticket', when: 'Yesterday 15:00', href: 'MTicket.dc.html' },
+      { id: 2, b: 'Today', title: 'Call Mona about the drum order', kind: 'Message', when: '12:30', href: 'MChat.dc.html' },
+      { id: 3, b: 'Today', title: 'Weekly stock report', kind: 'Note', when: '14:00', repeat: 'Every week', href: 'MReminder.dc.html' },
+      { id: 4, b: 'Today', title: '#2301855 waiting for finance', kind: 'Ticket', when: 'Flag', href: 'MTicket.dc.html' },
+      { id: 5, b: 'Tomorrow', title: 'Renew Delta tax card', kind: 'Note', when: '09:00', href: 'MReminder.dc.html' },
+      { id: 6, b: 'Next 7 days', title: 'Laptop for Salma ready', kind: 'Ticket', when: 'Thu 10:00', href: 'MTicket.dc.html' }
+    ];
+    const C = { Overdue: '#b91c1c', Today: '#9a3412' };
+    const map = { All: null, Tickets: 'Ticket', Notes: 'Note', Messages: 'Message' };
+    const list = I.filter(i => !map[st.f] || i.kind === map[st.f]);
+    const groups = ['Overdue', 'Today', 'Tomorrow', 'Next 7 days'].map(b => {
+      const items = list.filter(i => i.b === b).map(i => {
+        const d = st.done.includes(i.id);
+        return {
+          ...i, repeat: i.repeat || false, kindBg: K[i.kind][0], kindFg: K[i.kind][1],
+          whenColor: b === 'Overdue' ? '#b91c1c' : '#475569', ring: d ? '#16a34a' : '#cbd5e1', fill: d ? '#16a34a' : '#ffffff',
+          strike: d ? 'line-through' : 'none', titleColor: d ? '#64748b' : '#0f172a', doneLabel: (d ? 'Not done: ' : 'Done: ') + i.title,
+          toggle: () => this.setState({ done: d ? st.done.filter(x => x !== i.id) : [...st.done, i.id] })
+        };
+      });
+      return { title: b, count: items.length, color: C[b] || '#475569', items };
+    }).filter(g => g.count);
+    return {
+      filters: ['All', 'Tickets', 'Notes', 'Messages'].map(l => { const on = l === st.f; return { label: l, sel: on ? 'true' : 'false', bg: on ? '#c2410c' : '#ffffff', fg: on ? '#ffffff' : '#0f172a', border: on ? '#c2410c' : '#e2e8f0', pick: () => this.setState({ f: l }) }; }),
+      groups
+    };
+  }
+}
+</script>
+</body>
+</html>
