@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Sila.MailExternal": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:7700",
+      "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development" }
+    }
+  }
+}

@@ -37,3 +37,10 @@ IIS Publish/
 # Firebase service account keys: server App_Data only, never in git
 *firebase*service-account*.json
 *firebase-sa*.json
+
+# Mail Connector API: the Exchange service account password, server only
+MailProject/MailConnectorApi/Sila.MailConnector/appsettings.Exchange.local.json
+
+# Mail Connector API publish output (zip built from it)
+MailProject/MailConnectorApi/IIS Publish/
+MailProject/MailExternalApi/IIS Publish/

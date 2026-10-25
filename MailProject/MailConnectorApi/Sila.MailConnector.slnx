@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Sila.MailConnector.Tests/Sila.MailConnector.Tests.csproj" />
+  <Project Path="Sila.MailConnector/Sila.MailConnector.csproj" />
+</Solution>

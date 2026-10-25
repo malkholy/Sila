@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Sila.MailConnector": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:7600",
+      "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development" }
+    }
+  }
+}
