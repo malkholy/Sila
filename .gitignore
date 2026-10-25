@@ -13,6 +13,9 @@ obj/
 **/bin/
 **/obj/
 **/publish/
+# ...but not the Mail Connector's Publish/ source folder (the rules above match
+# it too: git ignores case on macOS/Windows)
+!MailProject/MailConnectorApi/Sila.MailConnector/Publish/
 
 # Operating System Files
 .DS_Store
