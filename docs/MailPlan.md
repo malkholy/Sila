@@ -18,6 +18,9 @@ endpoints, the same answers and the same login, so the app never knows which
 one it reached. The same switch is the fallback: if one of them is down, its
 DNS record can point at the other.
 
+**Known so far:** Exchange Server **2019**, **550 mailboxes**, largest mailbox
+**120 GB**. Sizing and what follows from these numbers: section 1.1.
+
 Mockups: design canvas boards *Mail — Exchange inbox*, *New mail / reply*,
 *Mail to ticket*, *Connect to Exchange* (copies in `design/mockups`).
 
@@ -92,6 +95,49 @@ Mockups: design canvas boards *Mail — Exchange inbox*, *New mail / reply*,
   SilaMail, then SilaMailExt. The databases never disagree with Exchange about
   a user action.
 
+### 1.1 Our Exchange: version and size
+
+**Exchange Server 2019.**
+- EWS, streaming notifications, `SyncFolderItems` and ApplicationImpersonation
+  all work on Exchange 2019 on-premises. Nothing in this plan changes.
+- **Exchange 2019 went out of Microsoft support on 14 Oct 2025**: no more
+  security updates. Sila Mail will be one more system reaching it, so IT
+  should plan the in-place upgrade to **Exchange Server Subscription Edition**
+  (from 2019 CU14 / CU15). The plan works the same on SE; the EWS URL stays.
+- Needed CU: at least CU14 (check with IT; question 9.1).
+
+**550 mailboxes.**
+- Streaming subscriptions: about 3 connection groups of up to 200 mailboxes
+  each, one EWS connection per group.
+- The service account's **throttling policy must be raised**: the default
+  (for example `EWSMaxSubscriptions` = 20, concurrency limits) blocks 550
+  mailboxes. IT sets a custom policy with these limits raised or unlimited.
+- Safety sync (layer 3) every 5 minutes = about 2 mailbox syncs per second —
+  light for Exchange.
+- **Full differences check (layer 4) runs as a rolling check**: each night a
+  share of the mailboxes (for example 1/7), so every mailbox is fully checked
+  once a week. The quick count check still covers all 550 every cycle.
+
+**Largest mailbox 120 GB.**
+- Most of that size is usually attachments. SilaMail stores **message text and
+  attachment details only**; the files are fetched when someone opens them
+  (question 9.4). The database copy of a 120 GB mailbox is therefore far
+  smaller (rough estimate 10–30 GB of text), but it still holds hundreds of
+  thousands of items.
+- **First sync speed:** EWS gives roughly 20–50 items a second per mailbox, so
+  a mailbox with 500 000 items takes about 3–7 hours on its own. Large
+  mailboxes sync newest first (Inbox and Sent first, last months first), so the
+  user can work while older mail is still coming in.
+- **Initial load plan:** sync the last 12 months for everyone first, then older
+  mail in the background, a few mailboxes at a time, outside working hours.
+  (Final choice: question 9.3.)
+- **External copy:** loaded from a SilaMail backup (2.2), never over the
+  internet item by item. Limiting it to recent months (question 9.6) keeps it
+  small.
+- **Database sizing:** to be measured in the proof of concept on the largest
+  mailbox and two average ones, then multiplied out. IT should give the total
+  size of the Exchange databases and the average mailbox size.
+
 ### Who talks to whom
 
 | From → To | Allowed | How |
@@ -116,7 +162,7 @@ Mockups: design canvas boards *Mail — Exchange inbox*, *New mail / reply*,
 | **1. Streaming notifications** | One EWS streaming subscription per mailbox (grouped per connection). Exchange signals a folder change within about a second. | New mail, changes made in Outlook or on the phone |
 | **2. SyncFolderItems** | Every notification triggers a sync of that folder from its saved sync state. The sync state, not the notification, is the source of truth, so a lost notification loses nothing. | Adds, edits and deletes, exactly |
 | **3. Safety sync** | Every 2–5 minutes, every mailbox syncs anyway, and the folder counts are compared (quick differences check). | Dropped subscriptions, service or Exchange restarts |
-| **4. Nightly differences check** | Message IDs + ChangeKeys from Exchange compared with SilaMail; mismatches repaired. | Silent drift, bugs |
+| **4. Nightly differences check** | Message IDs + ChangeKeys from Exchange compared with SilaMail; mismatches repaired. Rolling: a share of the mailboxes each night, every mailbox once a week (1.1). | Silent drift, bugs |
 | **5. Sync on open** | When a user opens Mail and their last sync is older than N seconds, API 2 or 3 asks API 1 for a sync of that mailbox (through the request queue for API 3) and shows the answer when it arrives. | Anything still stale |
 
 - Streaming subscriptions last at most 30 minutes; API 1 renews them, and every
@@ -328,8 +374,9 @@ SilaMail.
   SilaMailExt after the lag limit (default 1 minute).
 - **Differences check depths:**
   1. *Quick* (every safety cycle): folder total and unread counts, Exchange vs DB.
-  2. *Full* (nightly and on demand): IDs + ChangeKeys per folder, no bodies
-     downloaded; finds every Missing / Extra / Changed message.
+  2. *Full* (nightly, rolling — every mailbox once a week — and on demand):
+     IDs + ChangeKeys per folder, no bodies downloaded; finds every
+     Missing / Extra / Changed message.
   3. *Repair:* re-sync only the mismatched items; more than 5% mismatched
      means a full resync of that account.
 
@@ -508,7 +555,8 @@ Ticket links.
 
 1. **Proof of concept (about 1 week).** Service account, impersonation,
    throttling policy, sync of one test mailbox into SilaMail. Measure speed and
-   time to first sync. Try the publisher vs SQL replication to SilaMailExt.
+   time to first sync on the 120 GB mailbox and two average ones, and the
+   database size per GB of mailbox. Try the publisher vs SQL replication to SilaMailExt.
    Prove the ActionID extended property can be found in Sent Items (7.1) and
    force an invalid SyncState to test the rebuild (7.5).
 2. **Read-only Mail, internal.** API 1 (sync layers 1–5 with checkpoints and
@@ -531,9 +579,12 @@ Ticket links.
 
 ## 9. Open questions (before Phase 1)
 
-1. **Exchange version:** 2016, 2019 or Subscription Edition? Is EWS enabled,
-   and what is its internal URL?
-2. **Mailboxes:** how many to start with, and how large are the biggest?
+1. **Exchange version:** ~~2016, 2019 or SE?~~ **Answered: Exchange 2019.**
+   Still open: which CU, is EWS enabled, what is its internal URL, and when
+   will IT upgrade to Subscription Edition (2019 is out of support)?
+2. **Mailboxes:** ~~how many, how large?~~ **Answered: 550 mailboxes, largest
+   120 GB.** Still open: total size of the Exchange databases and the average
+   mailbox size (for database sizing).
 3. **History depth:** first sync of the whole mailbox, or the last 6–12 months?
    Decides database size and first-sync time.
 4. **Attachments:** fetch on first open (recommended) or copy all up front?
