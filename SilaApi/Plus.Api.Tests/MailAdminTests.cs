@@ -41,7 +41,8 @@ public sealed class MailAdminTests
          "errors":[],"details":{"4":{"account":{"UserID":4},"folders":[]}}}
         """;
 
-    private static (WebApplicationFactory<Program> Factory, GatewayFactory Gateway) Create(string adminUser = "ERP_USER", bool configured = true)
+    private static (WebApplicationFactory<Program> Factory, GatewayFactory Gateway) Create(string adminUser = "ERP_USER", bool configured = true,
+        string? anyNetworkUser = null)
     {
         MailAdminEndpoints.DetailsWait = TimeSpan.FromSeconds(1);
         var gateway = new GatewayFactory();
@@ -54,6 +55,7 @@ public sealed class MailAdminTests
                 ["MailAdmin:Database"] = "MEGA25",
                 ["MailAdmin:Users:0"] = adminUser,
                 ["MailAdmin:AllowedNetworks:0"] = "10.1.0.0/16",
+                ["MailAdmin:AnyNetworkUsers:0"] = anyNetworkUser,
             }));
             b.ConfigureTestServices(services => services.AddTransient<IStartupFilter, TestClientIp>());
         });
@@ -176,6 +178,28 @@ public sealed class MailAdminTests
             var (status, body) = await Admin(factory, gateway, new { action = "overview" }, ip: ip);
             Assert.Equal(HttpStatusCode.Forbidden, status);
             Assert.Contains($"company network (this server sees your address as {ip})", body);
+        }
+    }
+
+    [Fact]
+    public async Task A_mail_admin_in_AnyNetworkUsers_opens_it_from_outside()
+    {
+        var (factory, gateway) = Create(anyNetworkUser: "erp_user");
+        using (gateway) using (factory)
+        {
+            await Push(factory);
+            Assert.Equal(HttpStatusCode.OK, (await Admin(factory, gateway, new { action = "overview" }, ip: "45.63.120.200")).Status);
+        }
+    }
+
+    [Fact]
+    public async Task AnyNetworkUsers_does_not_make_someone_a_mail_admin()
+    {
+        var (factory, gateway) = Create(adminUser: "someone_else", anyNetworkUser: "ERP_USER");
+        using (gateway) using (factory)
+        {
+            await Push(factory);
+            Assert.Equal(HttpStatusCode.Forbidden, (await Admin(factory, gateway, new { action = "overview" }, ip: "45.63.120.200")).Status);
         }
     }
 

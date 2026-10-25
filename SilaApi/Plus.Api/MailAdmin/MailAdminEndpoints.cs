@@ -17,7 +17,8 @@ namespace Plus.Api.MailAdmin;
 //     mailboxes whose details are wanted, and "sync now" requests.
 //   POST /api/v2/mail/admin  { action, userId? }   (the web app)
 //     served from the last snapshot, for a signed-in user in MailAdmin:Users
-//     calling from MailAdmin:AllowedNetworks (the username from the validated
+//     calling from MailAdmin:AllowedNetworks (or listed in MailAdmin:AnyNetworkUsers;
+//     the username from the validated
 //     token, GatewayPolicy.ResolveCaller). "account" waits briefly for the
 //     mailbox's details to arrive; "sync" is queued for the next push.
 //
@@ -38,6 +39,10 @@ public sealed class MailAdminOptions
     // The company network as this API sees callers (CIDR). Anyone else is
     // refused, signed in or not. Empty = nobody.
     public string[] AllowedNetworks { get; set; } = [];
+    // Mail admins (also in Users) who may open the Mail Monitor from any
+    // network -- for the rollout stage, while it is tested from outside.
+    // Empty = everyone must be on AllowedNetworks.
+    public string[] AnyNetworkUsers { get; set; } = [];
 
     public bool Configured => ConnectorKey.Length >= 32;
 
@@ -178,7 +183,8 @@ public static class MailAdminEndpoints
             var (_, _, username) = policy.ResolveCaller(settings.Database, http.User, ip);
             if (!settings.Users.Contains(username, StringComparer.OrdinalIgnoreCase))
                 throw new GatewayException(403, "The Mail Monitor is for mail admins only.");
-            if (!MailAdminOptions.InNetworks(ip, settings.AllowedNetworks))
+            if (!settings.AnyNetworkUsers.Contains(username, StringComparer.OrdinalIgnoreCase)
+                && !MailAdminOptions.InNetworks(ip, settings.AllowedNetworks))
                 throw new GatewayException(403,
                     $"The Mail Monitor opens only from the company network (this server sees your address as {Shown(ip)}).");
             if (!settings.Configured) throw new GatewayException(503, "The Mail Monitor is not configured on this server.");
