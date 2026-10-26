@@ -18,7 +18,7 @@ endpoints, the same answers and the same login, so the app never knows which
 one it reached. The same switch is the fallback: if one of them is down, its
 DNS record can point at the other.
 
-**Known so far:** Exchange Server **2019**, **550 mailboxes**, largest mailbox
+**Known so far:** Exchange Server **2016** (build 15.1.2507.6 = CU23), **550 mailboxes**, largest mailbox
 **120 GB**. Sizing and what follows from these numbers: section 1.1.
 
 Mockups: design canvas boards *Mail — Exchange inbox*, *New mail / reply*,
@@ -97,14 +97,18 @@ Mockups: design canvas boards *Mail — Exchange inbox*, *New mail / reply*,
 
 ### 1.1 Our Exchange: version and size
 
-**Exchange Server 2019.**
+**Exchange Server 2016 CU23.** The server reports version **15.1 (Build 2507.6)**:
+15.1 is Exchange 2016 (Exchange 2019 is 15.2), build 2507 is CU23, the last CU.
+Confirm with `Get-ExchangeServer | Format-List Name, AdminDisplayVersion`.
 - EWS, streaming notifications, `SyncFolderItems` and ApplicationImpersonation
-  all work on Exchange 2019 on-premises. Nothing in this plan changes.
-- **Exchange 2019 went out of Microsoft support on 14 Oct 2025**: no more
-  security updates. Sila Mail will be one more system reaching it, so IT
-  should plan the in-place upgrade to **Exchange Server Subscription Edition**
-  (from 2019 CU14 / CU15). The plan works the same on SE; the EWS URL stays.
-- Needed CU: at least CU14 (check with IT; question 9.1).
+  all work on Exchange 2016 on-premises: the Mail Connector API already syncs a
+  full mailbox from it (2026-10-25). Nothing in this plan changes.
+- **Exchange 2016 went out of Microsoft support on 14 Oct 2025** (with 2019): no
+  more security updates. Sila Mail will be one more system reaching it, so IT
+  should plan the move to **Exchange Server Subscription Edition**. From 2016
+  there is **no in-place upgrade** (that path exists only from 2019 CU14 / CU15):
+  new SE servers, then the mailboxes moved to them. The plan works the same on
+  SE; only the EWS URL may change (a setting of the Mail Connector API).
 
 **550 mailboxes.**
 - Streaming subscriptions: about 3 connection groups of up to 200 mailboxes
@@ -579,9 +583,10 @@ Ticket links.
 
 ## 9. Open questions (before Phase 1)
 
-1. **Exchange version:** ~~2016, 2019 or SE?~~ **Answered: Exchange 2019.**
-   Still open: which CU, is EWS enabled, what is its internal URL, and when
-   will IT upgrade to Subscription Edition (2019 is out of support)?
+1. **Exchange version:** ~~2016, 2019 or SE?~~ **Answered: Exchange 2016 CU23**
+   (15.1.2507.6). EWS is enabled: `https://webmail1.glcpaints.com/EWS/Exchange.asmx`
+   (tested 2026-10-25). Still open: when will IT move to Subscription Edition
+   (2016 is out of support; no in-place upgrade from 2016)?
 2. **Mailboxes:** ~~how many, how large?~~ **Answered: 550 mailboxes, largest
    120 GB.** Still open: total size of the Exchange databases and the average
    mailbox size (for database sizing).
