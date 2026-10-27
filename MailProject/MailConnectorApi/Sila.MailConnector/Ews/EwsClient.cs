@@ -46,6 +46,10 @@ public sealed record MailAttachmentInfo(string AttachmentId, string Name, string
 
 // A message's body as Exchange sends it (HTML filtered by Exchange, not yet by
 // us), its plain-text form, and its attachments' details (no file content).
+// A downloaded attachment: its name and type as Exchange gave them, the bytes
+// written, and whether it was an attached message (saved as .eml MIME).
+public sealed record AttachmentDownload(string? Name, string? ContentType, long Bytes, bool IsMessage);
+
 public sealed record MailBody(string ItemId, string? Html, string? Text, IReadOnlyList<MailAttachmentInfo> Attachments);
 
 // A thin EWS (SOAP) client over HttpClient, signed in as the service account and
@@ -289,6 +293,105 @@ public sealed class EwsClient(HttpClient http, IOptionsMonitor<ExchangeOptions> 
             recipients);
     }
 
+    // One attachment's file into destination. The answer is read as a stream and
+    // the base64 decoded as it arrives, so a large file never sits in memory as
+    // text. An attached message comes as its MIME (.eml). Past maxBytes: refused.
+    public async Task<AttachmentDownload> DownloadAttachmentAsync(string mailbox, string attachmentId, Stream destination,
+        long maxBytes, TimeSpan timeout, CancellationToken ct)
+    {
+        var body = new XElement(M + "GetAttachment",
+            new XElement(M + "AttachmentShape", new XElement(T + "IncludeMimeContent", "true")),
+            new XElement(M + "AttachmentIds", new XElement(T + "AttachmentId", new XAttribute("Id", attachmentId))));
+        using var request = NewRequest(options.CurrentValue, mailbox, body);
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(timeout);
+        try
+        {
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, limit.Token);
+            CheckStatus(response);
+            await using var stream = await response.Content.ReadAsStreamAsync(limit.Token);
+            // A SOAP fault comes with 500; any other failure has no answer to read.
+            return await ReadAttachmentAsync(stream, destination, maxBytes, limit.Token)
+                ?? throw new EwsException(EwsErrorKind.Other, $"Http{(int)response.StatusCode}", "Exchange returned an unexpected answer.");
+        }
+        catch (HttpRequestException)
+        {
+            throw new EwsException(EwsErrorKind.Connection, "Unreachable", "Exchange could not be reached.");
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            throw new EwsException(EwsErrorKind.Connection, "Timeout", "Exchange did not send the attachment in time.");
+        }
+        catch (IOException)
+        {
+            throw new EwsException(EwsErrorKind.Connection, "Interrupted", "The attachment from Exchange was cut off.");
+        }
+    }
+
+    // The GetAttachment answer, read forward only. null = no response message at all.
+    internal static async Task<AttachmentDownload?> ReadAttachmentAsync(Stream xml, Stream destination, long maxBytes, CancellationToken ct)
+    {
+        using var reader = XmlReader.Create(xml, new XmlReaderSettings
+        {
+            Async = true, DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, CheckCharacters = false, IgnoreWhitespace = true,
+        });
+        string? responseClass = null, code = null, text = null, name = null, type = null;
+        var isMessage = false;
+        long written = -1;
+        var buffer = new byte[64 * 1024];
+        try
+        {
+            var more = await reader.ReadAsync();
+            while (more)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (reader.NodeType != XmlNodeType.Element) { more = await reader.ReadAsync(); continue; }
+                var ns = reader.NamespaceURI;
+                var local = reader.LocalName;
+                if (ns == Soap.NamespaceName && local == "Fault")
+                    throw Fault((XElement)await XNode.ReadFromAsync(reader, ct));
+                if (ns == M.NamespaceName && reader.GetAttribute("ResponseClass") is { } cls) responseClass ??= cls;
+                // Reading an element's content moves past it: no ReadAsync after these.
+                if (ns == M.NamespaceName && local == "ResponseCode") { code = await reader.ReadElementContentAsStringAsync(); more = !reader.EOF; continue; }
+                if (ns == M.NamespaceName && local == "MessageText") { text = await reader.ReadElementContentAsStringAsync(); more = !reader.EOF; continue; }
+                if (ns == T.NamespaceName)
+                {
+                    if (local == "ItemAttachment") isMessage = true;
+                    if (local == "Name" && name is null) { name = await reader.ReadElementContentAsStringAsync(); more = !reader.EOF; continue; }
+                    if (local == "ContentType" && type is null) { type = await reader.ReadElementContentAsStringAsync(); more = !reader.EOF; continue; }
+                    if (local is "Content" or "MimeContent" && written < 0)
+                    {
+                        written = 0;
+                        int read;
+                        while ((read = await reader.ReadElementContentAsBase64Async(buffer, 0, buffer.Length)) > 0)
+                        {
+                            written += read;
+                            if (written > maxBytes)
+                                throw new EwsException(EwsErrorKind.Other, "AttachmentTooLarge",
+                                    $"The attachment is larger than {maxBytes / (1024 * 1024)} MB.");
+                            await destination.WriteAsync(buffer.AsMemory(0, read), ct);
+                        }
+                        more = !reader.EOF;
+                        continue;
+                    }
+                }
+                more = await reader.ReadAsync();
+            }
+        }
+        catch (XmlException)
+        {
+            throw new EwsException(EwsErrorKind.Other, "BadAnswer", "Exchange returned an attachment answer that could not be read.");
+        }
+        if (responseClass is null) return null;
+        if (responseClass == "Error")
+        {
+            code ??= "Unknown";
+            throw new EwsException(Classify(code), code, text ?? code);
+        }
+        if (written < 0) throw new EwsException(EwsErrorKind.Other, "NoContent", "Exchange returned the attachment without its content.");
+        return new AttachmentDownload(Cut(name, 255), Cut(isMessage ? "message/rfc822" : type, 255), written, isMessage);
+    }
+
     internal static string BuildEnvelope(string version, string mailbox, XElement body) =>
         new XElement(Soap + "Envelope",
             new XAttribute(XNamespace.Xmlns + "soap", Soap),
@@ -333,14 +436,7 @@ public sealed class EwsClient(HttpClient http, IOptionsMonitor<ExchangeOptions> 
     private async Task<XDocument> SendAsync(string mailbox, XElement body, CancellationToken ct)
     {
         var settings = options.CurrentValue;
-        if (!settings.Configured) throw new EwsException(EwsErrorKind.Other, "NotConfigured", "Exchange is not configured.");
-        using var request = new HttpRequestMessage(HttpMethod.Post, settings.EwsUrl)
-        {
-            Content = new StringContent(BuildEnvelope(settings.RequestServerVersion, mailbox, body), Encoding.UTF8, "text/xml"),
-        };
-        // Route the call to the server that holds the mailbox (Microsoft's guidance for impersonation).
-        request.Headers.TryAddWithoutValidation("X-AnchorMailbox", mailbox);
-        request.Headers.TryAddWithoutValidation("X-PreferServerAffinity", "true");
+        using var request = NewRequest(settings, mailbox, body);
 
         // One time limit for the call and reading its answer (the body is read after the headers).
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -370,12 +466,7 @@ public sealed class EwsClient(HttpClient http, IOptionsMonitor<ExchangeOptions> 
             {
                 throw new EwsException(EwsErrorKind.Connection, "Timeout", "Exchange did not finish its answer in time.");
             }
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
-                throw new EwsException(EwsErrorKind.Authentication, "Unauthorized", "Exchange refused the service account's sign-in.");
-            if (response.StatusCode == HttpStatusCode.Forbidden)
-                throw new EwsException(EwsErrorKind.Permission, "Forbidden", "Exchange refused the request (is EWS allowed for the service account?).");
-            if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
-                throw new EwsException(EwsErrorKind.Connection, "Unavailable", "Exchange is unavailable.");
+            CheckStatus(response);
 
             var document = Parse(text);
             if (document?.Root?.Element(Soap + "Body")?.Element(Soap + "Fault") is { } fault)
@@ -384,6 +475,30 @@ public sealed class EwsClient(HttpClient http, IOptionsMonitor<ExchangeOptions> 
                 throw new EwsException(EwsErrorKind.Other, $"Http{(int)response.StatusCode}", "Exchange returned an unexpected answer.");
             return document;
         }
+    }
+
+    private static HttpRequestMessage NewRequest(ExchangeOptions settings, string mailbox, XElement body)
+    {
+        if (!settings.Configured) throw new EwsException(EwsErrorKind.Other, "NotConfigured", "Exchange is not configured.");
+        var request = new HttpRequestMessage(HttpMethod.Post, settings.EwsUrl)
+        {
+            Content = new StringContent(BuildEnvelope(settings.RequestServerVersion, mailbox, body), Encoding.UTF8, "text/xml"),
+        };
+        // Route the call to the server that holds the mailbox (Microsoft's guidance for impersonation).
+        request.Headers.TryAddWithoutValidation("X-AnchorMailbox", mailbox);
+        request.Headers.TryAddWithoutValidation("X-PreferServerAffinity", "true");
+        return request;
+    }
+
+    // The statuses that carry no SOAP answer worth reading.
+    private static void CheckStatus(HttpResponseMessage response)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new EwsException(EwsErrorKind.Authentication, "Unauthorized", "Exchange refused the service account's sign-in.");
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+            throw new EwsException(EwsErrorKind.Permission, "Forbidden", "Exchange refused the request (is EWS allowed for the service account?).");
+        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw new EwsException(EwsErrorKind.Connection, "Unavailable", "Exchange is unavailable.");
     }
 
     // The answer as text, refused past the limit (one huge message must not take

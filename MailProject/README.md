@@ -5,19 +5,21 @@ Sila Mail on the company's on-premises Exchange. The design is
 
 | Folder | API | Status |
 |---|---|---|
-| [MailConnectorApi](MailConnectorApi) | 1 — Mail Connector API: the only service that talks to Exchange (EWS), internal network only, :7600 | Step 3 |
-| — | 2 — Sila Mail API, Internal | Not started |
-| [MailExternalApi](MailExternalApi) | 3 — Sila Mail API, External: sync endpoints (receives publish batches into the `Mail` database), sila.glcpaints.com :7700 | Built, not deployed — [DEPLOY.md](MailExternalApi/DEPLOY.md) |
+| [MailConnectorApi](MailConnectorApi) | 1 — Mail Connector API: the only service that talks to Exchange (EWS), 10.1.245.2:9000, answers only on its own server | Deployed 2026-10-25 — [DEPLOY.md](MailConnectorApi/DEPLOY.md) |
+| [MailApi](MailApi) | 2 + 3 — Sila Mail API: **one program, two copies, one name** `silamail.glcpaints.com:9001` (split DNS). Internal copy (10.1.245.2, InternalMail) and external copy (sila.glcpaints.com, Mail). Users read their own mailbox; mail admins get the Mail Monitor; the external copy also receives the publisher's batches and the monitor push | Built, not deployed — [DEPLOY.md](MailApi/DEPLOY.md) |
 
 ## Databases
 
 | Database | MailPlan name | Where | Script |
 |---|---|---|---|
 | `Mail` | SilaMailExt (external copy) | Sila server, beside SILA101 | [Database/External/Mail_001_Schema.sql](Database/External/Mail_001_Schema.sql) — deployed 2026-10-25 |
-| `InternalMail` | SilaMail (internal master copy) | silamail.glcpaints.com,7020 | [Database/Internal/InternalMail_001_Schema.sql](Database/Internal/InternalMail_001_Schema.sql) — deployed 2026-10-25 |
+| `InternalMail` | SilaMail (internal master copy) | silamail.glcpaints.com,1433 | [Database/Internal/InternalMail_001_Schema.sql](Database/Internal/InternalMail_001_Schema.sql) — deployed 2026-10-25 |
 
 Run the scripts in SSMS, in number order (`deploy.sh` only reaches SILA101). They are idempotent.
 `002_CompressBodies` (both databases) changes `MailMessageBody.BodyHtml` to `BodyHtmlGz`.
+`004_Username` (both) adds `MailUser.Username` — the Sila Mail API finds a signed-in user's
+mailbox by it. Logins: `InternalMail_005_MailApiLogin.sql` (read-only, the internal Mail API),
+`Mail_003_ExternalLogin.sql` (read/write, the external Mail API).
 
 ## Mail Connector API — steps
 
@@ -57,54 +59,50 @@ Run the scripts in SSMS, in number order (`deploy.sh` only reaches SILA101). The
    The receiver applies a batch in one transaction, deletes before upserts, never overwrites a newer
    row (`PublishSeq`), and refuses a batch that would skip changes (409 → the pointer follows it).
    The batch format is shared: `MailProject/Shared/PublishContract.cs`.
-7. Exchange Sync worker: safety sync every few minutes, then streaming notifications.
+7. **Automatic sync** (built 2026-10-26): two lanes — **Initial** (a mailbox's first full copy) and
+   **Changes** (already copied: only what changed, seconds) — side by side, each syncing several
+   mailboxes at once (`AutoSync:InitialParallel` 2, `AutoSync:ChangesParallel` 4; a mailbox is never
+   synced twice at once), so a big first copy never holds up the others' updates. **Safety sync timer**
+   (`Sync/SyncScheduler.cs`, `AutoSync:Enabled`): every enabled mailbox at least every
+   `MailSettings.SafetySyncMinutes` (3); an unfinished first copy resumes by itself; a failing
+   mailbox waits ×2 per failure (at most an hour). A mailbox already queued or running is not queued
+   again. Next: EWS streaming notifications (new mail within seconds).
 8. Heartbeat for the Monitor (per worker).
 
 ### Mail Monitor (System Settings → Mail Monitor)
 
-SilaApi (7400) is hosted **outside** the company (sila.glcpaints.com = 45.63.120.158) and the company
-opens **no inbound port**, so the Mail Connector API pushes out:
+Served by the **Sila Mail API** (`/mail/v1/admin`), not by 7400 any more (moved 2026-10-26).
+Inside the office DNS sends the screen to the internal copy: live figures from InternalMail,
+"Sync now" / "Add mailbox" straight to the connector on the same server. Outside, the external
+copy serves the snapshot the connector pushes every 15 s (`/mail/v1/monitor/push`) and hands
+"Sync now" / "Add mailbox" over with each push. Mail admins only (`MailAdmin:Users`), from
+`MailAdmin:AllowedNetworks` or listed in `MailAdmin:AnyNetworkUsers`.
 
-```
- inside the company                                   │  internet  │   SilaApi :7400 (outside)
- Mail Connector API ──every 15 s: POST /api/v2/mail/monitor/push ─────▶  keeps the last snapshot (memory)
-   (InternalMail)       X-Connector-Key, snapshot =   │            │     answer: wantDetails [userIds],
-                        overview, accounts, errors,   │            │             syncs [{userId, requestedBy}]
-                        details of wanted mailboxes   │            │
-                                                                        ▲  POST /api/v2/mail/admin {action}
-                                                                        │  mail admin (MailAdmin:Users),
-                                                          web app  ─────┘  from MailAdmin:AllowedNetworks
-```
+- Web: `src/pages/sila/MailMonitor.jsx` + `src/shared/mailAdmin.js` (`MAIL_BASE`; dev proxy
+  `/mail/v1` in vite.config.js).
+- **Add mailbox:** pick a Sila user (User Master via `Settings users`) and type the address — Sila
+  keeps no email in `UserMaster` / `V_UserMaster_1`. The connector checks it
+  (`Sync/MailboxRegistration.cs`: one address in an allowed domain, the user has no other mailbox,
+  nobody else has the address or the username, Exchange opens it), saves address + username in
+  `MailUser`, and queues the first sync. Adding an existing mailbox again fills in its username.
+- The figures' queries are shared: `MailProject/Shared/MonitorQueries.cs` (connector + Mail API).
 
-- Web: `src/pages/sila/MailMonitor.jsx` (Overview, Accounts + mailbox drawer, Errors; shows how old the
-  figures are, warns after a minute without a push), data `src/shared/mailAdmin.js`.
-- SilaApi: `Plus.Api/MailAdmin/MailAdminEndpoints.cs`. `overview` / `accounts` / `errors` come from the last
-  snapshot; `account` asks the connector for that mailbox and waits up to 25 s for it; `sync` is handed
-  to the connector with its next push (within ~15 s). The snapshot lives in memory: after a restart the
-  screen is empty until the next push.
-- Mail Connector API: `Monitor/MonitorPusher.cs` (off while `Monitor:PushUrl` is empty).
+### Sila Mail API — users (read-only)
 
-**Company network only:** SilaApi refuses the Mail Monitor (403) to anyone whose address is not in
-`MailAdmin:AllowedNetworks`, even with a valid login; empty = nobody; the refusal shows the address
-SilaApi saw. (Sila has no office list in SQL — `PLS.APIPlusAttachmentOperation` answers
-`GetOfficeNetworks` with none.) Set to `10.1.0.0/16` and the office's public address
-`41.128.171.146/32` (what 7400 sees for office users, 2026-10-25). Because 7400 is outside, office users
-normally reach it from the company's **public** address — if the screen refuses with a public address,
-add that address.
+`GET /mail/v1/me`, `/folders`, `/folders/{id}/messages?before=&take=` (newest first, keyset
+paging), `/messages/{id}` (body decompressed, recipients, attachment list), `/search?q=`
+(subject, sender, recipients). Signed in with the Sila login token (checked with 7400's public
+key: signature, issuer, audience, type, expiry); the mailbox is the token user's
+(`MailUser.Username`), and every query is bound to it.
 
-Configuration (secrets on the servers only, never in git):
-
-| Where | Setting |
-|---|---|
-| Mail Connector API | `Monitor:PushUrl` = `https://sila.glcpaints.com:7400/api/v2/mail/monitor/push`, `Monitor:PushKey` = a long random key (≥ 32 characters) |
-| SilaApi (7400) | `MailAdmin:ConnectorKey` = the same key (e.g. environment variable `MailAdmin__ConnectorKey`), `MailAdmin:Users` = `["mhd"]`, `MailAdmin:AllowedNetworks` = `["10.1.0.0/16"]` (+ the office's public address if needed), optional `MailAdmin:ConnectorNetworks` = the company's public address (only it may push) |
-
-Network (2026-10-25): Exchange `webmail1.glcpaints.com` (10.1.253.3 given; resolves to 10.1.225.3 from
-the office), Internal Mail server `silamail.glcpaints.com` 10.1.245.2 (IIS :7020 for the Mail Connector
-API, SQL :1433).
-
-Message dates (`SentAt`, `ReceivedAt`) are stored in **UTC**; the service's own timestamps
-(`SyncedAt`, logs) are server local time.
+`GET /mail/v1/attachments/{id}`: the file, only for an attachment of the caller's mailbox.
+Inside (Internal role) the Mail API gets it from the connector's
+`GET /connector/v1/mailboxes/{userId}/attachments/{id}`, which fetches it from Exchange on
+first open (GetAttachment, streamed; an attached message as `.eml`) and keeps it under
+`Attachments:Root` (`MailAttachment.StoredPath`). Only pictures and PDF keep their type;
+anything else is sent as a plain download. The external copy answers 409 for now.
+The Mail screen opens PDFs / pictures in a tab, saves the rest, and fills in a message's
+`cid:` pictures.
 
 ### Endpoints so far
 

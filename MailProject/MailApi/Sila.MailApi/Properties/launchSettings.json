@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "Sila.MailApi": {
+      "commandName": "Project",
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:9001",
+      "environmentVariables": { "ASPNETCORE_ENVIRONMENT": "Development" }
+    }
+  }
+}

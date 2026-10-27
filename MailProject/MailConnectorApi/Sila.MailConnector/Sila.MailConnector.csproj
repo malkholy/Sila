@@ -18,6 +18,7 @@
     <InternalsVisibleTo Include="Sila.MailConnector.Tests" />
     <!-- the publish batch, shared with the Mail External API -->
     <Compile Include="../../Shared/PublishContract.cs" Link="Contract/PublishContract.cs" />
+    <Compile Include="../../Shared/MonitorQueries.cs" Link="Contract/MonitorQueries.cs" />
     <None Update="Install-MailConnector.ps1" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../DEPLOY.md" Link="DEPLOY.md" CopyToPublishDirectory="PreserveNewest" CopyToOutputDirectory="Never" />
     <Content Include="../../Database/Internal/*.sql" LinkBase="SQL" CopyToPublishDirectory="PreserveNewest" CopyToOutputDirectory="Never" />

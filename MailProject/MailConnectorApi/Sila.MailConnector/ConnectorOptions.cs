@@ -80,3 +80,18 @@ public sealed class PublishOptions
 
     public bool Configured => !string.IsNullOrWhiteSpace(Url) && Key.Length >= 32;
 }
+
+// Attachments: a file is fetched from Exchange the first time someone opens it
+// (MailPlan 6.2), then kept under Root (a folder on this server only the app
+// pool can read) and served from there. Empty Root = attachments are off.
+// MaxBytes: a larger file is refused. TimeoutSeconds: one download from Exchange.
+// Parallel: Exchange downloads at the same time (more wait their turn).
+public sealed class AttachmentOptions
+{
+    public string Root { get; set; } = "";
+    public long MaxBytes { get; set; } = 50L * 1024 * 1024;
+    public int TimeoutSeconds { get; set; } = 300;
+    public int Parallel { get; set; } = 4;
+
+    public bool Configured => !string.IsNullOrWhiteSpace(Root);
+}

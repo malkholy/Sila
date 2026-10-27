@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 using Sila.MailConnector;
 using Sila.MailConnector.Data;
 using Sila.MailConnector.Ews;
+using Sila.MailConnector.Files;
 using Sila.MailConnector.Monitor;
 using Sila.MailConnector.Publish;
 using Sila.MailConnector.Sync;
@@ -13,7 +14,7 @@ using Sila.MailConnector.Sync;
 // Mail Connector API (MailPlan "API 1"): the only Sila service that talks to
 // Exchange. Internal network only; called by the other Sila servers, never by
 // users. So far: configuration, the network restriction, health, an Exchange
-// check, mailbox registration, and syncing one folder into InternalMail.
+// check, mailbox registration, syncing into InternalMail, and attachment files.
 var builder = WebApplication.CreateBuilder(args);
 // The service account password lives beside the API on the server only.
 // Deployment environment variables and command-line settings retain precedence.
@@ -41,8 +42,22 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.Configure<RouteHandlerOptions>(options => options.ThrowOnBadRequest = true);
 builder.Services.AddSingleton<MailStore>();
 builder.Services.AddTransient<MailboxSync>();
+builder.Services.AddTransient<MailboxRegistration>();
+// Attachment files, fetched from Exchange on first open and kept on this server.
+builder.Services.AddOptions<AttachmentOptions>().BindConfiguration("Attachments")
+    .Validate(x => x.MaxBytes is >= 1024 * 1024 and <= 150L * 1024 * 1024 && x.TimeoutSeconds is >= 30 and <= 1800
+        && x.Parallel is >= 1 and <= 16, "Invalid Attachments limits (MaxBytes 1..150 MB, TimeoutSeconds 30..1800, Parallel 1..16).")
+    .ValidateOnStart();
+builder.Services.AddTransient<AttachmentCache>();
 builder.Services.AddSingleton<SyncQueue>();
 builder.Services.AddHostedService<SyncWorker>();
+// The safety sync timer: every mailbox at least every MailSettings SafetySyncMinutes.
+builder.Services.AddOptions<AutoSyncOptions>().BindConfiguration("AutoSync")
+    .Validate(x => x.CheckSeconds is >= 10 and <= 600, "AutoSync:CheckSeconds must be 10..600.")
+    .Validate(x => x.InitialParallel is >= 1 and <= 8 && x.ChangesParallel is >= 1 and <= 16,
+        "AutoSync:InitialParallel must be 1..8 and AutoSync:ChangesParallel 1..16.")
+    .ValidateOnStart();
+builder.Services.AddHostedService<SyncScheduler>();
 // Mail Monitor: figures pushed out to SilaApi (7400, outside the company) -- no inbound port.
 builder.Services.AddOptions<MonitorOptions>().BindConfiguration("Monitor")
     .Validate(x => string.IsNullOrWhiteSpace(x.PushUrl)
@@ -96,27 +111,57 @@ app.MapGet("/health", async (IOptionsMonitor<ExchangeOptions> exchange, MailStor
     time = DateTimeOffset.Now,
 }));
 
-// POST /connector/v1/mailboxes  JSON: userId, smtpAddress, displayName
-// Registers a Sila user's mailbox, after checking Exchange can open it.
-app.MapPost("/connector/v1/mailboxes", async (MailboxRequest body, IOptionsMonitor<ExchangeOptions> exchange,
-    EwsClient ews, MailStore store, CancellationToken ct) =>
+// GET /connector/v1/exchange/check?mailbox=user@domain&folder=inbox
+// Signs in as the service account, impersonates the mailbox and reads one folder:
+// proves EWS, the sign-in, the impersonation role and its scope in one call.
+app.MapGet("/connector/v1/exchange/check", async (string? mailbox, string? folder,
+    IOptionsMonitor<ExchangeOptions> exchange, EwsClient ews, ILoggerFactory logs, CancellationToken ct) =>
 {
-    if (body.UserId is not > 0) return Error(400, "InvalidUser", "userId (the Sila UserID) is required.");
-    if (!IsAllowedMailbox(body.SmtpAddress, exchange.CurrentValue))
-        return Error(400, "InvalidMailbox", "smtpAddress must be one address in an allowed domain (Exchange:AllowedDomains).");
-    var name = body.DisplayName?.Trim();
-    if (name is { Length: > 256 }) return Error(400, "InvalidName", "displayName is at most 256 characters.");
+    var settings = exchange.CurrentValue;
+    if (!settings.Configured)
+        return Error(503, "NotConfigured", "Exchange is not configured (Exchange:EwsUrl, Username, Password).");
+    if (!IsAllowedMailbox(mailbox, settings))
+        return Error(400, "InvalidMailbox", "mailbox must be one address in an allowed domain (Exchange:AllowedDomains).");
+    var folderId = string.IsNullOrWhiteSpace(folder) ? "inbox" : folder;
+    if (!EwsClient.DistinguishedFolders.Contains(folderId))
+        return Error(400, "InvalidFolder", $"folder must be one of: {string.Join(", ", EwsClient.DistinguishedFolders)}.");
+
+    var started = Stopwatch.GetTimestamp();
     try
     {
-        await ews.GetFolderAsync(body.SmtpAddress!, "inbox", ct);
+        var info = await ews.GetFolderAsync(mailbox!, folderId, ct);
+        return Results.Ok(new
+        {
+            success = true,
+            mailbox,
+            folder = info.DisplayName,
+            totalCount = info.TotalCount,
+            unreadCount = info.UnreadCount,
+            elapsedMs = (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+        });
     }
     catch (EwsException error)
     {
-        return Error(error.Kind == EwsErrorKind.NotFound ? 404 : 502, error.Code, error.Message, error.Kind);
+        logs.CreateLogger("Exchange").LogWarning("Exchange check failed for {Mailbox}: {Kind} {Code}", mailbox, error.Kind, error.Code);
+        var status = error.Kind switch
+        {
+            EwsErrorKind.NotFound => 404,
+            EwsErrorKind.Throttling => 503,
+            _ => 502,
+        };
+        return Error(status, error.Code, error.Message, error.Kind, error.BackOffMilliseconds);
     }
-    var added = await store.SaveUserAsync(body.UserId.Value, body.SmtpAddress!.ToLowerInvariant(),
-        string.IsNullOrEmpty(name) ? null : name, ct);
-    return Results.Ok(new { success = true, added, userId = body.UserId });
+});
+
+// POST /connector/v1/mailboxes  JSON: userId, smtpAddress, displayName, username
+// Registers a Sila user's mailbox (the same checks as "Add mailbox" in the Mail
+// Monitor: MailboxRegistration) and queues its first sync.
+app.MapPost("/connector/v1/mailboxes", async (MailboxRequest body, MailboxRegistration registration, CancellationToken ct) =>
+{
+    var result = await registration.AddAsync(body.UserId ?? 0, body.SmtpAddress, body.DisplayName, body.Username, "Admin", ct);
+    return result.Ok
+        ? Results.Ok(new { success = true, userId = body.UserId, message = result.Message })
+        : Error(400, "NotAdded", result.Message);
 });
 
 // POST /connector/v1/mailboxes/{userId}/sync?folder=all
@@ -129,8 +174,8 @@ app.MapPost("/connector/v1/mailboxes/{userId:int}/sync", async (int userId, stri
     if (folderName != MailboxSync.AllFolders && !MailboxSync.FolderTypes.ContainsKey(folderName))
         return Error(400, "InvalidFolder",
             $"folder must be {MailboxSync.AllFolders} or one of: {string.Join(", ", MailboxSync.FolderTypes.Keys)}.");
-    if (await store.GetUserAsync(userId, ct) is null) return Error(404, "NotRegistered", "Mailbox not registered.");
-    return queue.TryEnqueue(new SyncRequest(userId, folderName, "Admin"))
+    if (await store.GetUserAsync(userId, ct) is not { } user) return Error(404, "NotRegistered", "Mailbox not registered.");
+    return queue.TryEnqueue(new SyncRequest(userId, folderName, "Admin", SyncRequest.LaneFor(user.LastSyncAt)))
         ? Results.Accepted(value: new { success = true, queued = true, userId, folder = folderName })
         : Error(503, "QueueFull", "Too many syncs are waiting. Try again shortly.");
 });
@@ -140,6 +185,16 @@ app.MapGet("/connector/v1/mailboxes/{userId:int}", async (int userId, MailStore 
     await store.GetStatusAsync(userId, ct) is { } status
         ? Results.Ok(status)
         : Error(404, "NotRegistered", "Mailbox not registered."));
+
+// GET /connector/v1/mailboxes/{userId}/attachments/{attachmentId}
+// The file (application/octet-stream): from this server's store, or fetched from
+// Exchange first. The caller (the Mail API) checks who may open it and names it.
+app.MapGet("/connector/v1/mailboxes/{userId:int}/attachments/{attachmentId:long}", async (int userId, long attachmentId,
+    AttachmentCache cache, CancellationToken ct) =>
+{
+    var result = await cache.OpenAsync(userId, attachmentId, ct);
+    return result.Ok ? Results.File(result.Path!, "application/octet-stream") : Error(result.Status, result.Code, result.Message);
+});
 
 app.Run();
 
@@ -154,4 +209,4 @@ static IResult Error(int status, string code, string message, EwsErrorKind? kind
 
 public partial class Program;
 
-public sealed record MailboxRequest(int? UserId, string? SmtpAddress, string? DisplayName);
+public sealed record MailboxRequest(int? UserId, string? SmtpAddress, string? DisplayName, string? Username = null);

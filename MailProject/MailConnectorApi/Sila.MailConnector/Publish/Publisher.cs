@@ -166,7 +166,7 @@ internal sealed class BatchPlan
             switch (table)
             {
                 case "MailUser" when op == 'U' && rows.Users.TryGetValue(id, out var u):
-                    users.Add(new UserRow(u.UserId, u.Smtp, u.Name, u.Enabled, u.Status, u.LastSync, u.LastNote, u.Items, u.Unread, seq));
+                    users.Add(new UserRow(u.UserId, u.Smtp, u.Name, u.Enabled, u.Status, u.LastSync, u.LastNote, u.Items, u.Unread, u.Username, seq));
                     break;
                 case "MailUser":
                     deletes.Users.Add(new KeySeq(id, seq));

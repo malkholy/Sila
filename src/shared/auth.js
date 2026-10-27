@@ -41,13 +41,21 @@ function load() {
 // timeoutMs: give up waiting for the answer (ApiError with timedOut = true).
 // The request may still have been carried out on the server.
 async function post(path, body, token, timeoutMs = 0) {
+  return request('POST', path, body, token, timeoutMs);
+}
+
+async function request(method, path, body, token, timeoutMs = 0) {
   let res;
   const ctrl = timeoutMs ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
   try {
-    res = await fetch(API_BASE + path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    // a full URL (another Sila API, e.g. the Mail API) is used as it is
+    res = await fetch(/^https?:\/\//i.test(path) ? path : API_BASE + path, {
+      method,
+      headers: {
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: ctrl?.signal,
     });
@@ -135,6 +143,17 @@ export async function authPost(path, body, timeoutMs = 0) {
     if (err.status !== 401) throw err;
     access = null;
     return post(path, body, await refresh(), timeoutMs);
+  }
+}
+
+// Authenticated GET (e.g. the Mail API's /mail/v1/...); one silent refresh + retry on 401.
+export async function authGet(path, timeoutMs = 0) {
+  try {
+    return await request('GET', path, undefined, await getAccessToken(), timeoutMs);
+  } catch (err) {
+    if (err.status !== 401) throw err;
+    access = null;
+    return request('GET', path, undefined, await refresh(), timeoutMs);
   }
 }
 

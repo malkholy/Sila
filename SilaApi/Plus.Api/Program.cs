@@ -15,7 +15,6 @@ using Plus.Api;
 using Plus.Api.Auth;
 using Plus.Api.Attachments;
 using Plus.Api.Live;
-using Plus.Api.MailAdmin;
 using Plus.Api.Photos;
 using Plus.Api.Push;
 using System.Security.Claims;
@@ -196,13 +195,6 @@ builder.Services.AddOptions<PhotoOptions>().BindConfiguration("Photos");
 builder.Services.AddHttpClient(HttpPhotoSource.ClientName, c => c.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddSingleton<IPhotoSource, HttpPhotoSource>();
-// Mail Monitor (/api/v2/mail/admin, fed by /api/v2/mail/monitor/push from the Mail Connector API).
-builder.Services.AddOptions<MailAdminOptions>().BindConfiguration("MailAdmin")
-    .Validate(x => x.AllowedNetworks.Concat(x.ConnectorNetworks).All(n => System.Net.IPNetwork.TryParse(n, out _)),
-        "Invalid MailAdmin:AllowedNetworks / ConnectorNetworks.")
-    .Validate(x => x.ConnectorKey.Length is 0 or >= 32, "MailAdmin:ConnectorKey must be empty (off) or at least 32 characters.")
-    .ValidateOnStart();
-builder.Services.AddSingleton<MailMonitorStore>();
 // Push notifications (Firebase): off unless Push:Enabled; run on the main API only.
 builder.Services.AddOptions<PushOptions>().BindConfiguration("Push");
 builder.Services.AddHttpClient(FirebaseMessaging.ClientName, c => c.Timeout = TimeSpan.FromSeconds(20));
@@ -324,8 +316,6 @@ OnlyWhen(app.MapPost("/api/v2/exec", async (ExecRequest request, HttpContext htt
 app.MapAttachments(attachmentRequestLimit);
 app.MapPhotos();
 app.MapLive();
-OnlyWhen(app.MapMailAdmin(), ExecEnabled);
-OnlyWhen(app.MapMailMonitorPush(), ExecEnabled);
 app.Run();
 
 public partial class Program;

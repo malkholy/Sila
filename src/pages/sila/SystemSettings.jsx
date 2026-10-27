@@ -11,7 +11,7 @@ import {
 import { fmtWork } from '../../shared/ticketSla.js';
 import AddMembersDialog from './AddMembersDialog.jsx';
 import ClearSearch from './ClearSearch.jsx';
-import { th, td, fullDate, Pill, Grid, Chips, muted, DrawerHeading, formBtn } from './SettingsUi.jsx';
+import { th, td, fullDate, Pill, Grid, Chips, muted, DrawerHeading, formBtn, formField } from './SettingsUi.jsx';
 import MailMonitor from './MailMonitor.jsx';
 
 // System Settings (user 'mhd' only -- the SP checks it): master lists -- User
@@ -30,10 +30,6 @@ const STATE_TONE = {
   0: 'var(--blue)', 1: 'var(--green)', 2: 'var(--orange)', 3: 'var(--amber)', 5: 'var(--amber)', 10: 'var(--text2)', 50: 'var(--muted)',
 };
 
-const formField = {
-  width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border2)',
-  background: 'var(--surface)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font)', lineHeight: '19px',
-};
 // New channel (channel = null) or edit one: name, category, private, active;
 // a new one may also get its purpose. onSaved(channelId).
 function ChannelForm({ channel, onClose, onSaved }) {

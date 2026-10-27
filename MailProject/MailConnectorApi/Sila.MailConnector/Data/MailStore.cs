@@ -2,14 +2,21 @@ using System.Data;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Sila.MailConnector.Ews;
+using Sila.Mail.Monitor;
+using Sila.MailConnector.Sync;
 
 namespace Sila.MailConnector.Data;
 
-public sealed record MailUserRow(int UserID, string SmtpAddress, bool IsEnabled, string? HierarchySyncState, int ConsecutiveFailures);
+public sealed record MailUserRow(int UserID, string SmtpAddress, bool IsEnabled, string? HierarchySyncState, int ConsecutiveFailures,
+    string? Username = null, DateTime? LastSyncAt = null);
 
 public sealed record FolderRow(long FolderID, string ExchangeFolderId, string DisplayName, string FolderType, string? SyncState);
 
 public sealed record PageResult(int Added, int Changed, int Deleted);
+
+// One attachment of one mailbox, with what is needed to fetch it from Exchange.
+public sealed record AttachmentFileRow(long AttachmentID, string ExchangeAttachmentId, string Name, string? ContentType, long? Size,
+    string? StoredPath, string SmtpAddress, bool IsEnabled);
 
 // InternalMail ([mail] schema): every statement is parameterized; every write to
 // a copied table adds its MailChange row in the same transaction (the outbox,
@@ -59,29 +66,100 @@ public sealed class MailStore(IConfiguration configuration)
     {
         await using var connection = await OpenAsync(ct);
         await using var command = Command(connection, """
-            SELECT [UserID], [SmtpAddress], [IsEnabled], [HierarchySyncState], [ConsecutiveFailures]
+            SELECT [UserID], [SmtpAddress], [IsEnabled], [HierarchySyncState], [ConsecutiveFailures], [Username], [LastSyncAt]
             FROM [mail].[MailUser] WHERE [UserID] = @UserID
             """);
         command.Parameters.Add("@UserID", SqlDbType.Int).Value = userId;
         await using var reader = await command.ExecuteReaderAsync(ct);
         return await reader.ReadAsync(ct)
             ? new MailUserRow(reader.GetInt32(0), reader.GetString(1), reader.GetBoolean(2),
-                reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetInt32(4))
+                reader.IsDBNull(3) ? null : reader.GetString(3), reader.GetInt32(4), reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetDateTime(6))
             : null;
     }
 
-    // Adds the mailbox, or updates its address / name. Returns true when it is new.
-    public async Task<bool> SaveUserAsync(int userId, string smtpAddress, string? displayName, CancellationToken ct)
+    // The attachment, only when it belongs to a live message of this mailbox.
+    public async Task<AttachmentFileRow?> GetAttachmentAsync(int userId, long attachmentId, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = Command(connection, """
+            SELECT a.[AttachmentID], a.[ExchangeAttachmentId], a.[Name], a.[ContentType], a.[Size], a.[StoredPath], u.[SmtpAddress], u.[IsEnabled]
+            FROM [mail].[MailAttachment] a
+            JOIN [mail].[MailMessage] m ON m.[MessageID] = a.[MessageID]
+            JOIN [mail].[MailUser] u ON u.[UserID] = m.[UserID]
+            WHERE a.[AttachmentID] = @AttachmentID AND m.[UserID] = @UserID AND m.[DeletedAt] IS NULL
+            """);
+        command.Parameters.Add("@AttachmentID", SqlDbType.BigInt).Value = attachmentId;
+        command.Parameters.Add("@UserID", SqlDbType.Int).Value = userId;
+        await using var r = await command.ExecuteReaderAsync(ct);
+        return await r.ReadAsync(ct)
+            ? new AttachmentFileRow(r.GetInt64(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3),
+                r.IsDBNull(4) ? null : r.GetInt64(4), r.IsDBNull(5) ? null : r.GetString(5), r.GetString(6), r.GetBoolean(7))
+            : null;
+    }
+
+    // Where the fetched file is kept (relative to Attachments:Root). Not copied
+    // outside, so no MailChange row: the external copy keeps its own files.
+    public async Task SetAttachmentStoredAsync(long attachmentId, string? storedPath, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = Command(connection, """
+            UPDATE [mail].[MailAttachment]
+            SET [StoredPath] = @StoredPath, [StoredAt] = CASE WHEN @StoredPath IS NULL THEN NULL ELSE SYSDATETIME() END
+            WHERE [AttachmentID] = @AttachmentID
+            """);
+        command.Parameters.Add("@AttachmentID", SqlDbType.BigInt).Value = attachmentId;
+        command.Parameters.Add("@StoredPath", SqlDbType.VarChar, 400).Value = (object?)storedPath ?? DBNull.Value;
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    // Every enabled mailbox, for the safety sync timer.
+    public async Task<List<SyncScheduler.Candidate>> GetSyncCandidatesAsync(CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = Command(connection, """
+            SELECT [UserID], [LastSyncAt], [LastSyncAttemptAt], [ConsecutiveFailures]
+            FROM [mail].[MailUser] WHERE [IsEnabled] = 1 ORDER BY [UserID];
+            """);
+        var list = new List<SyncScheduler.Candidate>();
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            list.Add(new(reader.GetInt32(0), reader.IsDBNull(1) ? null : reader.GetDateTime(1),
+                reader.IsDBNull(2) ? null : reader.GetDateTime(2), reader.GetInt32(3)));
+        return list;
+    }
+
+    // Which Sila user has this username's mailbox, if any.
+    public async Task<int?> GetUserIdByUsernameAsync(string username, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = Command(connection, "SELECT [UserID] FROM [mail].[MailUser] WHERE [Username] = @Username");
+        command.Parameters.Add("@Username", SqlDbType.NVarChar, 50).Value = username;
+        return await command.ExecuteScalarAsync(ct) is int id ? id : null;
+    }
+
+    // Which Sila user has this mailbox address, if any.
+    public async Task<int?> GetUserIdByAddressAsync(string smtpAddress, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = Command(connection, "SELECT [UserID] FROM [mail].[MailUser] WHERE [SmtpAddress] = @Smtp");
+        command.Parameters.Add("@Smtp", SqlDbType.NVarChar, 320).Value = smtpAddress;
+        return await command.ExecuteScalarAsync(ct) is int id ? id : null;
+    }
+
+    // Adds the mailbox, or updates its address / name / username. Returns true when it is new.
+    public async Task<bool> SaveUserAsync(int userId, string smtpAddress, string? displayName, string? username, CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(ct);
         await using var command = Command(connection, """
             DECLARE @Added BIT = 0;
             IF EXISTS (SELECT 1 FROM [mail].[MailUser] WITH (UPDLOCK, HOLDLOCK) WHERE [UserID] = @UserID)
-                UPDATE [mail].[MailUser] SET [SmtpAddress] = @Smtp, [DisplayName] = @Name WHERE [UserID] = @UserID;
+                UPDATE [mail].[MailUser] SET [SmtpAddress] = @Smtp, [DisplayName] = @Name,
+                    [Username] = COALESCE(@Username, [Username]) WHERE [UserID] = @UserID;
             ELSE
             BEGIN
-                INSERT INTO [mail].[MailUser] ([UserID], [SmtpAddress], [DisplayName]) VALUES (@UserID, @Smtp, @Name);
+                INSERT INTO [mail].[MailUser] ([UserID], [SmtpAddress], [DisplayName], [Username]) VALUES (@UserID, @Smtp, @Name, @Username);
                 SET @Added = 1;
             END
             INSERT INTO [mail].[MailChange] ([TableName], [RowKey], [Operation], [UserID])
@@ -91,6 +169,7 @@ public sealed class MailStore(IConfiguration configuration)
         command.Parameters.Add("@UserID", SqlDbType.Int).Value = userId;
         command.Parameters.Add("@Smtp", SqlDbType.NVarChar, 320).Value = smtpAddress;
         command.Parameters.Add("@Name", SqlDbType.NVarChar, 256).Value = (object?)displayName ?? DBNull.Value;
+        command.Parameters.Add("@Username", SqlDbType.NVarChar, 50).Value = (object?)username ?? DBNull.Value;
         var added = Equals(await command.ExecuteScalarAsync(ct), true);
         await transaction.CommitAsync(ct);
         return added;
@@ -794,7 +873,7 @@ public sealed class MailStore(IConfiguration configuration)
         await using var connection = await OpenAsync(ct);
         await using var command = Command(connection, """
             SELECT u.[UserID], u.[SmtpAddress], u.[DisplayName], u.[IsEnabled], u.[SyncStatus], u.[LastSyncAt], u.[LastNotificationAt],
-                   u.[ExchangeItemCount], u.[ExchangeUnreadCount]
+                   u.[ExchangeItemCount], u.[ExchangeUnreadCount], u.[Username]
             FROM [mail].[MailUser] u JOIN OPENJSON(@Users) WITH ([id] BIGINT '$') k ON k.[id] = u.[UserID];
 
             SELECT f.[FolderID], f.[UserID], f.[ParentFolderID], f.[ExchangeFolderId], f.[DisplayName], f.[FolderType], f.[TotalCount],
@@ -829,7 +908,7 @@ public sealed class MailStore(IConfiguration configuration)
         static DateTime? D(SqlDataReader x, int i) => x.IsDBNull(i) ? null : x.GetDateTime(i);
         static int? I(SqlDataReader x, int i) => x.IsDBNull(i) ? null : x.GetInt32(i);
         while (await r.ReadAsync(ct))
-            rows.Users[r.GetInt32(0)] = (r.GetInt32(0), r.GetString(1), S(r, 2), r.GetBoolean(3), r.GetString(4), D(r, 5), D(r, 6), I(r, 7), I(r, 8));
+            rows.Users[r.GetInt32(0)] = (r.GetInt32(0), r.GetString(1), S(r, 2), r.GetBoolean(3), r.GetString(4), D(r, 5), D(r, 6), I(r, 7), I(r, 8), S(r, 9));
         await r.NextResultAsync(ct);
         while (await r.ReadAsync(ct))
             rows.Folders[r.GetInt64(0)] = (r.GetInt64(0), r.GetInt32(1), r.IsDBNull(2) ? null : r.GetInt64(2), r.GetString(3), r.GetString(4),
@@ -858,7 +937,7 @@ public sealed class MailStore(IConfiguration configuration)
     public sealed class PublishRows
     {
         public Dictionary<long, (int UserId, string Smtp, string? Name, bool Enabled, string Status, DateTime? LastSync,
-            DateTime? LastNote, int? Items, int? Unread)> Users { get; } = [];
+            DateTime? LastNote, int? Items, int? Unread, string? Username)> Users { get; } = [];
         public Dictionary<long, (long Id, int UserId, long? Parent, string ExId, string Name, string Type, int Total, int Unread,
             DateTime? LastSync)> Folders { get; } = [];
         public Dictionary<long, (long Id, int UserId, long FolderId, string ItemId, string ChangeKey, string? InternetId,
@@ -898,165 +977,29 @@ public sealed class MailStore(IConfiguration configuration)
         await command.ExecuteNonQueryAsync(ct);
     }
 
-    // Mail Monitor (MailPlan 6.1): totals across every mailbox, the publish
-    // state, open errors and the latest sync runs.
+    // The Mail Monitor's figures (Shared/MonitorQueries.cs, also used by the Sila Mail API inside).
     public async Task<object> GetOverviewAsync(CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct);
-        await using var command = Command(connection, """
-            SELECT COUNT(*) AS [Mailboxes],
-                   SUM(CASE WHEN [IsEnabled] = 1 AND [SyncStatus] = 'OK' THEN 1 ELSE 0 END) AS [Ok],
-                   SUM(CASE WHEN [IsEnabled] = 1 AND [SyncStatus] = 'Behind' THEN 1 ELSE 0 END) AS [Behind],
-                   SUM(CASE WHEN [IsEnabled] = 1 AND [SyncStatus] = 'Error' THEN 1 ELSE 0 END) AS [Error],
-                   SUM(CASE WHEN [IsEnabled] = 0 THEN 1 ELSE 0 END) AS [Disabled],
-                   MIN(CASE WHEN [IsEnabled] = 1 THEN [LastSyncAt] END) AS [OldestSyncAt],
-                   MAX([LastSyncAt]) AS [LastSyncAt]
-            FROM [mail].[MailUser];
-
-            SELECT (SELECT COUNT(*) FROM [mail].[MailFolder] WHERE [IsSynced] = 1 AND [FolderType] <> 'Root') AS [Folders],
-                   (SELECT ISNULL(SUM(CAST([TotalCount] AS BIGINT)), 0) FROM [mail].[MailFolder] WHERE [IsSynced] = 1 AND [FolderType] <> 'Root') AS [ExchangeItems],
-                   (SELECT ISNULL(SUM(CAST([UnreadCount] AS BIGINT)), 0) FROM [mail].[MailFolder] WHERE [IsSynced] = 1 AND [FolderType] <> 'Root') AS [ExchangeUnread],
-                   (SELECT COUNT_BIG(*) FROM [mail].[MailMessage] WHERE [DeletedAt] IS NULL) AS [Messages],
-                   (SELECT COUNT_BIG(*) FROM [mail].[MailMessage] WHERE [DeletedAt] IS NULL AND [IsRead] = 0) AS [Unread],
-                   (SELECT COUNT_BIG(*) FROM [mail].[MailMessage] WHERE [DeletedAt] IS NOT NULL) AS [MarkedDeleted],
-                   (SELECT COUNT_BIG(*) FROM [mail].[MailMessageBody]) AS [Bodies],
-                   (SELECT COUNT_BIG(*) FROM [mail].[MailAttachment]) AS [Attachments],
-                   (SELECT COUNT_BIG(*) FROM [mail].[MailAttachment] WHERE [IsInline] = 1) AS [InlineImages],
-                   (SELECT ISNULL(SUM([Size]), 0) FROM [mail].[MailAttachment]) AS [AttachmentBytes];
-
-            SELECT p.[LastPublishedSeq], p.[LastPublishedAt], p.[LinkStatus], p.[LastError], p.[LastErrorAt],
-                   ISNULL((SELECT MAX([Seq]) FROM [mail].[MailChange]), 0) AS [LastChangeSeq]
-            FROM [mail].[MailPublishState] p;
-
-            SELECT COUNT(*) AS [OpenErrors], ISNULL(SUM([Count]), 0) AS [Occurrences]
-            FROM [mail].[MailSyncError] WHERE [ResolvedAt] IS NULL;
-
-            SELECT TOP (20) l.[SyncLogID], l.[UserID], u.[SmtpAddress], l.[Kind], l.[Reason], f.[DisplayName] AS [Folder],
-                   l.[StartedAt], l.[EndedAt], l.[Pages], l.[Added], l.[Changed], l.[Deleted], l.[Matched],
-                   l.[Succeeded], l.[ErrorKind], l.[ErrorCode], l.[ErrorMessage]
-            FROM [mail].[MailSyncLog] l
-            JOIN [mail].[MailUser] u ON u.[UserID] = l.[UserID]
-            LEFT JOIN [mail].[MailFolder] f ON f.[FolderID] = l.[FolderID]
-            ORDER BY l.[SyncLogID] DESC;
-            """);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        var accounts = (await ReadRowsAsync(reader, ct))[0];
-        await reader.NextResultAsync(ct);
-        var content = (await ReadRowsAsync(reader, ct))[0];
-        await reader.NextResultAsync(ct);
-        var publish = (await ReadRowsAsync(reader, ct)).FirstOrDefault();
-        await reader.NextResultAsync(ct);
-        var errors = (await ReadRowsAsync(reader, ct))[0];
-        await reader.NextResultAsync(ct);
-        var runs = await ReadRowsAsync(reader, ct);
-        return new { accounts, content, publish, errors, recentSyncs = runs, time = DateTime.Now };
+        return await MonitorQueries.OverviewAsync(connection, ct);
     }
 
-    // Mail Monitor, Accounts tab (MailPlan 6.2): one row per mailbox.
     public async Task<List<Dictionary<string, object?>>> GetAccountsAsync(CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct);
-        await using var command = Command(connection, """
-            SELECT u.[UserID], u.[SmtpAddress], u.[DisplayName], u.[IsEnabled], u.[SyncStatus], u.[SubscriptionStatus],
-                   u.[LastSyncAt], u.[LastSyncAttemptAt], u.[ConsecutiveFailures], u.[LastErrorKind], u.[LastErrorCode], u.[LastErrorAt],
-                   f.[Folders], f.[FoldersOk], f.[ExchangeItems], f.[ExchangeUnread],
-                   m.[Messages], m.[Unread], b.[Bodies], a.[Attachments], e.[OpenErrors],
-                   CASE WHEN r.[SyncLogID] IS NULL THEN 0 ELSE 1 END AS [Running], r.[Kind] AS [RunningKind], r.[Folder] AS [RunningFolder]
-            FROM [mail].[MailUser] u
-            OUTER APPLY (SELECT COUNT(*) AS [Folders], SUM(CASE WHEN [FolderSyncStatus] = 'OK' THEN 1 ELSE 0 END) AS [FoldersOk],
-                                ISNULL(SUM(CAST([TotalCount] AS BIGINT)), 0) AS [ExchangeItems],
-                                ISNULL(SUM(CAST([UnreadCount] AS BIGINT)), 0) AS [ExchangeUnread]
-                         FROM [mail].[MailFolder] WHERE [UserID] = u.[UserID] AND [IsSynced] = 1 AND [FolderType] <> 'Root') f
-            OUTER APPLY (SELECT COUNT_BIG(*) AS [Messages], ISNULL(SUM(CASE WHEN [IsRead] = 0 THEN 1 ELSE 0 END), 0) AS [Unread]
-                         FROM [mail].[MailMessage] WHERE [UserID] = u.[UserID] AND [DeletedAt] IS NULL) m
-            OUTER APPLY (SELECT COUNT_BIG(*) AS [Bodies] FROM [mail].[MailMessage] x
-                         JOIN [mail].[MailMessageBody] y ON y.[MessageID] = x.[MessageID]
-                         WHERE x.[UserID] = u.[UserID] AND x.[DeletedAt] IS NULL) b
-            OUTER APPLY (SELECT COUNT_BIG(*) AS [Attachments] FROM [mail].[MailMessage] x
-                         JOIN [mail].[MailAttachment] y ON y.[MessageID] = x.[MessageID]
-                         WHERE x.[UserID] = u.[UserID] AND x.[DeletedAt] IS NULL) a
-            OUTER APPLY (SELECT COUNT(*) AS [OpenErrors] FROM [mail].[MailSyncError]
-                         WHERE [UserID] = u.[UserID] AND [ResolvedAt] IS NULL) e
-            OUTER APPLY (SELECT TOP (1) l.[SyncLogID], l.[Kind], f2.[DisplayName] AS [Folder] FROM [mail].[MailSyncLog] l
-                         LEFT JOIN [mail].[MailFolder] f2 ON f2.[FolderID] = l.[FolderID]
-                         WHERE l.[UserID] = u.[UserID] AND l.[Succeeded] IS NULL AND l.[StartedAt] > DATEADD(HOUR, -12, SYSDATETIME())
-                         ORDER BY l.[SyncLogID] DESC) r
-            ORDER BY u.[SmtpAddress];
-            """);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        return await ReadRowsAsync(reader, ct);
+        return await MonitorQueries.AccountsAsync(connection, ct);
     }
 
-    // Mail Monitor, Errors tab (MailPlan 6.3): open grouped errors, newest first.
     public async Task<List<Dictionary<string, object?>>> GetErrorsAsync(CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct);
-        await using var command = Command(connection, """
-            SELECT TOP (500) e.[ErrorID], e.[ErrorType], e.[UserID], u.[SmtpAddress], e.[FolderID], f.[DisplayName] AS [Folder],
-                   e.[Code], e.[Message], e.[Count], e.[FirstSeenAt], e.[LastSeenAt]
-            FROM [mail].[MailSyncError] e
-            LEFT JOIN [mail].[MailUser] u ON u.[UserID] = e.[UserID]
-            LEFT JOIN [mail].[MailFolder] f ON f.[FolderID] = e.[FolderID]
-            WHERE e.[ResolvedAt] IS NULL
-            ORDER BY e.[LastSeenAt] DESC;
-            """);
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        return await ReadRowsAsync(reader, ct);
+        return await MonitorQueries.ErrorsAsync(connection, ct);
     }
 
-    // The mailbox's state for an admin: account, folders (Exchange vs DB counts), recent sync runs.
     public async Task<object?> GetStatusAsync(int userId, CancellationToken ct)
     {
         await using var connection = await OpenAsync(ct);
-        await using var command = Command(connection, """
-            SELECT [UserID], [SmtpAddress], [DisplayName], [IsEnabled], [SyncStatus], [LastSyncAt], [LastSyncAttemptAt],
-                   [ConsecutiveFailures], [LastErrorKind], [LastErrorCode], [LastErrorAt]
-            FROM [mail].[MailUser] WHERE [UserID] = @UserID;
-
-            SELECT f.[FolderID], f.[DisplayName], f.[FolderType], f.[TotalCount], f.[UnreadCount],
-                   (SELECT COUNT(*) FROM [mail].[MailMessage] m WHERE m.[FolderID] = f.[FolderID] AND m.[DeletedAt] IS NULL) AS [DbCount],
-                   (SELECT COUNT(*) FROM [mail].[MailMessage] m WHERE m.[FolderID] = f.[FolderID] AND m.[DeletedAt] IS NULL AND m.[IsRead] = 0) AS [DbUnread],
-                   (SELECT COUNT(*) FROM [mail].[MailMessage] m JOIN [mail].[MailMessageBody] b ON b.[MessageID] = m.[MessageID]
-                    WHERE m.[FolderID] = f.[FolderID] AND m.[DeletedAt] IS NULL) AS [DbBodies],
-                   (SELECT COUNT(*) FROM [mail].[MailMessage] m JOIN [mail].[MailAttachment] a ON a.[MessageID] = m.[MessageID]
-                    WHERE m.[FolderID] = f.[FolderID] AND m.[DeletedAt] IS NULL) AS [DbAttachments],
-                   f.[FolderSyncStatus], f.[LastSyncAt]
-            FROM [mail].[MailFolder] f WHERE f.[UserID] = @UserID AND f.[FolderType] <> 'Root'
-            ORDER BY CASE f.[FolderType] WHEN 'Inbox' THEN 0 WHEN 'Custom' THEN 2 ELSE 1 END, f.[DisplayName];
-
-            SELECT TOP (30) l.[SyncLogID], l.[Kind], l.[Reason], l.[FolderID], f.[DisplayName] AS [Folder], l.[StartedAt], l.[EndedAt],
-                   l.[Pages], l.[Added], l.[Changed], l.[Deleted], l.[Matched], l.[Succeeded], l.[ErrorKind], l.[ErrorCode], l.[ErrorMessage]
-            FROM [mail].[MailSyncLog] l LEFT JOIN [mail].[MailFolder] f ON f.[FolderID] = l.[FolderID]
-            WHERE l.[UserID] = @UserID ORDER BY l.[SyncLogID] DESC;
-
-            SELECT e.[ErrorID], e.[ErrorType], e.[FolderID], f.[DisplayName] AS [Folder], e.[Code], e.[Message], e.[Count],
-                   e.[FirstSeenAt], e.[LastSeenAt]
-            FROM [mail].[MailSyncError] e LEFT JOIN [mail].[MailFolder] f ON f.[FolderID] = e.[FolderID]
-            WHERE e.[UserID] = @UserID AND e.[ResolvedAt] IS NULL ORDER BY e.[LastSeenAt] DESC;
-            """);
-        command.Parameters.Add("@UserID", SqlDbType.Int).Value = userId;
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        var account = await ReadRowsAsync(reader, ct);
-        if (account.Count == 0) return null;
-        await reader.NextResultAsync(ct);
-        var folders = await ReadRowsAsync(reader, ct);
-        await reader.NextResultAsync(ct);
-        var runs = await ReadRowsAsync(reader, ct);
-        await reader.NextResultAsync(ct);
-        var errors = await ReadRowsAsync(reader, ct);
-        return new { account = account[0], folders, recentSyncs = runs, errors };
-    }
-
-    private static async Task<List<Dictionary<string, object?>>> ReadRowsAsync(SqlDataReader reader, CancellationToken ct)
-    {
-        var rows = new List<Dictionary<string, object?>>();
-        while (await reader.ReadAsync(ct))
-        {
-            var row = new Dictionary<string, object?>(reader.FieldCount);
-            for (var i = 0; i < reader.FieldCount; i++) row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-            rows.Add(row);
-        }
-        return rows;
+        return await MonitorQueries.AccountAsync(connection, userId, ct);
     }
 
     private static string? Cut(string? value, int max) => value is null || value.Length <= max ? value : value[..max];

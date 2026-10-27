@@ -1,15 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Mail, RefreshCw, Search, AlertTriangle, Play, Folder } from 'lucide-react';
+import { Mail, RefreshCw, Search, AlertTriangle, Play, Folder, Plus, CheckCircle2 } from 'lucide-react';
 import { formatWhen } from '../../shared/leftSide.js';
-import { loadMailOverview, loadMailAccounts, loadMailAccount, loadMailErrors, syncMailbox } from '../../shared/mailAdmin.js';
-import { Grid, Pill, Chips, muted, DrawerHeading, formBtn } from './SettingsUi.jsx';
+import { loadMailOverview, loadMailAccounts, loadMailAccount, loadMailErrors, syncMailbox, addMailbox, addMailboxResult } from '../../shared/mailAdmin.js';
+import { loadSettingsUsers } from '../../shared/settings.js';
+import Avatar from './Avatar.jsx';
+import { Grid, Pill, Chips, muted, DrawerHeading, formBtn, formField } from './SettingsUi.jsx';
 import ClearSearch from './ClearSearch.jsx';
 
 // Mail Monitor (System Settings tab, MailPlan 6): every mailbox the Mail
 // Connector API keeps in InternalMail -- is it up to date, how much is copied,
 // what is failing. Overview (totals, publish queue, latest sync runs),
 // Accounts (one row per mailbox; double-click for its folders, runs and
-// errors; "Sync now") and Errors (open grouped errors). The connector pushes
+// errors; "Sync now"; "Add mailbox") and Errors (open grouped errors). The connector pushes
 // its figures to SilaApi every 15 s (no inbound port into the company); the
 // screen reads them every 15 s and says how old they are. Data:
 // shared/mailAdmin.js (checked server side).
@@ -240,6 +242,152 @@ function AccountDrawer({ userId, onClose, onQueued }) {
   );
 }
 
+// "Add mailbox": pick a Sila user (User Master, through the System Settings
+// list) and type their address -- Sila keeps no email in UserMaster. The
+// connector checks it with Exchange on its next push; the answer is polled.
+const ADD_WAIT_MS = 60_000;
+function AddMailboxDialog({ accounts, onClose, onAdded }) {
+  const [users, setUsers] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [q, setQ] = useState('');
+  const [picked, setPicked] = useState(null);
+  const [email, setEmail] = useState('');
+  const [phase, setPhase] = useState('pick');   // pick | sending | waiting | done
+  const [result, setResult] = useState(null);   // { ok, message }
+  const alive = useRef(true);
+  useEffect(() => () => { alive.current = false; }, []);
+  useEffect(() => {
+    loadSettingsUsers().then(list => setUsers(list.filter(u => u.active)))
+      .catch(err => setLoadError(err.message || 'Could not load the users.'));
+  }, []);
+  const busy = phase === 'sending' || phase === 'waiting';
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape' && !busy) onClose(); };
+    document.addEventListener('keydown', esc);
+    return () => document.removeEventListener('keydown', esc);
+  }, [onClose, busy]);
+
+  // A user with a mailbox AND a username is done; a mailbox without a username
+  // (added before usernames were stored) can be picked to save it.
+  const accountOf = new Map(accounts.map(a => [a.id, a]));
+  const needle = q.trim().toLowerCase();
+  const list = (users || []).filter(u => has(needle, u.name, u.username, u.id, u.job, u.department)).slice(0, 60);
+  const validEmail = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email.trim());
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!picked || !validEmail || busy) return;
+    setPhase('sending'); setResult(null);
+    try {
+      const res = await addMailbox(picked.id, email.trim(), picked.username, picked.name);
+      if (res?.done) {   // inside: the connector answered at once
+        setResult({ ok: res.ok, message: res.message }); setPhase('done');
+        if (res.ok) onAdded?.();
+        return;
+      }
+      const requestId = res?.requestId;
+      setPhase('waiting');
+      const until = Date.now() + ADD_WAIT_MS;
+      while (alive.current && Date.now() < until) {
+        await new Promise(r => setTimeout(r, 2000));
+        const r = await addMailboxResult(requestId);
+        if (!r.pending) {
+          if (!alive.current) return;
+          setResult({ ok: r.ok, message: r.message }); setPhase('done');
+          if (r.ok) onAdded?.();
+          return;
+        }
+      }
+      if (alive.current) {
+        setResult({ ok: false, message: 'No answer from the Mail Connector API within a minute. It may be busy or not reporting; check Accounts shortly.' });
+        setPhase('done');
+      }
+    } catch (err) {
+      if (alive.current) { setResult({ ok: false, message: err.message || 'The request failed.' }); setPhase('done'); }
+    }
+  };
+
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="addmb-title" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(15,23,42,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <form onSubmit={submit} style={{
+        width: 'min(600px, 100%)', maxHeight: '92vh', overflowY: 'auto', padding: 20, borderRadius: 16, background: 'var(--surface)',
+        boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 12, fontFamily: 'var(--font)',
+      }}>
+        <h2 id="addmb-title" style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>Add mailbox</h2>
+        <span style={muted}>Pick the Sila user, then type their mailbox address. The Mail Connector API checks it with Exchange before it is added, and starts the first sync.</span>
+
+        {!picked ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 38, padding: '0 12px', borderRadius: 10, border: '1px solid var(--border2)', color: 'var(--muted)' }}>
+              <Search size={15} />
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Name, username, ID, job" aria-label="Find a Sila user"
+                style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
+            </div>
+            {loadError && <div role="alert" style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--red-soft)', color: 'var(--red)', fontSize: 13 }}>{loadError}</div>}
+            {!users && !loadError && <div role="status" style={{ ...muted, padding: 12 }}>Loading users…</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid var(--border)', borderRadius: 12, maxHeight: 340, overflowY: 'auto' }}>
+              {list.map(u => {
+                const account = accountOf.get(u.id);
+                const owned = account?.username ? account.email : '';   // fully set up: nothing to do
+                return (
+                  <button key={u.id} type="button" disabled={Boolean(owned)} onClick={() => { setPicked(u); setEmail(account?.email || ''); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', border: 'none', borderBottom: '1px solid var(--border)',
+                      background: 'transparent', textAlign: 'left', cursor: owned ? 'default' : 'pointer', opacity: owned ? 0.6 : 1, fontFamily: 'var(--font)' }}>
+                    <Avatar name={u.name} size={30} photoUrl={u.photoUrl} userId={u.id} />
+                    <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text)' }}><span dir="auto">{u.name}</span></span>
+                      <span style={muted}>@{u.username} · #{u.id}{u.job ? <> · <span dir="auto">{u.job}</span></> : ''}</span>
+                    </span>
+                    {owned ? <Pill tone="green">{owned}</Pill>
+                      : account ? <Pill tone="accent">{account.email} · no username</Pill>
+                      : <Plus size={15} style={{ color: 'var(--accent-strong)' }} />}
+                  </button>
+                );
+              })}
+              {users && list.length === 0 && <div style={{ ...muted, padding: 14, textAlign: 'center' }}>No user matches.</div>}
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 12, background: 'var(--bg)' }}>
+              <Avatar name={picked.name} size={34} photoUrl={picked.photoUrl} userId={picked.id} />
+              <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontWeight: 800, color: 'var(--text)' }}><span dir="auto">{picked.name}</span></span>
+                <span style={muted}>@{picked.username} · Sila user #{picked.id}</span>
+              </span>
+              {phase === 'pick' && <button type="button" onClick={() => setPicked(null)} style={formBtn(false)}>Change</button>}
+            </div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <span style={{ ...muted, fontWeight: 700 }}>Mailbox address</span>
+              <input autoFocus type="email" value={email} onChange={e => setEmail(e.target.value)} disabled={phase !== 'pick'}
+                placeholder="name@glcpaints.com" maxLength={254} style={formField} />
+            </label>
+            {phase === 'sending' && <div role="status" style={{ ...muted, color: 'var(--blue)' }}>Checking it with Exchange…</div>}
+            {phase === 'waiting' && <div role="status" style={{ ...muted, color: 'var(--blue)' }}>Sent. Waiting for the Mail Connector API to check it with Exchange (up to 15 s)…</div>}
+            {result && (
+              <div role={result.ok ? 'status' : 'alert'} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, fontSize: 13, fontWeight: 600,
+                background: result.ok ? 'var(--green-soft)' : 'var(--red-soft)', color: result.ok ? 'var(--green)' : 'var(--red)' }}>
+                {result.ok ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}{result.message}
+              </div>
+            )}
+          </>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+          {phase === 'done' && !result?.ok && <button type="button" onClick={() => { setPhase('pick'); setResult(null); }} style={formBtn(false)}>Edit address</button>}
+          <button type="button" onClick={onClose} disabled={busy} style={formBtn(false)}>{phase === 'done' ? 'Close' : 'Cancel'}</button>
+          {phase !== 'done' && (
+            <button type="submit" disabled={!picked || !validEmail || busy} style={{ ...formBtn(true), opacity: !picked || !validEmail || busy ? 0.6 : 1 }}>
+              {phase === 'sending' ? 'Sending…' : phase === 'waiting' ? 'Checking…' : accountOf.has(picked?.id) ? 'Save username' : 'Add mailbox'}
+            </button>
+          )}
+        </div>
+      </form>
+    </div>
+  );
+}
+
 export default function MailMonitor() {
   const [view, setView] = useState(() => { try { return localStorage.getItem('silaMailView') || 'overview'; } catch { return 'overview'; } });
   const pickView = (v) => { setView(v); try { localStorage.setItem('silaMailView', v); } catch { /* not remembered */ } };
@@ -249,6 +397,7 @@ export default function MailMonitor() {
   const [q, setQ] = useState('');
   const [accountId, setAccountId] = useState(null);
   const closeAccount = useCallback(() => setAccountId(null), []);
+  const [adding, setAdding] = useState(false);
   const busy = useRef(false);
 
   const load = useCallback(async () => {
@@ -319,6 +468,11 @@ export default function MailMonitor() {
             <ClearSearch value={q} onClear={() => setQ('')} size={24} style={{ marginRight: -6 }} />
           </div>
         )}
+        {view === 'accounts' && (
+          <button onClick={() => setAdding(true)} style={{ ...formBtn(true), height: 36, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Plus size={15} strokeWidth={2.4} /> Add mailbox
+          </button>
+        )}
         <span style={{ flex: 1 }} />
         <label style={{ ...muted, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 600 }}>
           <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} /> Refresh every 15 s
@@ -354,6 +508,7 @@ export default function MailMonitor() {
         <Grid columns={errorColumns(true)} rows={errors} rowKey={e => e.id} initialSort={{ key: 'last', desc: true }} />
       )}
       {accountId != null && <AccountDrawer userId={accountId} onClose={closeAccount} onQueued={load} />}
+      {adding && <AddMailboxDialog accounts={data.accounts || []} onClose={() => setAdding(false)} onAdded={load} />}
     </div>
   );
 }

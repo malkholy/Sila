@@ -4,9 +4,10 @@ Server: `silamail.glcpaints.com` (10.1.245.2) — the same server as the `Intern
 Site: IIS, HTTPS on port **9000**, app pool `SilaMailConnector`.
 
 The API calls **out** only: to Exchange (`webmail1.glcpaints.com:443`), to SQL on this server, and to
-SilaApi (`sila.glcpaints.com:7400`) for the Mail Monitor. Nothing needs to call **in**: its endpoints
-answer only on the server itself (`Access:AllowedNetworks` = localhost), so port 9000 is **not**
-opened in the firewall.
+the external Sila Mail API (`sila.glcpaints.com:9001`) for the Mail Monitor and the copy. Nothing
+needs to call **in** from other machines: its endpoints answer only on this server
+(`Access:AllowedNetworks` = localhost and this server's own address, for the internal Sila Mail
+API), so port 9000 is **not** opened in the firewall.
 
 ## Step 1 — Prerequisites on 10.1.245.2 (once)
 
@@ -21,8 +22,8 @@ opened in the firewall.
    ```powershell
    Get-ChildItem Cert:\LocalMachine\My | Format-Table Thumbprint, Subject, NotAfter
    ```
-4. **Outbound HTTPS** from this server to `webmail1.glcpaints.com:443` and `sila.glcpaints.com:7400`
-   (check with `Test-NetConnection sila.glcpaints.com -Port 7400`).
+4. **Outbound HTTPS** from this server to `webmail1.glcpaints.com:443` and `sila.glcpaints.com:9001`
+   (check with `Test-NetConnection sila.glcpaints.com -Port 9001`).
 
 ## Step 2 — Copy the files
 
@@ -35,14 +36,14 @@ scripts, already run).
 
 ## Step 3 — Make the Mail Monitor key (once)
 
-One random key, shared with SilaApi (7400). In a normal PowerShell window on the server (works in
+One random key, shared with the external Sila Mail API (its Connector:PushKey). In a normal PowerShell window on the server (works in
 Windows PowerShell 5.1 and PowerShell 7):
 
 ```powershell
 $b = New-Object byte[] 36; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
 ```
 
-Keep it for step 4 and for SilaApi (`MailAdmin:ConnectorKey`). Don't email or chat it.
+Keep it for step 4 and for the external Sila Mail API (`Connector:PushKey`). Don't email or chat it.
 
 ## Step 4 — The secrets file
 
@@ -121,9 +122,29 @@ The sync continues from where the Mac stopped (the checkpoints are in InternalMa
 
 ## Step 8 — Mail Monitor
 
-The API starts pushing to SilaApi at once. Until SilaApi (7400) has the Mail Monitor update and the
-same key in `MailAdmin:ConnectorKey`, the Event Log shows *"Mail Monitor push failed … 404"* every
-few minutes — harmless. Once SilaApi is updated, System Settings → Mail Monitor fills in within 15 s.
+The Mail Monitor is served by the **Sila Mail API** (MailProject/MailApi/DEPLOY.md). Inside the
+office its internal copy reads InternalMail directly and asks this API (on this server) for
+"Sync now" / "Add mailbox" — `10.1.245.2` is in `Access:AllowedNetworks` for that. For users outside,
+this API pushes its figures to the external copy (`Monitor:PushUrl` =
+`https://sila.glcpaints.com:9001/mail/v1/monitor/push`, `Monitor:PushKey` = the external copy's
+`Connector:PushKey`). Until the external copy is up, the Event Log shows *"Mail Monitor push
+failed"* about once a minute — harmless.
+
+## Attachments folder (once)
+
+Attachment files are fetched from Exchange the first time someone opens one and
+kept in `Attachments:Root` (`D:\MailData\Attachments` in
+`appsettings.Production.json`): outside the site folder, so IIS never serves it.
+Create it and let only the app pool (and admins) use it:
+
+```powershell
+New-Item -ItemType Directory -Force "D:\MailData\Attachments"
+icacls "D:\MailData\Attachments" /inheritance:r /grant "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "IIS AppPool\9000-MailConnector:(OI)(CI)M"
+```
+
+Limits (optional, in the local json): `MaxBytes` (default 50 MB; larger files
+say "Open it in Outlook"), `TimeoutSeconds` (300), `Parallel` (4 Exchange
+downloads at once). Nothing is ever deleted from the folder yet.
 
 ## Updating later
 

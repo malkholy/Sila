@@ -226,8 +226,8 @@ function ImageViewer({ image, onClose }) {
   );
 }
 
-// The download icon in the bottom-left corner of every attachment (images,
-// files, voice notes)
+// The download icon in the bottom-left corner of an attachment (images, files;
+// voice notes have none)
 export function DownloadButton({ file, entity, size = 26 }) {
   const [state, setState] = useState({ busy: false, error: '' });
   const save = async (e) => {
@@ -257,11 +257,11 @@ function Attachment({ file, mine, entity, onView }) {
       : <ImageAttachment file={file} mine={mine} onView={onView} />)
       : <FileCard file={file} mine={mine} entity={ours ? entity : null} />;
   return (
-    // images: the icon sits on the picture's corner; files / voice notes: just under
-    // their bottom-left corner, so it never covers the file badge or the play button
-    <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', minWidth: 0, paddingBottom: file.image ? 0 : 30 }}>
+    // images: the icon sits on the picture's corner; files: just under their
+    // bottom-left corner, so it never covers the file badge. Voice notes: no icon.
+    <div style={{ position: 'relative', display: 'inline-block', maxWidth: '100%', minWidth: 0, paddingBottom: file.image || file.audio ? 0 : 30 }}>
       {body}
-      <DownloadButton file={file} entity={ours ? entity : null} />
+      {!file.audio && <DownloadButton file={file} entity={ours ? entity : null} />}
     </div>
   );
 }
@@ -1037,6 +1037,7 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
         background: tone[1], border: `1.5px solid ${tone[0]}`, color: tone[0],
       }}><Hash size={22} strokeWidth={1.8} /></span>
       <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'left' }}>
+        <span style={{ fontSize: 18, lineHeight: 1.35, fontWeight: 800, color: 'var(--text)', overflowWrap: 'anywhere' }} dir="auto">{header?.title || item.title}</span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>
           <span dir="auto" style={{ padding: '2px 7px', borderRadius: 6, background: 'var(--soft)' }}># {header?.channel || item.raw?.ChannelName || ''}</span>
           <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}>#{item.raw?.TicketID}</span>
@@ -1047,7 +1048,6 @@ export default function ChatPane({ item, isOnline = () => false, onRead, onActiv
           )}
           {header && <SlaBadge sla={header.sla} state={header.state} />}
         </span>
-        <span style={{ fontSize: 18, lineHeight: 1.35, fontWeight: 800, color: 'var(--text)', overflowWrap: 'anywhere' }} dir="auto">{header?.title || item.title}</span>
         {header?.createdBy && (
           <span style={{ display: 'flex', alignItems: 'center', gap: '6px 16px', flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
             <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>

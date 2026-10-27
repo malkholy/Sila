@@ -88,6 +88,16 @@ export default defineConfig({
           proxy.on('proxyReq', dropOrigin)
         }
       },
+      // Sila Mail API (MailProject/MailApi, :9001): the Mail Monitor and the
+      // user's mail. Same name inside and outside; DNS picks the copy.
+      '/mail/v1': {
+        target: 'https://silamail.glcpaints.com:9001',
+        changeOrigin: true,
+        timeout: 60_000, proxyTimeout: 60_000,
+        configure: (proxy) => {
+          proxy.on('proxyReq', dropOrigin)
+        }
+      },
       // Sila API (SilaApi): login, /exec and the live socket. Listed before
       // '/api' so it wins. Same-origin in dev, so any localhost port works
       // without being in the API's CorsOrigins; the Origin header is dropped

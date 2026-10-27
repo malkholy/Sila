@@ -1,24 +1,27 @@
-// Mail Monitor (System Settings): POST /api/v2/mail/admin { action, userId? }.
-// SilaApi checks the user is a mail admin calling from the company network
-// (server side) and answers from the last snapshot the Mail Connector API
-// pushed (every 15 s): { pushedAt, data }. The app only shows the tab to the
-// settings user; that grants nothing by itself.
+// Mail Monitor (System Settings): POST <Mail API>/mail/v1/admin { action, ... }
+// on the Sila Mail API (silamail.glcpaints.com:9001 -- DNS picks the copy:
+// inside, live figures from InternalMail; outside, the snapshot the Mail
+// Connector API pushes every 15 s). It checks the user is a mail admin from an
+// allowed place (server side) and answers { pushedAt, data }. The app only
+// shows the tab to the settings user; that grants nothing by itself.
 import { authPost } from './auth.js';
 
-async function send(action, userId) {
+// Dev: '' = same origin, through the Vite proxy (vite.config.js '/mail/v1').
+export const MAIL_BASE = import.meta.env.VITE_SILA_MAIL ?? (import.meta.env.DEV ? '' : 'https://silamail.glcpaints.com:9001');
+
+async function send(body) {
   try {
-    return await authPost('/api/v2/mail/admin', userId == null ? { action } : { action, userId });
+    return await authPost(`${MAIL_BASE}/mail/v1/admin`, body);
   } catch (err) {
-    // A server without the Mail Monitor (an older SilaApi) has no such address.
-    if (err.status === 404 && (action !== 'account' || /^Request failed/.test(err.message))) {
-      throw Object.assign(new Error('This Sila server does not have the Mail Monitor yet: SilaApi (7400) needs the update that adds it.'), { status: 404 });
+    if (err.status === 0) {
+      throw Object.assign(new Error('Cannot reach the Sila Mail API (silamail.glcpaints.com:9001).'), { status: 0 });
     }
     throw err;
   }
 }
 // The connector's figures, and when it sent them.
 async function call(action, userId) {
-  const res = await send(action, userId);
+  const res = await send(userId == null ? { action } : { action, userId });
   return { data: res?.data, pushedAt: res?.pushedAt ? new Date(res.pushedAt) : null };
 }
 
@@ -59,7 +62,7 @@ export async function loadMailOverview() {
 export async function loadMailAccounts() {
   const { data: rows } = await call('accounts');
   return (rows || []).map(r => ({
-    id: r.UserID, email: r.SmtpAddress || '', name: r.DisplayName || '', enabled: Boolean(r.IsEnabled),
+    id: r.UserID, email: r.SmtpAddress || '', name: r.DisplayName || '', username: r.Username || '', enabled: Boolean(r.IsEnabled),
     status: r.IsEnabled ? r.SyncStatus || 'OK' : 'Disabled', subscription: r.SubscriptionStatus || '',
     lastSync: date(r.LastSyncAt), lastAttempt: date(r.LastSyncAttemptAt), failures: num(r.ConsecutiveFailures),
     lastErrorKind: r.LastErrorKind || '', lastErrorCode: r.LastErrorCode || '', lastErrorAt: date(r.LastErrorAt),
@@ -96,5 +99,19 @@ export async function loadMailErrors() {
 // Ask for a full sync of the mailbox (all folders); the connector picks it up
 // with its next push (within ~15 s).
 export function syncMailbox(userId) {
-  return send('sync', userId);
+  return send({ action: 'sync', userId });
+}
+
+// Add a Sila user's mailbox with the address the mail admin typed (and the
+// user's Sila username: the Mail API finds a signed-in user's mailbox by it).
+// The connector checks it with Exchange. Inside, the answer comes at once:
+// { done: true, ok, message }; outside it is queued: { requestId } -- poll
+// addMailboxResult(requestId).
+export function addMailbox(userId, email, username, displayName) {
+  return send({ action: 'add', userId, email, username, displayName: displayName || null });
+}
+
+// { pending: true } until the connector has answered; then { ok, message }.
+export function addMailboxResult(requestId) {
+  return send({ action: 'addResult', requestId });
 }

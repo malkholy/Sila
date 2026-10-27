@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Sila.MailApi.Tests/Sila.MailApi.Tests.csproj" />
+  <Project Path="Sila.MailApi/Sila.MailApi.csproj" />
+</Solution>

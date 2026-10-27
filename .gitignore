@@ -46,4 +46,6 @@ MailProject/MailConnectorApi/Sila.MailConnector/appsettings.Exchange.local.json
 
 # Mail Connector API publish output (zip built from it)
 MailProject/MailConnectorApi/IIS Publish/
-MailProject/MailExternalApi/IIS Publish/
+MailProject/MailApi/Sila.MailApi/App_Data/
+MailProject/MailApi/Sila.MailApi/appsettings.Mail.local.json
+MailProject/MailApi/IIS Publish/

@@ -1,4 +1,0 @@
-<Solution>
-  <Project Path="Sila.MailExternal.Tests/Sila.MailExternal.Tests.csproj" />
-  <Project Path="Sila.MailExternal/Sila.MailExternal.csproj" />
-</Solution>

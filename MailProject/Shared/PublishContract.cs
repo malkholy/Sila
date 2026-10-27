@@ -30,7 +30,7 @@ public sealed record PublishDeletes(List<KeySeq> Users, List<KeySeq> Folders, Li
 public sealed record KeySeq(long Id, long Seq);
 
 public sealed record UserRow(int UserId, string SmtpAddress, string? DisplayName, bool IsEnabled, string SyncStatus,
-    DateTime? LastSyncAt, DateTime? LastNotificationAt, int? ExchangeItemCount, int? ExchangeUnreadCount, long Seq);
+    DateTime? LastSyncAt, DateTime? LastNotificationAt, int? ExchangeItemCount, int? ExchangeUnreadCount, string? Username, long Seq);
 
 public sealed record FolderRow(long FolderId, int UserId, long? ParentFolderId, string ExchangeFolderId, string DisplayName,
     string FolderType, int TotalCount, int UnreadCount, DateTime? LastSyncAt, long Seq);

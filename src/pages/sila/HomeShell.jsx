@@ -25,6 +25,7 @@ import ProfileCard from './ProfileCard.jsx';
 import NewChatDialog from './NewChatDialog.jsx';
 import NewGroupDialog from './NewGroupDialog.jsx';
 import MyDay from './MyDay.jsx';
+import MailPage from './MailPage.jsx';
 import ReminderToast from './ReminderToast.jsx';
 import { myDayCount, MYDAY_CHANGED } from '../../shared/reminders.js';
 import Mark from './Mark.jsx';
@@ -162,40 +163,45 @@ function ConversationRow({ item, active, online, onPick, dbl = false, terms, onT
       {item.kind === 'chat' ? <Avatar name={item.title} size={46} online={online} photoUrl={item.photoUrl} username={item.username} />
         : <KindBadge kind={item.kind} tone={item.tone} broadcast={item.broadcast} />}
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
-          <span style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto"><Mark text={item.title} terms={terms} /></span>
-          {/* a ticket's state sits in the top-right corner; its time in the bottom-right one */}
+        <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: ticket ? 'center' : 'baseline' }}>
+          {/* a ticket leads with where it lives (the number quieter in mono), its subject below */}
+          {ticket ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', minWidth: 0 }}>
+              {item.raw?.ChannelName && (
+                // Let long channel names wrap so the destination stays readable.
+                <span title={item.raw.ChannelName} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, maxWidth: '100%', minHeight: 26, padding: '3px 9px',
+                  borderRadius: 7, background: 'var(--soft)', border: '1px solid var(--border2)', color: 'var(--text)',
+                  fontSize: 13, lineHeight: 1.4, fontWeight: 700,
+                }}>
+                  <span dir="auto" style={{ overflowWrap: 'anywhere', minWidth: 0 }}>
+                    <Mark text={item.raw.ChannelName} terms={terms} />
+                  </span>
+                </span>
+              )}
+              {item.raw?.TicketID && (
+                <span style={{ flexShrink: 0, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}><Mark text={`#${item.raw.TicketID}`} terms={terms} /></span>
+              )}
+            </span>
+          ) : (
+            <span style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto"><Mark text={item.title} terms={terms} /></span>
+          )}
+          {/* a ticket's state sits in the top-right corner, its SLA (Late …) under it; its time in the bottom-right one */}
           {ticket && item.state ? (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <FlagMark flag={item.flag} />
+                <span style={{
+                  flexShrink: 0, padding: '1px 8px', borderRadius: 999, background: item.tone[1], color: item.tone[0],
+                  fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+                }}>{item.state}</span>
+              </span>
               <SlaBadge sla={item.sla} state={Number(item.raw?.TicketState)} compact />
-              <FlagMark flag={item.flag} />
-              <span style={{
-                flexShrink: 0, padding: '1px 8px', borderRadius: 999, background: item.tone[1], color: item.tone[0],
-                fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
-              }}>{item.state}</span>
             </span>
           ) : when}
         </span>
         {ticket ? (
-          // where it lives, the number quieter in mono
-          <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', minWidth: 0 }}>
-            {item.raw?.ChannelName && (
-              // Let long channel names wrap so the destination stays readable.
-              <span title={item.raw.ChannelName} style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, maxWidth: '100%', minHeight: 26, padding: '3px 9px',
-                borderRadius: 7, background: 'var(--soft)', border: '1px solid var(--border2)', color: 'var(--text)',
-                fontSize: 13, lineHeight: 1.4, fontWeight: 700,
-              }}>
-                <Hash size={14} strokeWidth={2.2} style={{ flexShrink: 0, color: 'var(--text2)' }} />
-                <span dir="auto" style={{ overflowWrap: 'anywhere', minWidth: 0 }}>
-                  <Mark text={item.raw.ChannelName} terms={terms} />
-                </span>
-              </span>
-            )}
-            {item.raw?.TicketID && (
-              <span style={{ flexShrink: 0, fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--muted)' }}><Mark text={`#${item.raw.TicketID}`} terms={terms} /></span>
-            )}
-          </span>
+          <span style={{ marginTop: 4, fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto"><Mark text={item.title} terms={terms} /></span>
         ) : (item.sub || item.state) && (
           <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', minWidth: 0 }}>
             {item.sub && <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} dir="auto"><Mark text={item.sub} terms={terms} /></span>}
@@ -524,7 +530,9 @@ export default function HomeShell({ user, onSignOut }) {
     const Icon = s.icon;
     return (
       <button key={s.key} onClick={() => setSection(s.key)} aria-current={active ? 'page' : undefined} style={{
-        width: narrow ? 64 : 68, minHeight: narrow ? 52 : 60, borderRadius: 12, border: 'none', cursor: 'pointer',
+        // narrow: the rail buttons share the bottom bar's width
+        ...(narrow ? { flex: '1 1 0', minWidth: 0, maxWidth: 72 } : { width: 68 }), minHeight: narrow ? 52 : 60, borderRadius: 12,
+        border: 'none', cursor: 'pointer',
         background: active ? 'var(--accent)' : 'transparent', color: active ? 'var(--on-accent)' : 'var(--rail-text)',
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2,
         fontFamily: 'var(--font)', fontSize: 11, fontWeight: active ? 700 : 600,
@@ -561,6 +569,7 @@ export default function HomeShell({ user, onSignOut }) {
       }}><Plus size={22} strokeWidth={2.2} /></button>
       {SECTIONS.map(railItem)}
       {railItem({ key: 'myday', label: 'My Day', icon: CalendarCheck, badge: myDayDue })}
+      {railItem({ key: 'mail', label: 'Mail', icon: Mail })}
       {!narrow && <div style={{ flex: 1 }} />}
       {reportsAllowed && (
         <button onClick={() => setSection('reports')} aria-label="Reports" title="Reports"
@@ -1143,6 +1152,8 @@ export default function HomeShell({ user, onSignOut }) {
         {notifyBanner}
         {section === 'myday' ? (
           <MyDay onOpen={openLink} />
+        ) : section === 'mail' ? (
+          <MailPage />
         ) : section === 'settings' && settingsAllowed ? (
           <SystemSettings />
         ) : section === 'reports' && reportsAllowed ? (

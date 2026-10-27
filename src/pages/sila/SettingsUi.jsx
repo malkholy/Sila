@@ -106,3 +106,8 @@ export const formBtn = (primary, danger) => ({
   background: danger ? 'var(--red)' : primary ? 'var(--accent)' : 'var(--surface)',
   color: danger ? '#fff' : primary ? 'var(--on-accent)' : 'var(--text)',
 });
+
+export const formField = {
+  width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border2)',
+  background: 'var(--surface)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font)', lineHeight: '19px',
+};
