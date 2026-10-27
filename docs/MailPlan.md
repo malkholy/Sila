@@ -609,3 +609,111 @@ Ticket links.
 9. **Approval:** can IT create the impersonation service account and the
    throttling policy? Keeping a copy of everyone's mail outside Exchange should
    be signed off by management / IT security.
+
+---
+
+## 10. Roadmap: retiring Exchange (decided 2026-10-27)
+
+Exchange 2016 is out of support. The company retires it in three stages and
+Sila becomes the mail system. (Called *stages* here so they do not mix with
+the build phases in 8, which all belong to Stage A.)
+
+| Stage | Who is where | Master copy |
+|---|---|---|
+| **A. Exchange + Sila** | Everyone in Exchange; Sila is the mail screen | Exchange (sections 1–9) |
+| **B. Exchange + Sila, new users on Sila only** | Existing users in Exchange; new users have a **Sila mailbox** only | Exchange for Exchange users, **Sila** for Sila users |
+| **C. Sila standalone** | Everyone on Sila; Exchange switched off | Sila |
+
+### 10.1 Principle: Sila is the product, a proven mail engine does SMTP
+
+Sila does **not** write its own SMTP server, spam filter or virus scanner.
+Those are mature, security-critical, internet-facing parts. A proven
+open-source mail engine runs beside Sila (on its own server, inside the
+company, with a gateway in front):
+
+- **Inbound:** receives SMTP, checks SPF / DKIM / DMARC, spam (e.g. Rspamd)
+  and viruses (e.g. ClamAV), then hands each accepted message to a small
+  **Sila delivery agent** that writes it into InternalMail.
+- **Outbound:** the Send worker hands Sila users' mail to the engine, which
+  DKIM-signs it, queues it and delivers it (retries, bounces).
+- Sila keeps everything users see: mailbox store (InternalMail), web /
+  mobile screens, Mail API, external copy, Monitor, tickets.
+
+The engine is chosen in Stage B's proof of concept (candidates: Postfix +
+Rspamd + ClamAV, or an all-in-one engine such as Stalwart).
+
+### 10.2 Stage B: two kinds of mailbox side by side
+
+- `MailUser.MailboxKind` = **Exchange** or **Sila**.
+  - *Exchange*: everything in sections 1–9 (sync from Exchange, Send worker
+    through Exchange).
+  - *Sila*: no sync; InternalMail **is** the mailbox. Actions (read, flag,
+    move, delete) are applied directly. The publisher, Mail API, Monitor and
+    tickets work the same for both kinds.
+- **One domain, two systems** (`@glcpaints.com` for both):
+  - Each Sila user is created in Exchange as a **mail user / contact** whose
+    target address is internal, e.g. `user@sila.glcpaints.local`. They stay in
+    the company address book.
+  - An Exchange **send connector** for that internal domain points at the
+    Sila mail engine. Internet mail still arrives at Exchange (MX unchanged),
+    is filtered there, and is forwarded to Sila.
+  - Sila users' outgoing mail goes **engine → Exchange relay connector →
+    internet** in Stage B, so SPF, DKIM and the company's sending reputation
+    stay unchanged. Mail from a Sila user to an Exchange user goes the same
+    way and is delivered by Exchange.
+- **The Send worker gets a second path:** Exchange users through EWS (7.1),
+  Sila users through the engine. "Never send twice" still holds: the engine
+  accepts each message with its ActionID as Message-ID, and refuses a repeat.
+- **Store the original message (MIME)** for every Sila-mailbox message
+  (file store, like attachments): needed for forward-as-attachment, export,
+  legal requests and any later move.
+- **Out of office, rules, signatures** for Sila users: built in Sila (Exchange
+  does these for Exchange users).
+
+### 10.3 Stage C: switching Exchange off
+
+1. **Move MX** to the Sila mail gateway (inbound now arrives at Sila first);
+   **SPF / DKIM / DMARC** records updated for the engine's sending IP; reverse
+   DNS (PTR) set; the IP checked against blocklists. Done first, while Exchange
+   still holds the remaining mailboxes (the engine forwards their mail to
+   Exchange until they move).
+2. **Move mailboxes in batches.** InternalMail already holds every Exchange
+   mailbox (Stage A sync), so moving one is: a final sync, download every
+   attachment and the MIME still only in Exchange, check counts (the Monitor's
+   differences check), switch `MailboxKind` to Sila, change the address in
+   Exchange to a contact pointing at Sila.
+3. **Last:** shared mailboxes, distribution groups, journaling / legal hold
+   copies, then Exchange off (keep a final backup).
+
+### 10.4 What Sila takes over from Exchange (to decide before Stage C)
+
+| Exchange did | Sila needs |
+|---|---|
+| Spam / virus filtering, internet SMTP | The mail engine (10.1) |
+| Backup, retention, legal hold, eDiscovery, journaling | Retention rules and a legal-hold flag in InternalMail; search across mailboxes for authorised staff; backups of the database **and** the file store |
+| Outlook and phone mail apps (ActiveSync) | Sila web / mobile only — or the engine offers IMAP for users who need a mail app |
+| **Calendars, meetings, contacts** | Not in Sila today: build, move to another service, or drop |
+| Distribution groups, shared mailboxes | Sila groups and shared mailboxes with grants |
+| Availability (mail must not stop) | Two engine nodes or a queueing gateway; Sila Mail API and connector already designed to recover (7.3) |
+
+### 10.5 What Stage A must already do, so it is not thrown away
+
+- Keep the **stable Sila MessageID** (7.5) — Stage C keeps those rows.
+- Add `MailboxKind` to `MailUser` now (all *Exchange*).
+- Keep the connector's Exchange code behind one interface (sync, send,
+  actions, attachments) so the Sila kind plugs in beside it.
+- Plan storage for **all** attachments and MIME by Stage C (today they are
+  fetched on first open — fine for Stage A, not for Stage C).
+- Size InternalMail and the file store for being the only copy (backups,
+  growth, the 120 GB mailbox).
+
+### 10.6 Open questions for the roadmap
+
+1. **Calendars and meetings:** build in Sila, keep elsewhere, or drop?
+2. **Mail apps:** do some users need Outlook / a phone mail app (then IMAP)?
+3. **Retention and legal hold:** how long is mail kept; who may search all
+   mailboxes?
+4. **Hosting of the engine:** inside the company with a public gateway, and
+   who looks after its IP reputation?
+5. **Timeline:** when does Stage B start (first Sila-only user), and the
+   target date for Stage C?
