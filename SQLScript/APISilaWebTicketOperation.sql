@@ -25,7 +25,11 @@ GO
 --     TicketUnreadChat for every row itself.
 --   * TrgTicketChatHistoryafterInsertUpdate adds unread rows for every insert,
 --     including edit / delete copies: those are removed here.
---   * No app-version result sets, no UserSyncMaster, no SPUserLog writes.
+--   * No app-version result sets, no SPUserLog writes. UserSyncMaster only to
+--     force the mobile app's full sync (ForceFullSync = 1) for everyone in a
+--     ticket that is forwarded / accepted / rejected / cancelled here: those
+--     add or delete whole tickets, which the app's MaxSeq delta never removes.
+--     The app clears the flag itself ('Get Left Side Ticket').
 --
 -- Roles in a ticket (CHA.TicketMembers, IsLeft = 0):
 --   member   any row          manager  IsAdmin = 1 or IsTeamLeader = 1
@@ -449,6 +453,7 @@ BEGIN
             IF @TIsMember = 0
             BEGIN SET @State = 403; SET @Message = N'Ticket not found.'; RETURN; END
         END
+        DECLARE @SyncUsers TABLE (UserID INT PRIMARY KEY);   -- forward / answer / cancel: whose phone resyncs
 
         -- -----------------------------------------------------------------
         -- Set ticket flag: the caller's own follow-up flag (dbo.SilaTicketFlag),
@@ -954,6 +959,9 @@ BEGIN
                  CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem, IsAdmin)
             VALUES (@FChat, @FTo, @FCopy, @UserID, @User, @FText, @FText, 0, 0,
                     @User, GETDATE(), @User, GETDATE(), 0, 0, 0, 0, 1, 0);
+            INSERT INTO @SyncUsers SELECT DISTINCT UserID FROM CHA.TicketMembers WHERE TicketID IN (@TicketID, @FCopy);
+            -- the phones of everyone in either ticket reload their whole list (a delta can't drop a deleted ticket)
+            UPDATE dbo.UserSyncMaster SET ForceFullSync = 1 WHERE UserID IN (SELECT UserID FROM @SyncUsers);
             COMMIT TRANSACTION;
             SET @RetTicket = @TicketID;
         END
@@ -973,6 +981,8 @@ BEGIN
 
             DECLARE @WChat INT, @WText NVARCHAR(MAX);
             BEGIN TRANSACTION;
+            -- both tickets' people, taken before either one's members are deleted
+            INSERT INTO @SyncUsers SELECT DISTINCT UserID FROM CHA.TicketMembers WHERE TicketID IN (@TicketID, @TOrig);
             IF @WAccept = 1
             BEGIN
                 SET @WText = @Me + N' has accepted forwarded Ticket #' + CAST(@TicketID AS NVARCHAR(20));
@@ -1025,6 +1035,8 @@ BEGIN
                 -- the caller usually isn't a member of the original: answer with the rejected copy's id only
                 SELECT @TicketID AS TicketID, @TOrig AS OrginalTicketID, N'Rejected' AS Result;
             END
+            -- the phones of everyone in either ticket reload their whole list (a delta can't drop a deleted ticket)
+            UPDATE dbo.UserSyncMaster SET ForceFullSync = 1 WHERE UserID IN (SELECT UserID FROM @SyncUsers);
             COMMIT TRANSACTION;
             IF @WAccept = 0 RETURN;
         END
@@ -1042,6 +1054,7 @@ BEGIN
             DECLARE @KText NVARCHAR(MAX) = @Me + N' has cancelled the forward of Ticket #' + CAST(@TicketID AS NVARCHAR(20));
             DECLARE @KChat INT;
             BEGIN TRANSACTION;
+            INSERT INTO @SyncUsers SELECT DISTINCT UserID FROM CHA.TicketMembers WHERE TicketID IN (@TicketID, ISNULL(@KCopy, @TicketID));
             IF @KCopy IS NOT NULL
             BEGIN
                 DELETE FROM CHA.TicketUnreadChat WHERE TicketID = @KCopy;
@@ -1059,6 +1072,8 @@ BEGIN
                  CreatedBy, CreatedDate, LastMaintBy, LastMaintDate, LocalChatID, OrginalChatID, IsEdited, IsDeleted, IsSystem, IsAdmin)
             VALUES (@KChat, @TChannel, @TicketID, @UserID, @User, @KText, @KText, 0, 0,
                     @User, GETDATE(), @User, GETDATE(), 0, 0, 0, 0, 1, 0);
+            -- the phones of everyone in either ticket reload their whole list (a delta can't drop a deleted ticket)
+            UPDATE dbo.UserSyncMaster SET ForceFullSync = 1 WHERE UserID IN (SELECT UserID FROM @SyncUsers);
             COMMIT TRANSACTION;
             SET @RetTicket = @TicketID;
         END

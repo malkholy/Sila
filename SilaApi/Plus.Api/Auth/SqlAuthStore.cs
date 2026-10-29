@@ -33,6 +33,9 @@ public sealed class SqlAuthStore(IConfiguration config, IOptionsMonitor<GatewayO
         command.Parameters.Add("@NewRefreshHash", SqlDbType.Binary, 32).Value = (object?)request.NewRefreshHash ?? DBNull.Value;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken)) return null;
+        // The right password, but the account must change it first (the SP checks the password before saying so).
+        if (reader.FieldCount == 1 && reader.GetName(0) == "Refusal" && reader.GetString(0) == "PasswordChangeRequired")
+            throw new GatewayException(403, "This account must change its password first. Ask the administrator to reset it.");
         return new(reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
             reader.GetBoolean(4), DateTime.SpecifyKind(reader.GetDateTime(5), DateTimeKind.Utc));
     }

@@ -15,7 +15,7 @@ namespace Sila.MailConnector.Monitor;
 // requests (queued here like any other sync) and "add mailbox" requests
 // (MailboxRegistration; each result goes back with the next push, 1 s later).
 public sealed class MonitorPusher(IHttpClientFactory clients, IOptionsMonitor<MonitorOptions> options, MailStore store,
-    SyncQueue queue, IServiceScopeFactory scopes, ILogger<MonitorPusher> log) : BackgroundService
+    SyncQueue queue, IServiceScopeFactory scopes, ConnectorHealth health, ILogger<MonitorPusher> log) : BackgroundService
 {
     public const string ClientName = "monitor";
     private const int MaxDetailsPerPush = 5;
@@ -43,6 +43,7 @@ public sealed class MonitorPusher(IHttpClientFactory clients, IOptionsMonitor<Mo
             {
                 var answer = await PushAsync(settings, wanted, results, stoppingToken);
                 failures = 0;
+                health.Ok(ConnectorHealth.Connector, ("pushOkAt", DateTime.Now));
                 results = [];
                 foreach (var ask in answer.Adds ?? [])
                 {
@@ -78,6 +79,7 @@ public sealed class MonitorPusher(IHttpClientFactory clients, IOptionsMonitor<Mo
                 wait = TimeSpan.FromSeconds(Math.Min(60, settings.IntervalSeconds * Math.Pow(2, Math.Min(failures, 3))));
                 log.LogWarning("Mail Monitor push failed ({ErrorType}: {Message}); next try in {Seconds} s",
                     error.GetType().Name, error.Message, (int)wait.TotalSeconds);
+                health.Failed(ConnectorHealth.Connector, $"Mail Monitor push failed: {error.GetType().Name}: {error.Message}");
             }
             await Delay(wait, stoppingToken);
         }

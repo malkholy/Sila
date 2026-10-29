@@ -17,6 +17,7 @@ export function Pill({ tone = 'muted', children }) {
   const [fg, bg] = {
     green: ['var(--green)', 'var(--green-soft)'], red: ['var(--red)', 'var(--red-soft)'],
     accent: ['var(--accent-strong)', 'var(--accent-soft)'], blue: ['var(--blue)', 'var(--blue-soft)'],
+    amber: ['var(--amber)', 'var(--amber-soft)'],
     muted: ['var(--text2)', 'var(--soft)'],
   }[tone];
   return <span style={{ padding: '1px 8px', borderRadius: 999, background: bg, color: fg, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{children}</span>;

@@ -68,7 +68,7 @@ public sealed class MonitorOptions
 // security approval -- MailPlan 4).
 public sealed class PublishOptions
 {
-    // e.g. https://sila.glcpaints.com:7700/sync/v1
+    // https://sila.glcpaints.com:9001/sync/v1 (the external Sila Mail API, by the server's own name)
     public string Url { get; set; } = "";
     // The same key as the Mail External API's Sync:Key (at least 32 characters).
     public string Key { get; set; } = "";

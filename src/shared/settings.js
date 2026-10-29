@@ -1,6 +1,6 @@
 // System Settings (master lists): dbo.APISilaWebOperation 'Settings users' /
-// 'Settings user groups' / 'Settings channels', read-only, plus the one write,
-// 'Save channel purpose' (what a channel handles). The SP allows the user 'mhd'
+// 'Settings user groups' / 'Settings channels' and their writes; User Master
+// writes in dbo.APISilaUserMasterOperation. The SP allows the user 'mhd'
 // only; the app just hides the button for everyone else.
 import { apiExec } from './auth.js';
 
@@ -19,8 +19,50 @@ export async function loadSettingsUsers() {
     silaGroup: r.SilaGroupName || '', mobile: r.MobileNumber || '', local: r.LocalNumber || '',
     admin: flag(r.IsAdmin), developer: flag(r.IsDeveloper), active: !flag(r.IsNotActive), forceLogout: flag(r.ForceLogout),
     created: date(r.CreatedDate), createdBy: r.CreatedBy || '', passwordChanged: date(r.ChangePasswordDate),
-    photoUrl: r.PhotoURL || '',
+    photoUrl: r.PhotoURL || '', email: r.EmailAddress || '', employeeId: r.EmployeeID ?? null,
+    // failed sign-ins of the last 24 h that still count (after the last success / an admin's reset)
+    failed: Number(r.FailedLogins) || 0, lastFailed: date(r.LastFailedAt), locked: flag(r.LoginLocked), loginReset: date(r.LoginResetAt),
   }));
+}
+
+// User Master writes: dbo.APISilaUserMasterOperation (mhd only, checked there).
+const USERS_PROC = 'dbo.APISilaUserMasterOperation';
+// id 0 = a new user (username + password then required); resolves to its UserID
+export async function saveUser({ id = 0, username = '', password = '', name, mobile, local, email, employeeId, groupId, admin }) {
+  const res = await apiExec(USERS_PROC, 'Save user', {
+    UserID: id, Username: id ? undefined : username, Password: id ? undefined : password, FullName: name,
+    MobileNumber: mobile, LocalNumber: local, EmailAddress: email, EmployeeID: employeeId === '' || employeeId == null ? '' : String(employeeId),
+    GroupID: Number(groupId) || 0, IsAdmin: admin ? 1 : 0,
+  });
+  return Number(res?.data?.List0?.[0]?.UserID) || 0;
+}
+// the new password works at once; the user's web sessions end
+export async function resetUserPassword(id, password) {
+  await apiExec(USERS_PROC, 'Reset user password', { UserID: id, Password: password });
+}
+// One user's latest 100 sign-ins: [{ at, ok, platform }] and the last reset { at, by } or null.
+export async function loadUserLogins(userId) {
+  const res = await apiExec(PROC, 'Settings user logins', { UserID: userId });
+  const r = res?.data?.List1?.[0];
+  return {
+    logins: (res?.data?.List0 || []).map(x => ({ at: date(x.CreatedDate), ok: flag(x.isSuccessful), platform: x.platform || '' })),
+    reset: r ? { at: date(r.ResetAt), by: r.ResetBy || '' } : null,
+  };
+}
+// Everyone's sign-ins of the last `days` (1, 7 or 30), newest first, max 5000.
+export async function loadLogins(days) {
+  const res = await apiExec(PROC, 'Settings logins', { Days: days });
+  return (res?.data?.List0 || []).map((x, i) => ({
+    id: i, at: date(x.CreatedDate), ok: flag(x.isSuccessful), platform: x.platform || '', username: x.Username || '',
+    userId: x.UserID ?? null, name: x.FullName || '', photoUrl: x.PhotoURL || '',
+  }));
+}
+// clears the failed sign-ins (unlocks) without changing the password
+export async function resetLoginAttempts(id) {
+  await apiExec(USERS_PROC, 'Reset login attempts', { UserID: id });
+}
+export async function setUserActive(id, active) {
+  await apiExec(USERS_PROC, 'Set user active', { UserID: id, Active: active ? 1 : 0 });
 }
 
 export async function loadSettingsUserGroups() {

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users, UserCog, Hash, Search, RefreshCw, Lock, AlertTriangle, X, Mail, Pencil, Plus, UserPlus, UserMinus, Megaphone, MessagesSquare } from 'lucide-react';
+import { Users, UserCog, Hash, Search, RefreshCw, Lock, AlertTriangle, X, Mail, Pencil, Plus, UserPlus, UserMinus, Megaphone, MessagesSquare, History } from 'lucide-react';
 import Avatar from './Avatar.jsx';
 import { formatWhen } from '../../shared/leftSide.js';
 import {
@@ -7,6 +7,7 @@ import {
   loadChannelCategories, saveChannel, addChannelMembers, setChannelMember, removeChannelMember,
   loadSettingsUserGroup, saveUserGroup, deleteUserGroup, moveUsersToGroup, saveChannelSla,
   loadSettingsChatGroups, loadSettingsChatGroup, saveChatGroup, setChatGroupAdmin,
+  saveUser, resetUserPassword, resetLoginAttempts, setUserActive, loadUserLogins, loadLogins,
 } from '../../shared/settings.js';
 import { fmtWork } from '../../shared/ticketSla.js';
 import AddMembersDialog from './AddMembersDialog.jsx';
@@ -16,7 +17,8 @@ import MailMonitor from './MailMonitor.jsx';
 
 // System Settings (user 'mhd' only -- the SP checks it): master lists -- User
 // Master, User Group Master (SILA101 dbo.UserGroupMaster), Channel Master.
-// Users are read-only. Sila user groups can be added, renamed, deleted when
+// Users can be added and edited, get a new password, be deactivated and
+// re-activated (the user form; dbo.APISilaUserMasterOperation). Sila user groups can be added, renamed, deleted when
 // empty, and people moved into them (the group drawer). Channels can be added
 // and edited, and in the channel drawer their purpose and members (admin /
 // team leader roles) too. Group Master: chat groups, normal or Broadcast
@@ -831,6 +833,328 @@ function ChatGroupDrawer({ groupId, activeUsers, onClose, onChanged }) {
     </>
   );
 }
+// A password to hand over: 10 characters, no look-alikes (0/O, 1/l/I).
+function newPassword() {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(bytes, b => chars[b % chars.length]).join('');
+}
+
+// Password input with Show and Generate (a generated one is shown, to copy).
+function PasswordField({ value, onChange, disabled, autoFocus }) {
+  const [show, setShow] = useState(false);
+  const small = { ...formBtn(false), height: 38, padding: '0 10px', fontSize: 12 };
+  return (
+    <span style={{ display: 'flex', gap: 6 }}>
+      <input type={show ? 'text' : 'password'} value={value} onChange={e => onChange(e.target.value)} disabled={disabled} autoFocus={autoFocus}
+        maxLength={30} autoComplete="new-password" spellCheck={false} style={{ ...formField, flex: 1, minWidth: 0, fontFamily: show ? 'var(--mono)' : undefined }} />
+      <button type="button" onClick={() => setShow(v => !v)} disabled={disabled} style={small}>{show ? 'Hide' : 'Show'}</button>
+      <button type="button" onClick={() => { onChange(newPassword()); setShow(true); }} disabled={disabled} style={small}>Generate</button>
+    </span>
+  );
+}
+
+// UserLoginHistory.platform -> what it was
+const PLATFORM = {
+  'api-v2': 'Web / app', 'api-v2-master': 'Web / app (master password)', ios: 'iPhone (old sign-in)',
+  android: 'Android (old sign-in)', web: 'Web (old sign-in)',
+};
+
+// A user's latest 100 sign-ins (newest first), loaded when the form opens and
+// again after a reset; failures after the last good sign-in / reset in red.
+function LoginHistory({ userId, version }) {
+  const [state, setState] = useState({ status: 'loading', data: null, error: '' });
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    let live = true;
+    loadUserLogins(userId).then(data => live && setState({ status: 'ready', data, error: '' }))
+      .catch(err => live && setState({ status: 'error', data: null, error: err.message || 'Could not load the sign-ins.' }));
+    return () => { live = false; };
+  }, [userId, version]);
+  if (state.status === 'loading') return <span style={muted}>Loading…</span>;
+  if (state.status === 'error') return <span role="alert" style={{ fontSize: 12, color: 'var(--red)' }}>{state.error}</span>;
+  const { logins, reset } = state.data;
+  if (!logins.length) return <span style={muted}>No sign-ins recorded.</span>;
+  const shown = all ? logins : logins.slice(0, 10);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead><tr><th style={th}>When</th><th style={th}>Result</th><th style={th}>Where</th></tr></thead>
+          <tbody>
+            {shown.map((l, i) => (
+              <tr key={i}>
+                <td style={{ ...td, whiteSpace: 'nowrap' }} title={l.at?.toLocaleString()}>
+                  {l.at ? `${fullDate(l.at)} ${l.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '-'}
+                </td>
+                <td style={td}><Pill tone={l.ok ? 'green' : 'red'}>{l.ok ? 'Signed in' : 'Failed'}</Pill></td>
+                <td style={{ ...td, color: 'var(--text2)' }}>{PLATFORM[l.platform] || l.platform || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ ...muted, flex: 1 }}>
+          {reset ? `Failed attempts last reset ${formatWhen(reset.at)} by ${reset.by}.` : 'Failed attempts never reset.'}
+        </span>
+        {logins.length > 10 && (
+          <button type="button" onClick={() => setAll(v => !v)} style={{ ...formBtn(false), height: 28, fontSize: 12 }}>
+            {all ? 'Show 10' : `Show all ${logins.length}`}</button>
+        )}
+      </span>
+    </div>
+  );
+}
+
+// Everyone's sign-ins: period (today / 7 / 30 days), result and a search;
+// a row with a known user opens that user's form (onOpenUser(userId)).
+function LoginLog({ onClose, onOpenUser }) {
+  const [days, setDays] = useState(1);
+  const [result, setResult] = useState('all');
+  const [q, setQ] = useState('');
+  const [state, setState] = useState({ status: 'loading', rows: [], error: '' });
+  const load = useCallback(() => {
+    setState(st => ({ ...st, status: 'loading', error: '' }));
+    loadLogins(days).then(rows => setState({ status: 'ready', rows, error: '' }))
+      .catch(err => setState(st => ({ ...st, status: 'error', error: err.message || 'Could not load the sign-ins.' })));
+  }, [days]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape' && !document.querySelector('[aria-labelledby="userform-title"]')) { e.stopImmediatePropagation(); onClose(); } };
+    document.addEventListener('keydown', esc, true);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [onClose]);
+  const needle = q.trim().toLowerCase();
+  const rows = state.rows.filter(r => (result === 'all' || (result === 'failed') !== r.ok) && has(needle, r.name, r.username));
+  const failed = state.rows.filter(r => !r.ok).length;
+  const people = new Set(state.rows.filter(r => r.ok).map(r => r.username.toLowerCase())).size;
+  const cols = [
+    { key: 'at', label: 'When', sort: r => r.at?.getTime() || 0, render: r => (
+      <span style={{ whiteSpace: 'nowrap' }} title={r.at?.toLocaleString()}>
+        {r.at ? `${fullDate(r.at)} ${r.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '-'}
+      </span>
+    ) },
+    { key: 'user', label: 'User', sort: r => (r.name || r.username).toLowerCase(), render: r => (
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 180 }}>
+        <Avatar name={r.name || r.username || '?'} size={26} photoUrl={r.photoUrl} userId={r.userId} />
+        <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <span style={{ fontWeight: 700, color: 'var(--text)' }}><span dir="auto">{r.name || r.username || '(no username)'}</span></span>
+          <span style={muted}>{r.userId ? `@${r.username}` : 'not a user'}</span>
+        </span>
+      </span>
+    ) },
+    { key: 'ok', label: 'Result', sort: r => (r.ok ? 1 : 0), render: r => <Pill tone={r.ok ? 'green' : 'red'}>{r.ok ? 'Signed in' : 'Failed'}</Pill> },
+    { key: 'where', label: 'Where', sort: r => r.platform, render: r => <span style={{ color: 'var(--text2)' }}>{PLATFORM[r.platform] || r.platform || '-'}</span> },
+  ];
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="loginlog-title" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(15,23,42,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{
+        width: 'min(920px, 100%)', height: 'min(760px, 92vh)', padding: 20, borderRadius: 16, background: 'var(--surface)',
+        boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 12, fontFamily: 'var(--font)', minHeight: 0,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <h2 id="loginlog-title" style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)', flex: 1 }}>Sign-in log</h2>
+          <button onClick={load} disabled={state.status === 'loading'} aria-label="Refresh" title="Refresh" style={{
+            width: 34, height: 34, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
+            color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+          }}><RefreshCw size={15} style={state.status === 'loading' ? { animation: 'spin 1s linear infinite' } : undefined} /></button>
+          <button onClick={onClose} aria-label="Close" style={{
+            width: 34, height: 34, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
+            color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+          }}><X size={16} /></button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{
+            flex: '1 1 200px', maxWidth: 320, display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '0 12px',
+            borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--surface)', color: 'var(--muted)',
+          }}>
+            <Search size={14} />
+            <input value={q} onChange={e => setQ(e.target.value)} aria-label="Search" placeholder="Name or username"
+              style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
+            <ClearSearch value={q} onClear={() => setQ('')} size={22} style={{ marginRight: -6 }} />
+          </div>
+          <Chips value={days} onPick={setDays} items={[[1, 'Last 24 hours'], [7, '7 days'], [30, '30 days']]} />
+          <Chips value={result} onPick={setResult} items={[['all', 'All'], ['failed', 'Failed'], ['ok', 'Signed in']]} />
+        </div>
+        <span style={muted}>
+          {state.status === 'ready' && `${state.rows.length.toLocaleString()} sign-ins${state.rows.length >= 5000 ? ' (the newest 5000)' : ''} · ${people} people signed in · ${failed} failed · showing ${rows.length.toLocaleString()}`}
+        </span>
+        {state.status === 'error' ? (
+          <div role="alert" style={{ padding: '12px 14px', borderRadius: 10, background: 'var(--red-soft)', color: 'var(--red)', fontSize: 13 }}>{state.error}</div>
+        ) : state.status === 'loading' && !state.rows.length ? (
+          <div role="status" style={{ padding: 28, textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
+        ) : (
+          <Grid columns={cols} rows={rows} rowKey={r => r.id}
+            initialSort={{ key: 'at', desc: true }} onRowClick={r => r.userId && onOpenUser(r.userId)} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// New user (user = null) or edit one. Editing also offers Reset password and
+// Deactivate / Re-activate (asked first). The username is set once.
+// onSaved(id): saved, close; onChanged(): password / status changed, reload.
+function UserForm({ user, groups, onClose, onSaved, onChanged }) {
+  const isNew = !user;
+  const [form, setForm] = useState(() => ({
+    username: '', password: '', name: user?.name || '', mobile: user?.mobile || '', local: user?.local || '',
+    email: user?.email || '', employeeId: user?.employeeId ?? '', groupId: user?.silaGroupId || 0, admin: !!user?.admin,
+  }));
+  const [active, setActive] = useState(user ? user.active : true);
+  const [attempts, setAttempts] = useState(() => ({ failed: user?.failed || 0, locked: !!user?.locked, last: user?.lastFailed || null }));
+  const [resetting, setResetting] = useState(false);
+  const [newPwd, setNewPwd] = useState('');
+  const [confirmStatus, setConfirmStatus] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [historyVersion, setHistoryVersion] = useState(0);   // reload the sign-in history after a change
+  useEffect(() => {
+    const esc = (e) => { if (e.key === 'Escape' && !busy) { e.stopImmediatePropagation(); onClose(); } };
+    document.addEventListener('keydown', esc, true);
+    return () => document.removeEventListener('keydown', esc, true);
+  }, [busy, onClose]);
+  const set = (k) => (e) => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; setForm(f => ({ ...f, [k]: v })); };
+  const pwdOk = (p) => p.length >= 6 && p.length <= 30;
+  const ok = form.name.trim() && (!isNew || (/^[A-Za-z0-9._-]{2,30}$/.test(form.username.trim()) && pwdOk(form.password))) && !busy;
+  const act = async (fn, done) => {
+    setBusy(true); setError(''); setNotice('');
+    try { await fn(); done(); onChanged(); setHistoryVersion(v => v + 1); }
+    catch (err) { setError(err.message || 'Could not change the user.'); }
+    finally { setBusy(false); }
+  };
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!ok) return;
+    setBusy(true); setError('');
+    try {
+      onSaved(await saveUser({ id: user?.id || 0, username: form.username.trim(), password: form.password, name: form.name.trim(),
+        mobile: form.mobile.trim(), local: form.local.trim(), email: form.email.trim(), employeeId: String(form.employeeId).trim(),
+        groupId: form.groupId, admin: form.admin }));
+    } catch (err) { setError(err.message || 'Could not save the user.'); setBusy(false); }
+  };
+  const label = (text, node, flex) => (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex }}>
+      <span style={{ ...muted, fontWeight: 700 }}>{text}</span>{node}
+    </label>
+  );
+  const row = { display: 'flex', gap: 10, flexWrap: 'wrap' };
+  const section = { display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 12, borderTop: '1px solid var(--border)' };
+  return (
+    <div role="dialog" aria-modal="true" aria-labelledby="userform-title" onMouseDown={e => { if (e.target === e.currentTarget && !busy) onClose(); }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1200, background: 'rgba(15,23,42,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <form onSubmit={submit} style={{
+        width: 'min(560px, 100%)', maxHeight: '92vh', overflowY: 'auto', padding: 20, borderRadius: 16, background: 'var(--surface)',
+        boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column', gap: 12, fontFamily: 'var(--font)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {!isNew && <Avatar name={user.name} size={36} photoUrl={user.photoUrl} userId={user.id} />}
+          <span style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+            <h2 id="userform-title" style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{isNew ? 'New user' : 'Edit user'}</h2>
+            {!isNew && <span style={muted}>@{user.username} · #{user.id}</span>}
+          </span>
+          {!isNew && <Pill tone={active ? 'green' : 'red'}>{active ? 'Active' : 'Inactive'}</Pill>}
+        </div>
+        {isNew && (
+          <div style={row}>
+            {label('Username (cannot be changed later)', <input autoFocus value={form.username} maxLength={30} onChange={set('username')} disabled={busy}
+              autoComplete="off" spellCheck={false} placeholder="e.g. a.ahmed" style={formField} />, '1 1 200px')}
+            {label('Password (6 to 30 characters)', <PasswordField value={form.password} onChange={v => setForm(f => ({ ...f, password: v }))} disabled={busy} />, '1 1 240px')}
+          </div>
+        )}
+        {label('Full name', <input autoFocus={!isNew} dir="auto" value={form.name} maxLength={100} onChange={set('name')} disabled={busy} style={formField} />)}
+        <div style={row}>
+          {label('Mobile', <input value={form.mobile} maxLength={20} onChange={set('mobile')} disabled={busy} inputMode="tel" style={formField} />, '1 1 160px')}
+          {label('Extension', <input value={form.local} maxLength={10} onChange={set('local')} disabled={busy} inputMode="numeric" style={formField} />, '1 1 100px')}
+          {label('HR employee ID', <input value={form.employeeId} maxLength={10} onChange={set('employeeId')} disabled={busy} inputMode="numeric" style={formField} />, '1 1 120px')}
+        </div>
+        {label('Email', <input type="email" value={form.email} maxLength={256} onChange={set('email')} disabled={busy} spellCheck={false} style={formField} />)}
+        {label('User group', (
+          <select value={form.groupId} onChange={set('groupId')} disabled={busy} style={formField}>
+            <option value={0}>No group</option>
+            {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        ))}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={form.admin} onChange={set('admin')} disabled={busy} style={{ width: 16, height: 16, accentColor: 'var(--accent)' }} />
+          Admin
+        </label>
+        <span style={muted}>Job and department come from HR by the employee ID (refreshed every hour).</span>
+
+        {!isNew && (
+          <div style={section}>
+            <span style={{ ...muted, fontWeight: 700 }}>Password</span>
+            {resetting ? (
+              <>
+                <PasswordField value={newPwd} onChange={setNewPwd} disabled={busy} autoFocus />
+                <span style={muted}>Works at once. The user is signed out of the web and signs in with this password.</span>
+                <span style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" onClick={() => { setResetting(false); setNewPwd(''); }} disabled={busy} style={formBtn(false)}>Cancel</button>
+                  <button type="button" disabled={busy || !pwdOk(newPwd)} style={{ ...formBtn(true), opacity: pwdOk(newPwd) ? 1 : 0.5 }}
+                    onClick={() => act(() => resetUserPassword(user.id, newPwd), () => { setResetting(false); setNewPwd(''); setAttempts({ failed: 0, locked: false, last: null }); setNotice('Password changed. Give the user the new password.'); })}>
+                    {busy ? 'Saving…' : 'Set password'}</button>
+                </span>
+              </>
+            ) : (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => { setResetting(true); setNotice(''); }} disabled={busy} style={formBtn(false)}>Reset password</button>
+                <span style={muted}>Last changed {user.passwordChanged ? formatWhen(user.passwordChanged) : 'never'}</span>
+              </span>
+            )}
+
+            <span style={{ ...muted, fontWeight: 700, marginTop: 4 }}>Failed sign-ins</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {attempts.locked ? <Pill tone="red">Locked</Pill> : attempts.failed > 0 ? <Pill tone="amber">{attempts.failed} failed</Pill> : <Pill tone="green">None</Pill>}
+              <span style={{ ...muted, flex: 1 }}>
+                {attempts.failed > 0
+                  ? `${attempts.failed} in the last 24 hours, last ${formatWhen(attempts.last)}.${attempts.locked ? ' Web sign-in is blocked for up to 15 minutes.' : ''}`
+                  : 'No failed sign-ins since the last good one.'}
+                {user.loginReset && ` Reset ${formatWhen(user.loginReset)}.`}
+              </span>
+              {attempts.failed > 0 && (
+                <button type="button" disabled={busy} style={formBtn(false)}
+                  onClick={() => act(() => resetLoginAttempts(user.id), () => { setAttempts({ failed: 0, locked: false, last: null }); setNotice('Failed sign-ins cleared.'); })}>
+                  Reset attempts</button>
+              )}
+            </span>
+
+            <span style={{ ...muted, fontWeight: 700, marginTop: 4 }}>Sign-in history</span>
+            <LoginHistory userId={user.id} version={historyVersion} />
+
+            <span style={{ ...muted, fontWeight: 700, marginTop: 4 }}>Status</span>
+            {confirmStatus ? (
+              <div role="alertdialog" aria-label="Confirm" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: 10, borderRadius: 10,
+                background: active ? 'var(--red-soft)' : 'var(--green-soft)' }}>
+                <span style={{ flex: 1, fontSize: 13, color: 'var(--text)' }}>
+                  {active ? `Deactivate ${user.name}? They can no longer sign in, are signed out everywhere and leave the broadcast groups.`
+                    : `Re-activate ${user.name}? They can sign in again with their current password.`}
+                </span>
+                <button type="button" onClick={() => setConfirmStatus(false)} disabled={busy} style={formBtn(false)}>Cancel</button>
+                <button type="button" disabled={busy} style={formBtn(true, active)}
+                  onClick={() => act(() => setUserActive(user.id, !active), () => { setConfirmStatus(false); setActive(!active); })}>
+                  {busy ? 'Saving…' : active ? 'Deactivate' : 'Re-activate'}</button>
+              </div>
+            ) : (
+              <span><button type="button" onClick={() => { setConfirmStatus(true); setNotice(''); }} disabled={busy} style={formBtn(false, active)}>
+                {active ? 'Deactivate user' : 'Re-activate user'}</button></span>
+            )}
+          </div>
+        )}
+
+        {notice && <div role="status" style={{ fontSize: 12, color: 'var(--green)', fontWeight: 600 }}>{notice}</div>}
+        {error && <div role="alert" style={{ fontSize: 12, color: 'var(--red)' }}>{error}</div>}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button type="button" onClick={onClose} disabled={busy} style={formBtn(false)}>{isNew ? 'Cancel' : 'Close'}</button>
+          <button type="submit" disabled={!ok} style={{ ...formBtn(true), opacity: ok ? 1 : 0.5 }}>{busy ? 'Saving…' : isNew ? 'Create user' : 'Save'}</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 const has = (q, ...texts) => !q || texts.some(t => t && String(t).toLowerCase().includes(q));
 
 export default function SystemSettings() {
@@ -848,6 +1172,9 @@ export default function SystemSettings() {
   const [chatGroupId, setChatGroupId] = useState(null);   // the chat group drawer
   const [newChatGroup, setNewChatGroup] = useState(false);
   const [chatGroupFilter, setChatGroupFilter] = useState('all');
+  const [editUser, setEditUser] = useState(null);     // the user form: a user, 'new' or null
+  const [loginLog, setLoginLog] = useState(false);     // everyone's sign-ins
+  const closeLoginLog = useCallback(() => setLoginLog(false), []);
   const closeChatGroup = useCallback(() => setChatGroupId(null), []);
   const closeGroup = useCallback(() => setGroupId(null), []);
   const closeChannel = useCallback(() => setChannelId(null), []);
@@ -864,6 +1191,10 @@ export default function SystemSettings() {
     Promise.all([loadSettingsUserGroups(), loadSettingsUsers()])
       .then(([groups, users]) => setData(dd => ({ ...dd, groups, users }))).catch(() => { /* the next Refresh */ });
   }, []);
+  // a user was added or changed: the user master reloads quietly
+  const reloadUsers = useCallback(() => {
+    loadSettingsUsers().then(users => setData(dd => ({ ...dd, users }))).catch(() => { /* the next Refresh */ });
+  }, []);
   // a chat group was added or changed: the group master reloads quietly
   const reloadChatGroups = useCallback(() => {
     loadSettingsChatGroups().then(chatGroups => setData(dd => ({ ...dd, chatGroups }))).catch(() => { /* the next Refresh */ });
@@ -874,7 +1205,7 @@ export default function SystemSettings() {
   }, []);
 
   const needle = q.trim().toLowerCase();
-  const users = (data.users || []).filter(u => (userFilter === 'all' || (userFilter === 'active') === u.active)
+  const users = (data.users || []).filter(u => (userFilter === 'all' || (userFilter === 'failed' ? u.failed > 0 : (userFilter === 'active') === u.active))
     && has(needle, u.name, u.username, u.job, u.department, u.quickGroup, u.silaGroup, u.mobile, u.local, u.id));
   const groups = (data.groups?.groups || []).filter(g => has(needle, g.name, g.id, g.createdBy));
   const channels = (data.channels || []).filter(c => (channelFilter === 'all' || (channelFilter === 'active') === c.active)
@@ -917,6 +1248,15 @@ export default function SystemSettings() {
       </span>
     ) },
     { key: 'status', label: 'Status', sort: u => (u.active ? 0 : 1), render: u => <Pill tone={u.active ? 'green' : 'red'}>{u.active ? 'Active' : 'Inactive'}</Pill> },
+    { key: 'failed', label: 'Failed sign-ins', sort: u => (u.locked ? 1000 : 0) + u.failed, align: 'right', render: u => (u.failed ? (
+      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', whiteSpace: 'nowrap' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          {u.locked && <Pill tone="red">Locked</Pill>}
+          <span style={{ fontFamily: 'var(--mono)', fontWeight: 700, color: u.locked ? 'var(--red)' : 'var(--amber)' }}>{u.failed}</span>
+        </span>
+        <span style={muted}>{formatWhen(u.lastFailed)}</span>
+      </span>
+    ) : <span style={muted}>-</span>) },
     { key: 'created', label: 'Created', sort: u => u.created?.getTime() || 0, render: u => (
       <span style={{ display: 'flex', flexDirection: 'column', whiteSpace: 'nowrap' }}>
         <span>{fullDate(u.created) || '-'}</span>{u.createdBy && <span style={muted}>by {u.createdBy}</span>}
@@ -1006,7 +1346,7 @@ export default function SystemSettings() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: 'var(--text)', flex: 1 }}>System settings</h1>
-          <span style={muted}>Users read-only · groups, chat groups and channels editable</span>
+          <span style={muted}>Users, groups, chat groups and channels</span>
           <button onClick={load} disabled={state.status === 'loading'} aria-label="Refresh" title="Refresh" style={{
             width: 36, height: 36, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)',
             color: 'var(--text2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
@@ -1046,7 +1386,17 @@ export default function SystemSettings() {
               style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
             <ClearSearch value={q} onClear={() => setQ('')} size={24} style={{ marginRight: -6 }} />
           </div>
-          {tab === 'users' && <Chips value={userFilter} onPick={setUserFilter} items={[['active', 'Active'], ['inactive', 'Inactive'], ['all', 'All']]} />}
+          {tab === 'users' && <Chips value={userFilter} onPick={setUserFilter} items={[['active', 'Active'], ['inactive', 'Inactive'], ['failed', 'Failed sign-ins'], ['all', 'All']]} />}
+          {tab === 'users' && (
+            <button onClick={() => setEditUser('new')} style={{ ...formBtn(true), height: 38, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <UserPlus size={15} strokeWidth={2.4} /> New user
+            </button>
+          )}
+          {tab === 'users' && (
+            <button onClick={() => setLoginLog(true)} style={{ ...formBtn(false), height: 38, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <History size={15} /> Sign-in log
+            </button>
+          )}
           {tab === 'channels' && <Chips value={channelFilter} onPick={setChannelFilter} items={[['active', 'Active'], ['inactive', 'Inactive'], ['all', 'All']]} />}
           {tab === 'groups' && (
             <button onClick={() => setNewGroup(true)} style={{ ...formBtn(true), height: 38, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1087,7 +1437,7 @@ export default function SystemSettings() {
         ) : state.status === 'loading' && !data.users ? (
           <div role="status" style={{ padding: 28, textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
         ) : tab === 'users' ? (
-          <Grid columns={userCols} rows={users} rowKey={u => u.id} initialSort={{ key: 'name', desc: false }} />
+          <Grid columns={userCols} rows={users} rowKey={u => u.id} initialSort={{ key: 'name', desc: false }} onRowClick={u => setEditUser(u)} />
         ) : tab === 'chatgroups' ? (
           <Grid columns={chatGroupCols} rows={chatGroups} rowKey={g => g.id} initialSort={{ key: 'type', desc: false }}
             onRowClick={g => setChatGroupId(g.id)} />
@@ -1099,6 +1449,13 @@ export default function SystemSettings() {
             onRowClick={c => setChannelId(c.id)} />
         )}
       </div>
+      )}
+      {loginLog && (
+        <LoginLog onClose={closeLoginLog} onOpenUser={(id) => { const u = (data.users || []).find(x => x.id === id); if (u) setEditUser(u); }} />
+      )}
+      {editUser && (
+        <UserForm user={editUser === 'new' ? null : editUser} groups={data.groups?.groups || []} onClose={() => setEditUser(null)}
+          onSaved={() => { setEditUser(null); reloadUsers(); reloadGroups(); }} onChanged={reloadUsers} />
       )}
       {newGroup && (
         <GroupForm group={null} onClose={() => setNewGroup(false)}

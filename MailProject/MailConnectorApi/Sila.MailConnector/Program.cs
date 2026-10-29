@@ -50,6 +50,9 @@ builder.Services.AddOptions<AttachmentOptions>().BindConfiguration("Attachments"
     .ValidateOnStart();
 builder.Services.AddTransient<AttachmentCache>();
 builder.Services.AddSingleton<SyncQueue>();
+// What each worker last did; saved to MailServiceHeartbeat every 15 s (the Mail Monitor's Connector tab).
+builder.Services.AddSingleton<ConnectorHealth>();
+builder.Services.AddHostedService<HeartbeatWriter>();
 builder.Services.AddHostedService<SyncWorker>();
 // The safety sync timer: every mailbox at least every MailSettings SafetySyncMinutes.
 builder.Services.AddOptions<AutoSyncOptions>().BindConfiguration("AutoSync")

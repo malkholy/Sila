@@ -9,14 +9,15 @@ import ClearSearch from './ClearSearch.jsx';
 
 // Mail Monitor (System Settings tab, MailPlan 6): every mailbox the Mail
 // Connector API keeps in InternalMail -- is it up to date, how much is copied,
-// what is failing. Overview (totals, publish queue, latest sync runs),
+// what is failing. Connector (is the service alive, its workers' heartbeats,
+// last errors, publish speed), Overview (totals, publish queue, latest sync runs),
 // Accounts (one row per mailbox; double-click for its folders, runs and
 // errors; "Sync now"; "Add mailbox") and Errors (open grouped errors). The connector pushes
 // its figures to SilaApi every 15 s (no inbound port into the company); the
 // screen reads them every 15 s and says how old they are. Data:
 // shared/mailAdmin.js (checked server side).
 
-const VIEWS = [['overview', 'Overview'], ['accounts', 'Accounts'], ['errors', 'Errors']];
+const VIEWS = [['connector', 'Connector'], ['overview', 'Overview'], ['accounts', 'Accounts'], ['errors', 'Errors']];
 const REFRESH_MS = 15_000;
 const STALE_MS = 60_000;   // no push for a minute: the connector is behind or down
 
@@ -136,6 +137,142 @@ function Overview({ data }) {
       <div style={{ minHeight: 260, display: 'flex' }}>
         <Grid columns={runColumns(true)} rows={data.runs} rowKey={r => r.id} initialSort={{ key: 'started', desc: true }} />
       </div>
+    </div>
+  );
+}
+
+// Connector tab: is the Mail Connector API alive and are its workers working?
+// From its heartbeats (MailServiceHeartbeat, every 15 s): the service, Exchange
+// sync, the publisher to the external copy, and the Mail Monitor push.
+const BEAT_STALE_S = 120;   // no heartbeat for 2 minutes: stopped (MailPlan 6.1)
+const ago = (s) => (s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} m` : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} m`);
+const at = (v) => (v ? new Date(v) : null);
+// An error is current while nothing has worked since.
+const failing = (s) => Boolean(s?.lastErrorAt) && (!s.lastOk || s.lastErrorAt > s.lastOk);
+
+function Panel({ title, tone, status, children }) {
+  return (
+    <section style={{ padding: '14px 16px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <h3 style={{ margin: 0, flex: 1, fontSize: 12, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--text2)' }}>{title}</h3>
+        <Pill tone={tone}>{status}</Pill>
+      </div>
+      <dl style={{ margin: 0, display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 12, rowGap: 5, fontSize: 13 }}>{children}</dl>
+    </section>
+  );
+}
+function Row({ label, children, tone }) {
+  return (
+    <>
+      <dt style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>{label}</dt>
+      <dd style={{ margin: 0, minWidth: 0, color: tone || 'var(--text)', fontWeight: 600, overflowWrap: 'anywhere' }}>{children}</dd>
+    </>
+  );
+}
+function LastError({ s }) {
+  if (!s?.lastErrorAt) return <Row label="Last error">none</Row>;
+  return (
+    <Row label="Last error" tone={failing(s) ? 'var(--red)' : 'var(--muted)'}>
+      {when(s.lastErrorAt)}{failing(s) ? '' : ' (worked since)'}
+      <span style={{ display: 'block', fontWeight: 400, fontSize: 12, fontFamily: 'var(--mono)' }}>{s.lastError}</span>
+    </Row>
+  );
+}
+
+function Connector({ data, rate }) {
+  const { publish: p, errors: e, services } = data;
+  const pushedAgo = data.pushedAt ? Math.max(0, Math.round((Date.now() - data.pushedAt) / 1000)) : 0;
+  const by = Object.fromEntries(services.map(s => [s.component, s]));
+  const svc = by.Connector, sync = by.ExchangeSync, pub = by.Publisher;
+  const age = svc ? svc.secondsAgo + pushedAgo : null;
+  const m = (s, k) => s?.metrics?.[k];
+  const waiting = Math.max(0, p.lastChange - p.lastPublished);
+  const pubOn = Boolean(m(pub, 'enabled'));
+  const failedRuns = data.runs.filter(r => r.ok === false);
+
+  // One answer at the top: working, problems (which), or stopped.
+  const problems = [
+    failing(sync) && 'Exchange sync',
+    pubOn && (failing(pub) || p.link !== 'Up') && 'publishing to the external copy',
+    m(svc, 'pushEnabled') && failing(svc) && 'the Mail Monitor push',
+  ].filter(Boolean);
+  const verdict = !svc ? { tone: 'amber', text: 'No heartbeat from the Mail Connector API yet. It reports every 15 s once its update with heartbeats is installed (and it may write to MailServiceHeartbeat).' }
+    : age > BEAT_STALE_S ? { tone: 'red', text: `The Mail Connector API has not reported for ${ago(age)}. It is stopped, or cannot reach InternalMail. Check the 9000-MailConnector site on ${svc.instance}.` }
+    : problems.length ? { tone: 'amber', text: `Running, but failing: ${problems.join(', ')}. See below.` }
+    : { tone: 'green', text: `Working. Last heartbeat ${ago(age)} ago.` };
+  const colors = { green: ['var(--green)', 'var(--green-soft)'], amber: ['var(--amber)', 'var(--amber-soft)'], red: ['var(--red)', 'var(--red-soft)'] }[verdict.tone];
+  const stopped = verdict.tone === 'red';
+  const left = rate > 0 && waiting > 0 ? ago(Math.round(waiting / rate)) : '';
+
+  return (
+    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12, overflow: 'auto' }}>
+      <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 12, fontSize: 14, fontWeight: 700, background: colors[1], color: colors[0] }}>
+        {verdict.tone === 'green' ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}{verdict.text}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 12 }}>
+        <Panel title="Service" tone={!svc ? 'muted' : stopped ? 'red' : 'green'} status={!svc ? 'No heartbeat' : stopped ? 'Stopped' : 'Running'}>
+          {svc ? (
+            <>
+              <Row label="Last heartbeat" tone={stopped ? 'var(--red)' : undefined}>{ago(age)} ago</Row>
+              <Row label="Server">{svc.instance}</Row>
+              <Row label="Up since">{when(svc.started)} · {duration(svc.started, svc.lastBeat)}</Row>
+              <Row label="Version">built {when(at(m(svc, 'built')))}</Row>
+              <Row label="Memory">{n(m(svc, 'memoryMb'))} MB</Row>
+              <Row label="Exchange" tone={m(svc, 'exchangeConfigured') ? undefined : 'var(--red)'}>{m(svc, 'exchangeConfigured') ? 'configured' : 'not configured'}</Row>
+            </>
+          ) : <Row label="Status">not reporting</Row>}
+        </Panel>
+
+        <Panel title="Exchange sync" tone={!sync ? 'muted' : failing(sync) ? 'red' : m(sync, 'running') > 0 ? 'blue' : 'green'}
+          status={!sync ? '-' : failing(sync) ? 'Failing' : m(sync, 'running') > 0 ? `Syncing ${m(sync, 'running')}` : 'Idle'}>
+          {sync && (
+            <>
+              <Row label="Waiting">{n(m(sync, 'queuedChanges'))} for changes · {n(m(sync, 'queuedInitial'))} for a first copy</Row>
+              <Row label="Since start">{n(m(sync, 'done'))} syncs OK · <span style={{ color: m(sync, 'failed') ? 'var(--red)' : undefined }}>{n(m(sync, 'failed'))} failed</span></Row>
+              <Row label="Last finished">{when(sync.lastOk)}</Row>
+              <Row label="Safety timer" tone={m(sync, 'timerEnabled') === false ? 'var(--amber)' : undefined}>
+                {m(sync, 'timerEnabled') === false ? 'off (syncs only when asked)' : `on, checked ${when(at(m(sync, 'timerCheckedAt')))}`}
+              </Row>
+              <Row label="Mailbox errors" tone={e.open ? 'var(--red)' : undefined}>{e.open ? `${n(e.open)} open (Errors tab)` : 'none'}</Row>
+              <LastError s={sync} />
+            </>
+          )}
+        </Panel>
+
+        <Panel title="Publish to external copy" tone={!pubOn ? 'muted' : failing(pub) || p.link !== 'Up' ? 'red' : waiting > 0 ? 'blue' : 'green'}
+          status={!pubOn ? 'Off' : failing(pub) || p.link !== 'Up' ? 'Failing' : waiting > 0 ? 'Catching up' : 'Up to date'}>
+          {!pubOn ? <Row label="Status">off (Publish:Url not set): no mail leaves the company</Row> : (
+            <>
+              <Row label="Published">
+                <span style={{ fontFamily: 'var(--mono)' }}>{n(p.lastPublished)} / {n(p.lastChange)}</span>
+                <span style={{ display: 'block', marginTop: 4 }}><Bar value={pct(p.lastPublished, p.lastChange)} /></span>
+              </Row>
+              <Row label="Waiting" tone={waiting > 0 ? 'var(--accent-strong)' : undefined}>{n(waiting)} changes{left ? ` · about ${left} left` : ''}</Row>
+              <Row label="Speed">{rate > 0 ? `${n(Math.round(rate))} changes / s` : waiting > 0 ? 'measuring…' : '-'}</Row>
+              <Row label="Last batch">{m(pub, 'lastBatchChanges') ? `${n(m(pub, 'lastBatchChanges'))} changes · ${n(m(pub, 'lastBatchKb'))} KB · ${n(m(pub, 'lastBatchMs'))} ms` : '-'} · {when(p.at)}</Row>
+              <Row label="Link" tone={p.link === 'Up' ? undefined : 'var(--red)'}>{p.link}{m(pub, 'failuresInRow') > 0 ? ` · ${m(pub, 'failuresInRow')} failed in a row, next try ${when(at(m(pub, 'nextTryAt')))}` : ''}</Row>
+              <LastError s={pub} />
+            </>
+          )}
+        </Panel>
+
+        <Panel title="Mail Monitor push" tone={!m(svc, 'pushEnabled') ? 'muted' : failing(svc) ? 'red' : 'green'}
+          status={!m(svc, 'pushEnabled') ? 'Off' : failing(svc) ? 'Failing' : 'OK'}>
+          {m(svc, 'pushEnabled') ? (
+            <>
+              <Row label="Last push">{when(at(m(svc, 'pushOkAt')))}</Row>
+              <Row label="Figures here">{data.pushedAt ? `${ago(pushedAgo)} old` : '-'}</Row>
+              <LastError s={svc} />
+            </>
+          ) : <Row label="Status">off (Monitor:PushUrl not set)</Row>}
+        </Panel>
+      </div>
+      <DrawerHeading>Failed sync runs (latest 20 runs){failedRuns.length ? ` · ${failedRuns.length}` : ''}</DrawerHeading>
+      {failedRuns.length ? (
+        <div style={{ minHeight: 160, display: 'flex' }}>
+          <Grid columns={runColumns(true)} rows={failedRuns} rowKey={r => r.id} initialSort={{ key: 'started', desc: true }} />
+        </div>
+      ) : <span style={muted}>None of the latest runs failed.</span>}
     </div>
   );
 }
@@ -389,7 +526,7 @@ function AddMailboxDialog({ accounts, onClose, onAdded }) {
 }
 
 export default function MailMonitor() {
-  const [view, setView] = useState(() => { try { return localStorage.getItem('silaMailView') || 'overview'; } catch { return 'overview'; } });
+  const [view, setView] = useState(() => { try { return localStorage.getItem('silaMailView') || 'connector'; } catch { return 'connector'; } });
   const pickView = (v) => { setView(v); try { localStorage.setItem('silaMailView', v); } catch { /* not remembered */ } };
   const [data, setData] = useState({ overview: null, accounts: null, errors: null });
   const [state, setState] = useState({ status: 'loading', error: '', at: null });
@@ -399,6 +536,9 @@ export default function MailMonitor() {
   const closeAccount = useCallback(() => setAccountId(null), []);
   const [adding, setAdding] = useState(false);
   const busy = useRef(false);
+  // Publish speed: changes per second between two reads (by the database's clock).
+  const sample = useRef(null);
+  const [rate, setRate] = useState(0);
 
   const load = useCallback(async () => {
     if (busy.current) return;   // a slow answer is not asked for twice
@@ -407,6 +547,12 @@ export default function MailMonitor() {
     try {
       const [overview, accounts, errors] = await Promise.all([loadMailOverview(), loadMailAccounts(), loadMailErrors()]);
       setData({ overview, accounts, errors });
+      const now = { seq: overview.publish.lastPublished, at: overview.at };
+      const prev = sample.current;
+      if (prev && now.at && prev.at && now.at - prev.at >= 5000) {
+        setRate(Math.max(0, (now.seq - prev.seq) / ((now.at - prev.at) / 1000)));
+        sample.current = now;
+      } else if (!prev) sample.current = now;
       setState({ status: 'ready', error: '', at: new Date() });
     } catch (err) {
       setState(s => ({ ...s, status: 'error', error: err.message || 'Could not load the Mail Monitor.' }));
@@ -459,7 +605,7 @@ export default function MailMonitor() {
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Chips value={view} onPick={pickView} items={VIEWS.map(([k, label]) => [k, k === 'errors' && data.errors?.length ? `${label} · ${data.errors.length}` : label])} />
-        {view !== 'overview' && (
+        {(view === 'accounts' || view === 'errors') && (
           <div style={{ flex: '1 1 220px', maxWidth: 380, display: 'flex', alignItems: 'center', gap: 8, height: 36, padding: '0 12px',
             borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--surface)', color: 'var(--muted)' }}>
             <Search size={15} />
@@ -500,6 +646,8 @@ export default function MailMonitor() {
       )}
       {!data.overview ? (
         state.status === 'loading' && <div role="status" style={{ padding: 28, textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
+      ) : view === 'connector' ? (
+        <Connector data={data.overview} rate={rate} />
       ) : view === 'overview' ? (
         <Overview data={data.overview} />
       ) : view === 'accounts' ? (

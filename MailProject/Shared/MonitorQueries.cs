@@ -10,7 +10,7 @@ namespace Sila.Mail.Monitor;
 public static class MonitorQueries
 {
     // Mail Monitor (MailPlan 6.1): totals across every mailbox, the publish
-    // state, open errors and the latest sync runs.
+    // state, open errors, the latest sync runs and the connector's heartbeats.
     public static async Task<object> OverviewAsync(SqlConnection connection, CancellationToken ct)
     {
         await using var command = new SqlCommand("""
@@ -34,7 +34,7 @@ public static class MonitorQueries
                    (SELECT COUNT_BIG(*) FROM [mail].[MailAttachment] WHERE [IsInline] = 1) AS [InlineImages],
                    (SELECT ISNULL(SUM([Size]), 0) FROM [mail].[MailAttachment]) AS [AttachmentBytes];
 
-            SELECT p.[LastPublishedSeq], p.[LastPublishedAt], p.[LinkStatus], p.[LastError], p.[LastErrorAt],
+            SELECT p.[LastPublishedSeq], p.[LastPublishedAt], p.[LastAttemptAt], p.[LinkStatus], p.[LastResponseMs], p.[LastError], p.[LastErrorAt],
                    ISNULL((SELECT MAX([Seq]) FROM [mail].[MailChange]), 0) AS [LastChangeSeq]
             FROM [mail].[MailPublishState] p;
 
@@ -48,6 +48,13 @@ public static class MonitorQueries
             JOIN [mail].[MailUser] u ON u.[UserID] = l.[UserID]
             LEFT JOIN [mail].[MailFolder] f ON f.[FolderID] = l.[FolderID]
             ORDER BY l.[SyncLogID] DESC;
+
+            -- the Mail Connector API's heartbeats (Monitor/ConnectorHealth.cs): SecondsAgo by this
+            -- server's clock, so the screen needs no clock of its own
+            SELECT [Component], [Instance], [StartedAt], [LastBeatAt], DATEDIFF(SECOND, [LastBeatAt], SYSDATETIME()) AS [SecondsAgo],
+                   [Metrics], [LastError], [LastErrorAt]
+            FROM [mail].[MailServiceHeartbeat]
+            ORDER BY [Component], [Instance];
             """, connection) { CommandTimeout = 60 };
         await using var reader = await command.ExecuteReaderAsync(ct);
         var accounts = (await ReadRowsAsync(reader, ct))[0];
@@ -59,7 +66,9 @@ public static class MonitorQueries
         var errors = (await ReadRowsAsync(reader, ct))[0];
         await reader.NextResultAsync(ct);
         var runs = await ReadRowsAsync(reader, ct);
-        return new { accounts, content, publish, errors, recentSyncs = runs, time = DateTime.Now };
+        await reader.NextResultAsync(ct);
+        var services = await ReadRowsAsync(reader, ct);
+        return new { accounts, content, publish, errors, recentSyncs = runs, services, time = DateTime.Now };
     }
 
     // Mail Monitor, Accounts tab (MailPlan 6.2): one row per mailbox.

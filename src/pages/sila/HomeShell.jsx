@@ -128,7 +128,8 @@ function ticketPreview(text, ticketId) {
 // dbl: open on a double-click (the Panels view's drawer): a single click
 // selects the row, Up / Down move the selection (rowNav.js), Enter opens it
 // (a keyboard click has detail 0). In the List view a click opens the
-// conversation and selects the row too, so Up / Down work from there. The
+// conversation and selects the row too, and Up / Down open the row they land
+// on. The
 // click focuses the row itself: Safari doesn't focus buttons on click.
 // The search text marked inside a row's name / channel / number / preview
 // (terms: the active searches, lower case; empty = plain text).
@@ -145,13 +146,18 @@ function ConversationRow({ item, active, online, onPick, dbl = false, terms, onT
     </span>
   );
   return (
-    <button data-row onClick={(e) => { e.currentTarget.focus(); if (dbl && e.detail !== 0) return; if (!isSelectingText()) onPick(); }}
+    <button data-row data-rowid={item.id} onClick={(e) => { e.currentTarget.focus(); if (dbl && e.detail !== 0) return; if (!isSelectingText()) onPick(); }}
       onMouseDown={dbl ? noWordSelect : undefined} onDoubleClick={dbl ? onPick : undefined}
       onKeyDown={(e) => {
         if ((e.key === 'f' || e.key === 'F') && ticket && onToggleFlag && !e.ctrlKey && !e.metaKey && !e.altKey) {
           e.preventDefault(); onToggleFlag(item); return;
         }
-        moveRowFocus(e);
+        // List view: the row Up / Down lands on opens too, as a click would
+        // (Panels: it only moves the selection; the open drawer follows on its own)
+        const from = e.currentTarget;
+        if (moveRowFocus(e) && !dbl && document.activeElement !== from && document.activeElement?.hasAttribute('data-row')) {
+          document.activeElement.click();
+        }
       }}
       onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
       aria-current={active ? 'true' : undefined} style={{
@@ -330,6 +336,30 @@ export default function HomeShell({ user, onSignOut }) {
     try { localStorage.setItem('silaHomeView', v); } catch { /* private mode: not remembered */ }
   };
   const [drawerId, setDrawerId] = useState(null);   // Panels view: the conversation open in the drawer
+  // Panels view: each panel's rows in the order shown (filled while rendering),
+  // so Up / Down with the drawer open load the previous / next conversation of
+  // the same panel -- unless the key is meant for a text box or a picker.
+  const panelRowsRef = useRef({});
+  useEffect(() => {
+    if (drawerId == null || section !== 'home' || homeView !== 'panels') return undefined;
+    const onKey = (e) => {
+      if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const ids = Object.values(panelRowsRef.current).find(list => list.includes(drawerId));
+      const next = ids?.[ids.indexOf(drawerId) + (e.key === 'ArrowDown' ? 1 : -1)];
+      if (next == null) return;
+      e.preventDefault();
+      e.stopPropagation();   // the focused row would move its own selection as well
+      setDrawerId(next);
+      requestAnimationFrame(() => {
+        const row = document.querySelector(`[data-rowid="${CSS.escape(String(next))}"]`);
+        if (row) { row.focus({ preventScroll: true }); row.scrollIntoView({ block: 'nearest' }); }
+      });
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [drawerId, section, homeView]);
   const notify = useNotifyState();
   const [unreadOnly, setUnreadOnly] = useState(() => new Set());   // Panels view: panels showing unread only
   // Panels view: the order of the three panels (drag a header, or the arrows), remembered
@@ -912,6 +942,7 @@ export default function HomeShell({ user, onSignOut }) {
           && (!flaggedOnly || i.flag));
         const sortKey = p.key === 'ticket' ? ticketSort : 'last';
         const rows = sortKey === 'last' ? filteredRows : [...filteredRows].sort(TICKET_SORT_FN[sortKey]);
+        panelRowsRef.current[p.key] = rows.map(i => i.id);
         const Icon = p.icon;
         return (
           <section key={p.key} aria-label={p.title}
@@ -1047,7 +1078,16 @@ export default function HomeShell({ user, onSignOut }) {
   const drawerItem = drawerId != null ? (left.items.find(i => i.id === drawerId) || (draftChat?.id === drawerId ? draftChat : null)) : null;
   const drawer = drawerItem && (
     <>
-      <div aria-hidden="true" onMouseDown={() => setDrawerId(null)}
+      {/* a click on the shade over a row opens that conversation in the drawer
+          (one click, as the drawer is already open); anywhere else closes it */}
+      <div aria-hidden="true" onMouseDown={(e) => {
+        const row = document.elementsFromPoint(e.clientX, e.clientY).map(el => el.closest('[data-rowid]')).find(Boolean);
+        const id = row && Object.values(panelRowsRef.current).flat().find(x => String(x) === row.dataset.rowid);
+        if (id == null) { setDrawerId(null); return; }
+        e.preventDefault();
+        setDrawerId(id);
+        row.focus({ preventScroll: true });
+      }}
         style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.25)', zIndex: 1000 }} />
       <aside role="dialog" aria-label={drawerItem.title} style={{
         position: 'fixed', top: 0, right: 0, bottom: 0, width: drawerItem.kind === 'ticket' ? 'min(1240px, 94vw)' : 'min(980px, 90vw)',

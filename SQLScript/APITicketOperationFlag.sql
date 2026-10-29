@@ -29,6 +29,11 @@ GO
 -- (6) Forward Ticket also for an In progress ticket; a rejected / cancelled
 --     forward puts the original back In progress if it had been started.
 -- (7) Forward Ticket: the ticket's CC people always join the copy, as CC.
+-- (8) 'Get Left Side Ticket': every ticket that is not Closed / Archived
+--     (TicketState 50 / 100), but a Closed / Archived one only when it changed
+--     in the last 30 days -- older ones come from 'Get Closed Tickets'. It
+--     returned the caller's every ticket ever (mhd: 32,732 rows on 2026-10-28),
+--     past the Sila API's 25,000-row limit ("Result exceeds the row limit").
 -- Every other operation, column and result set is as before.
 -- Not the rewrite in SQLScript/APITicketOperation.sql (that one still waits for
 -- the app owner's go-ahead).
@@ -568,6 +573,8 @@ begin
 						From  CHA.V_TicketHistory a
 					where a.TicketChannelID=@ChannelID and 
 					 a.TicketID in ( select  x.TicketID from cha.TicketMembers  x where UserID=@userID and IsLeft=0  ) 
+					 -- (8) closed / archived tickets only when changed in the last 30 days (2026-10-28)
+					 and ( a.TicketState not in ( 50 , 100 ) or a.LastMaintDate >= dateadd(day, -30, getdate()) ) 
 			end
 			else
 			begin
@@ -584,6 +591,8 @@ begin
 						From  CHA.V_TicketHistory a 
 					where --- a.TicketChannelID=@ChannelID and 
 					 a.TicketID in ( select  x.TicketID from cha.TicketMembers  x where UserID=@userID and IsLeft=0  ) 
+					 -- (8) closed / archived tickets only when changed in the last 30 days (2026-10-28)
+					 and ( a.TicketState not in ( 50 , 100 ) or a.LastMaintDate >= dateadd(day, -30, getdate()) ) 
 			end 
 				
 					

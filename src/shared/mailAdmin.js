@@ -41,6 +41,19 @@ const error = (r) => ({
   code: r.Code || '', message: r.Message || '', count: num(r.Count), first: date(r.FirstSeenAt), last: date(r.LastSeenAt),
 });
 
+// A Mail Connector API heartbeat (MailServiceHeartbeat): one row per component
+// (Connector, ExchangeSync, Publisher). secondsAgo is by the database's clock at
+// read time; Metrics is the component's JSON (times there carry their offset).
+function service(r) {
+  let metrics = {};
+  try { metrics = JSON.parse(r.Metrics || '{}') || {}; } catch { /* bad JSON: no figures */ }
+  return {
+    component: r.Component, instance: r.Instance || '', started: date(r.StartedAt), lastBeat: date(r.LastBeatAt),
+    secondsAgo: num(r.SecondsAgo), metrics, lastOk: metrics.lastOkAt ? new Date(metrics.lastOkAt) : null,
+    lastError: r.LastError || '', lastErrorAt: date(r.LastErrorAt),
+  };
+}
+
 export async function loadMailOverview() {
   const { data: d, pushedAt } = await call('overview');
   const a = d.accounts || {}, c = d.content || {}, p = d.publish || {}, e = d.errors || {};
@@ -51,9 +64,11 @@ export async function loadMailOverview() {
       messages: num(c.Messages), unread: num(c.Unread), markedDeleted: num(c.MarkedDeleted), bodies: num(c.Bodies),
       attachments: num(c.Attachments), inline: num(c.InlineImages), attachmentBytes: num(c.AttachmentBytes) },
     publish: { lastPublished: num(p.LastPublishedSeq), lastChange: num(p.LastChangeSeq), at: date(p.LastPublishedAt),
+      attemptAt: date(p.LastAttemptAt), responseMs: num(p.LastResponseMs),
       link: p.LinkStatus || 'Down', lastError: p.LastError || '', lastErrorAt: date(p.LastErrorAt) },
     errors: { open: num(e.OpenErrors), occurrences: num(e.Occurrences) },
     runs: (d.recentSyncs || []).map(run),
+    services: (d.services || []).map(service),
     at: date(d.time),
     pushedAt,
   };

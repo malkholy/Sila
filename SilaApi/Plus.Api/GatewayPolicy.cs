@@ -66,7 +66,8 @@ public sealed partial class GatewayPolicy(IOptionsMonitor<GatewayOptions> option
         {
             if (!names.Add(name) || Reserved.Contains(name)
                 || !allowed.AllowedParameters.Contains(name, StringComparer.OrdinalIgnoreCase))
-                throw new GatewayException(400, "An extra parameter is duplicate, reserved or not allowed.");
+                // The name is the caller's own input: saying which one helps the app's developer and reveals nothing.
+                throw new GatewayException(400, $"Extra parameter '{(name.Length > 64 ? name[..64] : name)}' is duplicate, reserved or not allowed for {request.Proc} '{request.Operation}'.");
         }
         return new(db, request.Database, request.Proc, allowed, username,
             ip?.ToString() ?? "", zone);

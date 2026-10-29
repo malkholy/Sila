@@ -76,6 +76,10 @@ GO
 --   Add channel members   { ChannelID, Members: [ { UserID, IsAdmin, IsTeamLeader } ] }  (mhd only)
 --   Set channel member    { ChannelID, UserID, IsAdmin, IsTeamLeader }  (mhd only)
 --   Remove channel member { ChannelID, UserID }  (mhd only). Existing tickets keep their roles.
+--   Settings logins  { Days: 1 | 7 | 30 }  everyone's sign-ins in that period, newest first,
+--                    max 5000, with the user's name / photo (never the Hash column; mhd only)
+--   Settings user logins { UserID }  the user's latest 100 sign-ins: time, success, platform
+--                    (never the Hash column); List1 the last failed-attempts reset (mhd only)
 --   Settings user group { GroupID }  List0 the Sila user group, List1 its users (mhd only)
 --   Save user group  { GroupID? (0 = new), GroupName }  create / rename (mhd only); returns { GroupID }
 --   Delete user group { GroupID }  only an empty group (mhd only)
@@ -87,7 +91,9 @@ GO
 --                    (dbo.SilaGroupType, SQLScript/SilaBroadcastGroup.sql; mhd only)
 --   Set chat group admin { GroupID, UserID, Admin: 1|0 }  (mhd only)
 --   Settings users / Settings user groups / Settings channels   {}  read-only master
---                    lists for the web System Settings screen -- user 'mhd' ONLY
+--                    lists for the web System Settings screen -- user 'mhd' ONLY.
+--                    Settings users also has each user's failed sign-ins that still
+--                    count (FailedLogins, LastFailedAt, LoginLocked, LoginResetAt)
 --                    (checked here; the app only hides the button). No password hash.
 --                    active users, not the caller; Search also matches the user group name.
 --   User groups      user groups with their active user counts (picker filter).
@@ -1053,7 +1059,7 @@ BEGIN
         -- department, user group, mobile, local extension and HR employee id.
         -- LineData { UserID } or { Username }. Any signed-in user, like the
         -- mobile app's dbo.V_UserMaster_1 (the same view); the employee id is
-        -- quick.QUK.UserMaster.EmployeeID, the link that view joins HR on.
+        -- dbo.UserMaster.EmployeeID (copied from Quick), the HR link.
         -- -----------------------------------------------------------------
         IF @Operation = N'User profile'
         BEGIN
@@ -1064,9 +1070,9 @@ BEGIN
             IF @PUId IS NULL OR NOT EXISTS (SELECT 1 FROM dbo.UserMaster WHERE UserID = @PUId)
             BEGIN SET @State = 404; SET @Message = N'User not found.'; RETURN; END
             SELECT TOP (1) v.UserID, v.Username, v.FullName, v.MobileNumber, v.LocalNumber, v.JobName, v.DepartmentName,
-                   v.GroupName AS UserGroupName, v.IsNotActive, v.FileURL AS PhotoURL, q.EmployeeID
+                   v.GroupName AS UserGroupName, v.IsNotActive, v.FileURL AS PhotoURL, um.EmployeeID
             FROM dbo.V_UserMaster_1 v
-            OUTER APPLY (SELECT TOP (1) x.EmployeeID FROM quick.QUK.UserMaster x WHERE x.UserID = v.UserID) q
+            JOIN dbo.UserMaster um ON um.UserID = v.UserID
             WHERE v.UserID = @PUId
             ORDER BY CASE WHEN v.FileURL IS NULL THEN 1 ELSE 0 END;
             RETURN;
@@ -1112,24 +1118,81 @@ BEGIN
                           N'Add channel members', N'Set channel member', N'Remove channel member',
                           N'Settings user group', N'Save user group', N'Delete user group', N'Set users group',
                           N'Save channel sla', N'Settings chat groups', N'Settings chat group', N'Save chat group',
-                          N'Set chat group admin')
+                          N'Set chat group admin', N'Settings user logins', N'Settings logins')
         BEGIN
             IF LOWER(@User) <> N'mhd'
             BEGIN SET @State = 403; SET @Message = N'System settings are not available for this user.'; RETURN; END
 
             IF @Operation = N'Settings users'
             BEGIN
+                -- Failed sign-ins of the last 24 hours that still count: after the
+                -- user's last success and after an admin's reset
+                -- (dbo.SilaLoginAttemptReset). 5 of them within 15 minutes lock the
+                -- web sign-in (Pls.APIPlusUserOperationV1) until they are 15 minutes old.
+                DECLARE @SUSince DATETIME = DATEADD(DAY, -1, GETDATE());
+                SELECT h.Username,
+                       COUNT(*) AS Failed,
+                       MAX(h.CreatedDate) AS LastFailedAt,
+                       SUM(CASE WHEN h.CreatedDate > DATEADD(MINUTE, -15, GETDATE()) THEN 1 ELSE 0 END) AS Recent
+                INTO #SUFail
+                FROM dbo.UserLoginHistory h
+                OUTER APPLY (SELECT MAX(o.CreatedDate) AS LastOk FROM dbo.UserLoginHistory o
+                             WHERE o.Username = h.Username AND o.isSuccessful = 1 AND o.CreatedDate > @SUSince) ok
+                OUTER APPLY (SELECT r.ResetAt FROM dbo.SilaLoginAttemptReset r JOIN dbo.UserMaster m ON m.UserID = r.UserID
+                             WHERE m.Username = h.Username) rs
+                WHERE h.isSuccessful = 0 AND h.CreatedDate > @SUSince AND ISNULL(h.Username, N'') <> N''
+                  AND (ok.LastOk IS NULL OR h.CreatedDate > ok.LastOk)
+                  AND (rs.ResetAt IS NULL OR h.CreatedDate > rs.ResetAt)
+                GROUP BY h.Username;
+
                 -- never the Hash column
                 SELECT u.UserID, u.Username, u.FullName, t.JobName, t.DepartmentName, t.UserGroupName AS QuickGroupName,
                        u.GroupID AS SilaGroupID, g.GroupName AS SilaGroupName, u.MobileNumber, u.LocalNumber,
                        u.IsAdmin, u.IsDeveloper, u.IsNotActive, u.ForceLogout, u.CreatedDate, u.CreatedBy,
-                       u.ChangePasswordDate, p.FileURL AS PhotoURL
+                       u.ChangePasswordDate, p.FileURL AS PhotoURL, u.EmailAddress, u.EmployeeID,
+                       ISNULL(f.Failed, 0) AS FailedLogins, f.LastFailedAt,
+                       CASE WHEN f.Recent >= 5 THEN 1 ELSE 0 END AS LoginLocked,
+                       (SELECT TOP (1) r.ResetAt FROM dbo.SilaLoginAttemptReset r WHERE r.UserID = u.UserID) AS LoginResetAt
                 FROM dbo.UserMaster u
+                LEFT JOIN #SUFail f ON f.Username = u.Username
                 LEFT JOIN dbo.V_SilaUserTitle t  ON t.UserID = u.UserID
                 LEFT JOIN dbo.UserGroupMaster g  ON g.GroupID = u.GroupID
                 OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
                              WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
                 ORDER BY u.IsNotActive, u.FullName;
+                RETURN;
+            END
+
+            -- one user's latest sign-ins (UserLoginHistory), never the Hash column;
+            -- List1 when an admin last reset the failed attempts
+            IF @Operation = N'Settings user logins'
+            BEGIN
+                DECLARE @SLUser NVARCHAR(250), @SLId INT = TRY_CAST(JSON_VALUE(@LineData, '$.UserID') AS INT);
+                SELECT @SLUser = Username FROM dbo.UserMaster WHERE UserID = @SLId;
+                IF @SLUser IS NULL BEGIN SET @State = 404; SET @Message = N'User not found.'; RETURN; END
+                SELECT TOP (100) h.CreatedDate, h.isSuccessful, h.platform
+                FROM dbo.UserLoginHistory h
+                WHERE h.Username = @SLUser
+                ORDER BY h.CreatedDate DESC;
+                SELECT r.ResetAt, r.ResetBy FROM dbo.SilaLoginAttemptReset r WHERE r.UserID = @SLId;
+                RETURN;
+            END
+
+            -- everyone's sign-ins of the last Days (1 / 7 / 30), newest first, at most
+            -- 5000; never the Hash column. Rows whose username matches no user
+            -- (typos, the old mobile sign-in's empty name) come without a name.
+            IF @Operation = N'Settings logins'
+            BEGIN
+                DECLARE @SLDays INT = ISNULL(TRY_CAST(JSON_VALUE(@LineData, '$.Days') AS INT), 1);
+                IF @SLDays NOT IN (1, 7, 30) SET @SLDays = 1;
+                SELECT TOP (5000) h.CreatedDate, h.isSuccessful, h.platform, h.Username,
+                       u.UserID, u.FullName, p.FileURL AS PhotoURL
+                FROM dbo.UserLoginHistory h
+                LEFT JOIN dbo.UserMaster u ON u.Username = h.Username
+                OUTER APPLY (SELECT TOP (1) x.FileURL FROM dbo.AttachmentHistory x
+                             WHERE x.AttachmentID = u.AttachmentID AND u.AttachmentID <> 0 ORDER BY x.ID DESC) p
+                WHERE h.CreatedDate > DATEADD(DAY, -@SLDays, GETDATE())
+                ORDER BY h.CreatedDate DESC;
                 RETURN;
             END
 
@@ -1594,7 +1657,7 @@ BEGIN
         END
 
         -- -----------------------------------------------------------------
-        -- User groups (read-only): the user groups (quick.QUK.UserGroupMaster, through
+        -- User groups (read-only): the user groups (dbo.UserGroupMaster, through
         -- dbo.V_SilaUserTitle) with how many active users (other than the caller)
         -- are in each -- the picker's filter list.
         -- -----------------------------------------------------------------
@@ -1739,6 +1802,8 @@ USING (VALUES
     (N'dbo.APISilaWebOperation', N'User groups',       N'Pickers: user groups (quick, via V_SilaUserTitle) with their active user counts'),
     (N'dbo.APISilaWebOperation', N'Settings users',       N'System Settings (mhd only, checked in the SP): user master, read-only, no hash'),
     (N'dbo.APISilaWebOperation', N'Settings user groups', N'System Settings (mhd only, checked in the SP): dbo.UserGroupMaster, read-only'),
+    (N'dbo.APISilaWebOperation', N'Settings logins',      N'System Settings (mhd only, checked in the SP): everyone''s sign-ins of the last 1 / 7 / 30 days, no hash'),
+    (N'dbo.APISilaWebOperation', N'Settings user logins', N'System Settings (mhd only, checked in the SP): one user''s latest 100 sign-ins, no hash'),
     (N'dbo.APISilaWebOperation', N'Settings channels',    N'System Settings (mhd only, checked in the SP): channel master, read-only'),
     (N'dbo.APISilaWebOperation', N'Settings channel',     N'System Settings (mhd only, checked in the SP): one channel''s details, members, tickets'),
     (N'dbo.APISilaWebOperation', N'Save channel purpose', N'System Settings (mhd only, checked in the SP): what a channel handles (dbo.SilaChannelPurpose)'),

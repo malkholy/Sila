@@ -12,6 +12,13 @@ import silaLogo from './Assets/sila_logo.png';
 // Sila web app: sign-in (SilaApi /api/v2/auth) -> Home shell. A stored session
 // is restored on reload; the live socket runs while signed in. UpdateGate
 // covers every screen once a newer build is published.
+//
+// Until the launch only these accounts get past sign-in; everyone else is signed
+// out again and told when the site opens. A screen, not security: the APIs still
+// check each call.
+const OPEN_TO = ['mhd'];
+const isOpenTo = (u) => OPEN_TO.includes(String(u?.username || '').toLowerCase());
+
 export default function SilaApp() {
   const [signedIn, setSignedIn] = useState(false);
   return (
@@ -24,9 +31,10 @@ export default function SilaApp() {
 
 function Screens({ onSignedInChange }) {
   const [user, setUser] = useState(null);
-  const [phase, setPhase] = useState('restoring');   // restoring | signed-out | signed-in | offline
+  const [phase, setPhase] = useState('restoring');   // restoring | signed-out | signed-in | offline | not-open
 
   const start = useCallback((u) => {
+    if (!isOpenTo(u)) { setPhase('not-open'); logout(); return; }
     setUser(u);
     setPhase('signed-in');
     connectLive();
@@ -80,6 +88,28 @@ function Screens({ onSignedInChange }) {
       </div>
     );
   }
+  if (phase === 'not-open') return <NotOpenYet onBack={() => setPhase('signed-out')} />;
   if (phase === 'signed-out' || !user) return <LoginPage onSignedIn={start} />;
   return <HomeShell user={user} onSignOut={signOut} />;
+}
+
+function NotOpenYet({ onBack }) {
+  return (
+    <div role="alert" style={{
+      minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: 18, background: 'var(--bg)', fontFamily: 'var(--font)', padding: 16, textAlign: 'center',
+    }}>
+      <img src={silaLogo} alt="Sila" width={72} height={72} style={{ display: 'block' }} />
+      <h1 style={{ margin: 0, fontSize: 'clamp(28px, 6vw, 48px)', fontWeight: 800, color: 'var(--text)', lineHeight: 1.15 }}>
+        Sila will be ready within 48 hours
+      </h1>
+      <p style={{ margin: 0, maxWidth: 520, fontSize: 'clamp(15px, 2.4vw, 19px)', color: 'var(--text2)' }}>
+        We are getting the new Sila ready. Please sign in again after that. Thank you for your patience.
+      </p>
+      <button onClick={onBack} style={{
+        height: 42, padding: '0 22px', marginTop: 6, borderRadius: 10, border: 'none', background: 'var(--accent)',
+        color: 'var(--on-accent)', fontWeight: 700, fontSize: 14, fontFamily: 'var(--font)', cursor: 'pointer',
+      }}>Back to sign-in</button>
+    </div>
+  );
 }

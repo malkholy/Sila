@@ -7,6 +7,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Sila.Mail.Contract;
 using Sila.MailConnector.Data;
+using Sila.MailConnector.Monitor;
 using FolderRow = Sila.Mail.Contract.FolderRow;
 
 namespace Sila.MailConnector.Publish;
@@ -21,7 +22,7 @@ namespace Sila.MailConnector.Publish;
 // it and the changes are sent again -- applying twice changes nothing there.
 // Off while Publish:Url is empty: until then no mail leaves the company.
 public sealed class Publisher(IHttpClientFactory clients, IOptionsMonitor<PublishOptions> options, MailStore store,
-    ILogger<Publisher> log) : BackgroundService
+    ConnectorHealth health, ILogger<Publisher> log) : BackgroundService
 {
     public const string ClientName = "publish";
 
@@ -41,6 +42,7 @@ public sealed class Publisher(IHttpClientFactory clients, IOptionsMonitor<Publis
             {
                 var more = await PublishOnceAsync(settings, stoppingToken);
                 failures = 0;
+                if (!more) health.Ok(ConnectorHealth.Publisher, ("idleSince", DateTime.Now));
                 wait = more ? TimeSpan.Zero : TimeSpan.FromSeconds(settings.IdleSeconds);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -53,6 +55,8 @@ public sealed class Publisher(IHttpClientFactory clients, IOptionsMonitor<Publis
                 wait = TimeSpan.FromSeconds(Math.Min(60, 2 * Math.Pow(2, Math.Min(failures, 5))));
                 log.LogWarning("Publish failed ({ErrorType}: {Message}); next try in {Seconds} s",
                     error.GetType().Name, error.Message, (int)wait.TotalSeconds);
+                health.Failed(ConnectorHealth.Publisher, $"{error.GetType().Name}: {error.Message}", ("failuresInRow", failures),
+                    ("nextTryAt", DateTime.Now + wait));
                 try { await store.SetPublishErrorAsync($"{error.GetType().Name}: {error.Message}", CancellationToken.None); }
                 catch { /* the database may be what failed */ }
             }
@@ -90,6 +94,8 @@ public sealed class Publisher(IHttpClientFactory clients, IOptionsMonitor<Publis
             if (status != HttpStatusCode.OK || result is null)
                 throw new HttpRequestException($"The Mail External API answered {(int)status}.");
             await store.SetPublishedAsync(result.LastAppliedSeq, ms, ct);
+            health.Ok(ConnectorHealth.Publisher, ("failuresInRow", 0), ("lastBatchChanges", part.Count), ("lastBatchKb", json.Length / 1024),
+                ("lastBatchMs", ms), ("lastAppliedSeq", result.LastAppliedSeq), ("idleSince", null));
             log.LogInformation("Published changes {From}-{To}: {Applied} applied, {Skipped} skipped, {Kb} KB in {Ms} ms",
                 last + 1, batch.ToSeq, result.Applied, result.Skipped, json.Length / 1024, ms);
             return take < changes.Count || changes.Count == settings.BatchChanges;

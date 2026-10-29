@@ -24,7 +24,9 @@ GO
 --     change a password, and each such sign-in is logged (platform 'api-v2-master');
 --   * the typed password is never written to UserLoginHistory (Hash = '');
 --   * 5 failed attempts within 15 minutes (counted from UserLoginHistory,
---     since the last success) block further tries for those 15 minutes.
+--     since the last success and since an admin's reset in
+--     dbo.SilaLoginAttemptReset -- System Settings > User Master) block
+--     further tries for those 15 minutes.
 -- Same as the legacy login: password = DecryptByPassPhrase('key', hash),
 -- compared with the column collation; IsNotActive must be 0; a user whose
 -- ChangePasswordDate is NULL must first change the password (legacy State 4)
@@ -84,6 +86,10 @@ BEGIN
             SELECT @LastSuccess = MAX(CreatedDate)
             FROM [dbo].[UserLoginHistory]
             WHERE Username = @Username AND isSuccessful = 1;
+            -- an admin's reset counts like a success: older failures no longer lock
+            SELECT @LastSuccess = CASE WHEN @LastSuccess IS NULL OR r.ResetAt > @LastSuccess THEN r.ResetAt ELSE @LastSuccess END
+            FROM [dbo].[SilaLoginAttemptReset] r JOIN [dbo].[UserMaster] u ON u.UserID = r.UserID
+            WHERE u.Username = @Username;
 
             SELECT @Failures = COUNT(*)
             FROM [dbo].[UserLoginHistory]

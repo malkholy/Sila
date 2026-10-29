@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Options;
 using Sila.MailConnector.Data;
+using Sila.MailConnector.Monitor;
 
 namespace Sila.MailConnector.Sync;
 
@@ -24,7 +25,7 @@ public sealed class AutoSyncOptions
 // e.g. after a restart). A failing mailbox waits longer each time (x2 per
 // failure in a row, at most an hour). Already queued or running = skipped.
 public sealed class SyncScheduler(SyncQueue queue, MailStore store, IOptionsMonitor<AutoSyncOptions> options,
-    ILogger<SyncScheduler> log) : BackgroundService
+    ConnectorHealth health, ILogger<SyncScheduler> log) : BackgroundService
 {
     public sealed record Candidate(int UserID, DateTime? LastSyncAt, DateTime? LastSyncAttemptAt, int ConsecutiveFailures);
 
@@ -60,6 +61,7 @@ public sealed class SyncScheduler(SyncQueue queue, MailStore store, IOptionsMoni
                         if (queue.TryEnqueue(request)) queued++;
                     }
                     if (queued > 0) log.LogInformation("Safety sync: {Count} mailbox(es) queued", queued);
+                    health.Set(ConnectorHealth.ExchangeSync, ("timerCheckedAt", DateTime.Now), ("timerEnabled", true));
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -68,8 +70,10 @@ public sealed class SyncScheduler(SyncQueue queue, MailStore store, IOptionsMoni
                 catch (Exception error)
                 {
                     log.LogWarning("Safety sync check failed ({ErrorType}: {Message})", error.GetType().Name, error.Message);
+                    health.Failed(ConnectorHealth.ExchangeSync, $"Safety sync check failed: {error.GetType().Name}: {error.Message}");
                 }
             }
+            else health.Set(ConnectorHealth.ExchangeSync, ("timerEnabled", false));
             await Delay(TimeSpan.FromSeconds(Math.Clamp(settings.CheckSeconds, 10, 600)), stoppingToken);
         }
     }

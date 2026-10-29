@@ -26,7 +26,10 @@ GO
 --
 -- Result contract: success = exactly ONE row
 --   (Subject, SessionId, Username, DisplayName, ForcePasswordChange, ExpiresAt[UTC])
--- failure = NO rows (the gateway answers 401 with a generic message).
+-- failure = NO rows (the gateway answers 401 with a generic message), except
+-- Login with the RIGHT password for an account that must change it first
+-- (user SP State 4): one row, one column (Refusal = 'PasswordChangeRequired');
+-- the gateway then says so (403). A wrong password never gets this answer.
 -- Logout returns no rows.
 --
 -- Deploy: SSMS against SILA101 (a page-business-style SP, not the router SP).
@@ -75,6 +78,11 @@ BEGIN
             EXEC Pls.[APIPlusUserOperationV1] @Operation = 'Login', @LineData = @LineData, @User = @Username,
                  @State = @UState OUTPUT, @Message = @UMessage OUTPUT;
 
+            IF @UState = 4
+            BEGIN
+                SELECT CAST('PasswordChangeRequired' AS VARCHAR(30)) AS Refusal;
+                RETURN;
+            END
             IF ISNULL(@UState, 1) <> 0 OR (SELECT COUNT(*) FROM #Login) <> 1 RETURN;
             SELECT @IdUser = Username, @DisplayName = ISNULL(NULLIF(Name, ''), Username) FROM #Login;
 

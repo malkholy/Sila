@@ -977,6 +977,28 @@ public sealed class MailStore(IConfiguration configuration)
         await command.ExecuteNonQueryAsync(ct);
     }
 
+    // One component's heartbeat (Monitor/ConnectorHealth.cs): its row for this server, written every 15 s.
+    public async Task BeatAsync(string component, string instance, DateTime startedAt, string metricsJson, string? lastError,
+        DateTime? lastErrorAt, CancellationToken ct)
+    {
+        await using var connection = await OpenAsync(ct);
+        await using var command = Command(connection, """
+            UPDATE [mail].[MailServiceHeartbeat]
+            SET [StartedAt] = @StartedAt, [LastBeatAt] = SYSDATETIME(), [Metrics] = @Metrics, [LastError] = @LastError, [LastErrorAt] = @LastErrorAt
+            WHERE [Component] = @Component AND [Instance] = @Instance;
+            IF @@ROWCOUNT = 0
+                INSERT INTO [mail].[MailServiceHeartbeat] ([Component], [Instance], [StartedAt], [LastBeatAt], [Metrics], [LastError], [LastErrorAt])
+                VALUES (@Component, @Instance, @StartedAt, SYSDATETIME(), @Metrics, @LastError, @LastErrorAt);
+            """);
+        command.Parameters.Add("@Component", SqlDbType.VarChar, 20).Value = component;
+        command.Parameters.Add("@Instance", SqlDbType.VarChar, 100).Value = Cut(instance, 100);
+        command.Parameters.Add("@StartedAt", SqlDbType.DateTime2).Value = startedAt;
+        command.Parameters.Add("@Metrics", SqlDbType.NVarChar, 4000).Value = metricsJson.Length <= 4000 ? metricsJson : "{}";
+        command.Parameters.Add("@LastError", SqlDbType.NVarChar, 1000).Value = (object?)Cut(lastError, 1000) ?? DBNull.Value;
+        command.Parameters.Add("@LastErrorAt", SqlDbType.DateTime2).Value = (object?)lastErrorAt ?? DBNull.Value;
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
     // The Mail Monitor's figures (Shared/MonitorQueries.cs, also used by the Sila Mail API inside).
     public async Task<object> GetOverviewAsync(CancellationToken ct)
     {

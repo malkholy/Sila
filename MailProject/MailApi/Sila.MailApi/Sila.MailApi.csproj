@@ -23,5 +23,8 @@
     <Content Remove="App_Data/**" />
     <None Remove="App_Data/**" />
     <Content Include="../DEPLOY.md" Link="DEPLOY.md" CopyToPublishDirectory="PreserveNewest" CopyToOutputDirectory="Never" />
+    <!-- DEPLOY.md step 2: each copy's database scripts travel with the zip -->
+    <Content Include="../../Database/Internal/*.sql" LinkBase="SQL/Internal" CopyToPublishDirectory="PreserveNewest" CopyToOutputDirectory="Never" />
+    <Content Include="../../Database/External/*.sql" LinkBase="SQL/External" CopyToPublishDirectory="PreserveNewest" CopyToOutputDirectory="Never" />
   </ItemGroup>
 </Project>

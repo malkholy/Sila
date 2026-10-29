@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Microsoft.Extensions.Options;
+using Sila.MailConnector.Monitor;
 
 namespace Sila.MailConnector.Sync;
 
@@ -54,6 +55,9 @@ public sealed class SyncQueue
         lock (gate) busy.Remove(userId);
     }
 
+    // How many mailboxes wait in a lane (the Mail Monitor's Connector tab).
+    public int Waiting(SyncLane lane) => (lane == SyncLane.Initial ? initial : changes).Reader.Count;
+
     public IAsyncEnumerable<SyncRequest> ReadAllAsync(SyncLane lane, CancellationToken ct) =>
         (lane == SyncLane.Initial ? initial : changes).Reader.ReadAllAsync(ct);
 }
@@ -61,7 +65,7 @@ public sealed class SyncQueue
 // The Exchange Sync worker (MailPlan 7.3): per lane, as many loops as that
 // lane's parallel setting, each taking the next queued mailbox when it is free.
 public sealed class SyncWorker(SyncQueue queue, IServiceScopeFactory scopes, IOptions<AutoSyncOptions> options,
-    ILogger<SyncWorker> log) : BackgroundService
+    ConnectorHealth health, ILogger<SyncWorker> log) : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -75,11 +79,16 @@ public sealed class SyncWorker(SyncQueue queue, IServiceScopeFactory scopes, IOp
     {
         await foreach (var request in queue.ReadAllAsync(lane, stoppingToken))
         {
+            health.SyncStarted();
+            var succeeded = false;
             try
             {
                 using var scope = scopes.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<MailboxSync>()
+                var outcome = await scope.ServiceProvider.GetRequiredService<MailboxSync>()
                     .RunAsync(request.UserID, request.Folder, request.Reason, stoppingToken);
+                // A mailbox's own failure (sign-in, a folder ...) is on the Errors tab; the worker itself is fine.
+                succeeded = outcome.Succeeded;
+                health.Ok(ConnectorHealth.ExchangeSync, ("lastMailbox", request.UserID), ("lastLane", request.Lane.ToString()));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -89,9 +98,11 @@ public sealed class SyncWorker(SyncQueue queue, IServiceScopeFactory scopes, IOp
             {
                 // A database or unexpected error must not stop the worker; the next request runs.
                 log.LogError(error, "Sync of user {UserID} stopped", request.UserID);
+                health.Failed(ConnectorHealth.ExchangeSync, $"Sync of user {request.UserID} stopped: {error.GetType().Name}: {error.Message}");
             }
             finally
             {
+                health.SyncEnded(succeeded);
                 queue.Complete(request.UserID);
             }
         }
