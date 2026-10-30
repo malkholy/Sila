@@ -13,11 +13,11 @@ import silaLogo from './Assets/sila_logo.png';
 // is restored on reload; the live socket runs while signed in. UpdateGate
 // covers every screen once a newer build is published.
 //
-// Until the launch only these accounts get past sign-in; everyone else is signed
-// out again and told when the site opens. A screen, not security: the APIs still
-// check each call.
-const OPEN_TO = ['mhd'];
-const isOpenTo = (u) => OPEN_TO.includes(String(u?.username || '').toLowerCase());
+// Launch gate: when OPEN_TO lists accounts, only they get past sign-in and
+// everyone else is signed out again and told when the site opens. null = open to
+// everyone (launched). A screen, not security: the APIs still check each call.
+const OPEN_TO = null;
+const isOpenTo = (u) => !OPEN_TO || OPEN_TO.includes(String(u?.username || '').toLowerCase());
 
 export default function SilaApp() {
   const [signedIn, setSignedIn] = useState(false);

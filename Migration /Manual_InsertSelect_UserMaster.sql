@@ -19,6 +19,9 @@
 --   - EmailAddress is Sila-only (Quick has none): kept across the reload by
 --     UserID.
 --   - DepartmentID / JobID = 0 (Sila-only, no source on Quick).
+--   - ChangePasswordDate copied: NULL means "must change the password first",
+--     so leaving it out locked out every user (2026-10-29: the sign-in
+--     answered 500 for all 445 active users after a reload).
 --   - Quick-only ID (surrogate) dropped.
 --
 -- dbo.TrgUserMasterBroadcastGroups is off for the copy; broadcast group
@@ -68,13 +71,14 @@ BEGIN TRY
         UserID, Username, FullName, Hash, MobileNumber, LocalNumber,
         GroupID, IsAdmin, IsNotActive, CreatedBy, CreatedDate,
         LastMintBy, LastMintDate, AttachmentID, ForceLogout, IsDeveloper,
-        DepartmentID, JobID, EmployeeID, EmailAddress
+        DepartmentID, JobID, EmployeeID, EmailAddress, ChangePasswordDate
     )
     SELECT
         q.UserID, q.Username, q.FullName, q.Hash, q.MobileNumber, q.LocalNumber,
         ISNULL(s.GroupID, 0) AS GroupID, q.IsAdmin, q.IsNotActive, q.CreatedBy, q.CreatedDate,
         q.LastMintBy, q.LastMintDate, q.AttachmentID, q.ForceLogout, q.IsDeveloper,
-        0 AS DepartmentID, 0 AS JobID, TRY_CAST(q.EmployeeID AS INT) AS EmployeeID, k.EmailAddress
+        0 AS DepartmentID, 0 AS JobID, TRY_CAST(q.EmployeeID AS INT) AS EmployeeID, k.EmailAddress,
+        q.ChangePasswordDate
     FROM quick.QUK.UserMaster q
     LEFT JOIN quick.QUK.UserGroupMaster g ON g.UserGroupID = q.GroupID
     OUTER APPLY (SELECT TOP (1) y.GroupID FROM dbo.UserGroupMaster y      -- lowest GroupID if Sila has twins
