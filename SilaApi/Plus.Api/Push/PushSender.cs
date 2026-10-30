@@ -72,25 +72,41 @@ public sealed class PushSender(IPushStore store, IPushTransport transport, IOpti
         if (items.Count == 0) return 0;
         var sent = new System.Collections.Concurrent.ConcurrentBag<(string, int)>();
         var gone = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var log = new System.Collections.Concurrent.ConcurrentBag<PushLogEntry>();
+        PushLogEntry Entry(PushItem item, int delivered, string result) =>
+            new(item.Src, item.Id, item.UserId, item.ChatType, item.Title, item.Body, item.Tokens.Count, delivered, result);
         var counts = new int[3];
         await System.Threading.Tasks.Parallel.ForEachAsync(items,
             new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(o.Parallel, 1, 32), CancellationToken = cancellationToken },
             async (item, ct) =>
             {
-                if (item.Muted || item.Tokens.Count == 0) { sent.Add((item.Src, item.Id)); return; }
-                var any = false;
+                if (item.Muted || item.Tokens.Count == 0)
+                {
+                    sent.Add((item.Src, item.Id));
+                    log.Add(Entry(item, 0, item.Muted ? "Muted" : "NoDevice"));
+                    return;
+                }
+                var delivered = 0;
                 foreach (var token in item.Tokens)
                 {
                     var result = await transport.SendAsync(Message(item, token), ct);
                     Interlocked.Increment(ref counts[(int)result]);
-                    if (result == PushResult.Sent) any = true;
+                    if (result == PushResult.Sent) delivered++;
                     else if (result == PushResult.TokenGone) gone.Add(token);
                 }
                 // delivered somewhere, or no device left: done; otherwise retried
-                if (any || item.Tokens.All(t => gone.Contains(t))) sent.Add((item.Src, item.Id));
+                var deviceless = delivered == 0 && item.Tokens.All(t => gone.Contains(t));
+                if (delivered > 0 || deviceless) sent.Add((item.Src, item.Id));
+                log.Add(Entry(item, delivered, delivered > 0 ? "Sent" : deviceless ? "TokenGone" : "Failed"));
             });
         await store.MarkSentAsync(sent.ToArray(), cancellationToken);
         await store.RemoveTokensAsync(gone.Distinct().ToArray(), cancellationToken);
+        // the log is for the user form only: a failure to write it never stops the pushes
+        try { await store.LogAsync(log.ToArray(), cancellationToken); }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            logger.LogWarning("Push log not written {ErrorType}", error.GetType().Name);
+        }
         logger.LogInformation("Push run {Claimed} claimed {Sent} sent {Gone} tokens gone {Failed} failed",
             items.Count, counts[(int)PushResult.Sent], counts[(int)PushResult.TokenGone], counts[(int)PushResult.Failed]);
         return items.Count;

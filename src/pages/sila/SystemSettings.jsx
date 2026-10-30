@@ -7,13 +7,14 @@ import {
   loadChannelCategories, saveChannel, addChannelMembers, setChannelMember, removeChannelMember,
   loadSettingsUserGroup, saveUserGroup, deleteUserGroup, moveUsersToGroup, saveChannelSla,
   loadSettingsChatGroups, loadSettingsChatGroup, saveChatGroup, setChatGroupAdmin,
-  saveUser, resetUserPassword, resetLoginAttempts, setUserActive, loadUserLogins, loadLogins,
+  saveUser, resetUserPassword, resetLoginAttempts, setUserActive, loadUserLogins, loadLogins, loadUserPush,
 } from '../../shared/settings.js';
 import { fmtWork } from '../../shared/ticketSla.js';
 import AddMembersDialog from './AddMembersDialog.jsx';
 import ClearSearch from './ClearSearch.jsx';
 import { th, td, fullDate, Pill, Grid, Chips, muted, DrawerHeading, formBtn, formField } from './SettingsUi.jsx';
 import MailMonitor from './MailMonitor.jsx';
+import { useLive } from '../../shared/live.js';
 
 // System Settings (user 'mhd' only -- the SP checks it): master lists -- User
 // Master, User Group Master (SILA101 dbo.UserGroupMaster), Channel Master.
@@ -907,6 +908,91 @@ function LoginHistory({ userId, version }) {
   );
 }
 
+// SilaPushLog.Src -> what the message was
+const PUSH_SRC = { O: 'Chat', G: 'Group', C: 'Ticket', M: 'Mail', K: 'Task', N: 'Notice' };
+const PUSH_RESULT = {
+  Sent: ['green', 'Sent'], Failed: ['red', 'Failed'], TokenGone: ['amber', 'Phone gone'],
+  NoDevice: ['muted', 'No phone'], Muted: ['muted', 'Muted'],
+};
+
+// A person's phones (Firebase tokens, newest first; pushes go to the newest 5)
+// and the latest 20 messages the push sender handled for them. Loaded when the
+// form opens; Refresh reloads.
+function PushHistory({ userId }) {
+  const [state, setState] = useState({ status: 'loading', data: null, error: '' });
+  const [version, setVersion] = useState(0);
+  const [copied, setCopied] = useState('');
+  useEffect(() => {
+    let live = true;
+    loadUserPush(userId).then(data => live && setState({ status: 'ready', data, error: '' }))
+      .catch(err => live && setState({ status: 'error', data: null, error: err.message || 'Could not load the notifications.' }));
+    return () => { live = false; };
+  }, [userId, version]);
+  const copy = (token) => {
+    navigator.clipboard?.writeText(token).then(() => { setCopied(token); setTimeout(() => setCopied(''), 1500); }).catch(() => { /* no clipboard */ });
+  };
+  if (state.status === 'loading') return <span style={muted}>Loading…</span>;
+  if (state.status === 'error') return <span role="alert" style={{ fontSize: 12, color: 'var(--red)' }}>{state.error}</span>;
+  const { tokens, pushes } = state.data;
+  const when = (d) => (d ? `${fullDate(d)} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '-');
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {!tokens.length ? (
+        <span style={{ fontSize: 12, color: 'var(--red)' }}>No phone registered: this person gets no notifications until they sign in on the Sila app again.</span>
+      ) : (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead><tr><th style={th}>Firebase token</th><th style={th}>Registered</th><th style={th}>Last used</th><th style={th} /></tr></thead>
+            <tbody>
+              {tokens.map((t, i) => (
+                <tr key={t.token}>
+                  <td style={{ ...td, fontFamily: 'var(--mono)', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    color: i < 5 ? 'var(--text)' : 'var(--muted)' }} title={t.token}>{t.token}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{when(t.created)}</td>
+                  <td style={{ ...td, whiteSpace: 'nowrap' }}>{when(t.lastUsed)}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>
+                    <button type="button" onClick={() => copy(t.token)} style={{ ...formBtn(false), height: 26, fontSize: 11.5 }}>
+                      {copied === t.token ? 'Copied' : 'Copy'}</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {!pushes.length ? <span style={muted}>No notifications recorded yet.</span> : (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead><tr><th style={th}>When</th><th style={th}>Message</th><th style={th}>Phones</th><th style={th}>Result</th></tr></thead>
+            <tbody>
+              {pushes.map((p, i) => {
+                const [tone, label] = PUSH_RESULT[p.result] || ['muted', p.result];
+                return (
+                  <tr key={i}>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }} title={p.at?.toLocaleString()}>{when(p.at)}</td>
+                    <td style={{ ...td, maxWidth: 260 }}>
+                      <div style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{PUSH_SRC[p.src] || p.src} · </span><span dir="auto">{p.title}</span>
+                      </div>
+                      <div dir="auto" style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.body}</div>
+                    </td>
+                    <td style={{ ...td, whiteSpace: 'nowrap', fontFamily: 'var(--mono)' }}>{p.devices ? `${p.delivered} / ${p.devices}` : '-'}</td>
+                    <td style={td}><Pill tone={tone}>{label}</Pill></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="button" onClick={() => { setState(st => ({ ...st, status: 'loading' })); setVersion(v => v + 1); }}
+          style={{ ...formBtn(false), height: 28, fontSize: 12 }}>Refresh</button>
+      </span>
+    </div>
+  );
+}
+
 // Everyone's sign-ins: period (today / 7 / 30 days), result and a search;
 // a row with a known user opens that user's form (onOpenUser(userId)).
 function LoginLog({ onClose, onOpenUser }) {
@@ -1124,6 +1210,9 @@ function UserForm({ user, groups, onClose, onSaved, onChanged }) {
             <span style={{ ...muted, fontWeight: 700, marginTop: 4 }}>Sign-in history</span>
             <LoginHistory userId={user.id} version={historyVersion} />
 
+            <span style={{ ...muted, fontWeight: 700, marginTop: 4 }}>Phones and notifications</span>
+            <PushHistory userId={user.id} />
+
             <span style={{ ...muted, fontWeight: 700, marginTop: 4 }}>Status</span>
             {confirmStatus ? (
               <div role="alertdialog" aria-label="Confirm" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: 10, borderRadius: 10,
@@ -1164,6 +1253,8 @@ export default function SystemSettings() {
   const [state, setState] = useState({ status: 'loading', error: '' });
   const [q, setQ] = useState('');
   const [userFilter, setUserFilter] = useState('active');
+  const { online } = useLive();   // usernames (lower case) signed in to the web app right now
+  const isOnline = (u) => online.has(String(u.username || '').toLowerCase());
   const [channelFilter, setChannelFilter] = useState('active');
   const [channelId, setChannelId] = useState(null);   // the channel details drawer
   const [newChannel, setNewChannel] = useState(false);
@@ -1205,7 +1296,8 @@ export default function SystemSettings() {
   }, []);
 
   const needle = q.trim().toLowerCase();
-  const users = (data.users || []).filter(u => (userFilter === 'all' || (userFilter === 'failed' ? u.failed > 0 : (userFilter === 'active') === u.active))
+  const users = (data.users || []).filter(u => (userFilter === 'all' || (userFilter === 'online' ? isOnline(u)
+      : userFilter === 'failed' ? u.failed > 0 : (userFilter === 'active') === u.active))
     && has(needle, u.name, u.username, u.job, u.department, u.quickGroup, u.silaGroup, u.mobile, u.local, u.id));
   const groups = (data.groups?.groups || []).filter(g => has(needle, g.name, g.id, g.createdBy));
   const channels = (data.channels || []).filter(c => (channelFilter === 'all' || (channelFilter === 'active') === c.active)
@@ -1218,7 +1310,7 @@ export default function SystemSettings() {
   const userCols = [
     { key: 'name', label: 'User', sort: u => u.name.toLowerCase(), render: u => (
       <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 200 }}>
-        <Avatar name={u.name} size={32} photoUrl={u.photoUrl} userId={u.id} />
+        <Avatar name={u.name} size={32} photoUrl={u.photoUrl} userId={u.id} online={isOnline(u)} />
         <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <span style={{ fontWeight: 700, color: 'var(--text)' }}><span dir="auto">{u.name}</span></span>
           <span style={muted}>@{u.username} · #{u.id}</span>
@@ -1386,7 +1478,7 @@ export default function SystemSettings() {
               style={{ flex: 1, minWidth: 0, border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', fontFamily: 'var(--font)' }} />
             <ClearSearch value={q} onClear={() => setQ('')} size={24} style={{ marginRight: -6 }} />
           </div>
-          {tab === 'users' && <Chips value={userFilter} onPick={setUserFilter} items={[['active', 'Active'], ['inactive', 'Inactive'], ['failed', 'Failed sign-ins'], ['all', 'All']]} />}
+          {tab === 'users' && <Chips value={userFilter} onPick={setUserFilter} items={[['active', 'Active'], ['online', `Online (${(data.users || []).filter(isOnline).length})`], ['inactive', 'Inactive'], ['failed', 'Failed sign-ins'], ['all', 'All']]} />}
           {tab === 'users' && (
             <button onClick={() => setEditUser('new')} style={{ ...formBtn(true), height: 38, display: 'flex', alignItems: 'center', gap: 6 }}>
               <UserPlus size={15} strokeWidth={2.4} /> New user

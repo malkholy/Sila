@@ -1118,7 +1118,7 @@ BEGIN
                           N'Add channel members', N'Set channel member', N'Remove channel member',
                           N'Settings user group', N'Save user group', N'Delete user group', N'Set users group',
                           N'Save channel sla', N'Settings chat groups', N'Settings chat group', N'Save chat group',
-                          N'Set chat group admin', N'Settings user logins', N'Settings logins')
+                          N'Set chat group admin', N'Settings user logins', N'Settings logins', N'Settings user push')
         BEGIN
             IF LOWER(@User) <> N'mhd'
             BEGIN SET @State = 403; SET @Message = N'System settings are not available for this user.'; RETURN; END
@@ -1175,6 +1175,29 @@ BEGIN
                 WHERE h.Username = @SLUser
                 ORDER BY h.CreatedDate DESC;
                 SELECT r.ResetAt, r.ResetBy FROM dbo.SilaLoginAttemptReset r WHERE r.UserID = @SLId;
+                RETURN;
+            END
+
+            -- a person's phones (their Firebase device tokens, newest first -- the
+            -- push sender sends to the newest 5) and the latest 20 messages the
+            -- sender handled for them (dbo.SilaPushLog: sent, failed, no device ...).
+            IF @Operation = N'Settings user push'
+            BEGIN
+                DECLARE @SPId INT = TRY_CAST(JSON_VALUE(@LineData, '$.UserID') AS INT);
+                IF NOT EXISTS (SELECT 1 FROM dbo.UserMaster WHERE UserID = @SPId)
+                BEGIN SET @State = 404; SET @Message = N'User not found.'; RETURN; END
+                SELECT f.FireBaseToken, MIN(f.CreatedDate) AS CreatedDate, MAX(f.LastUsedDate) AS LastUsedDate
+                FROM dbo.UserFireBaseHistory f
+                WHERE f.UserID = @SPId AND LEN(f.FireBaseToken) > 20
+                GROUP BY f.FireBaseToken
+                ORDER BY MAX(ISNULL(f.LastUsedDate, f.CreatedDate)) DESC;
+                IF OBJECT_ID(N'dbo.SilaPushLog', N'U') IS NOT NULL
+                    SELECT TOP (20) l.LoggedAt, l.Src, l.RefID, l.ChatType, l.Title, l.Body, l.Devices, l.Delivered, l.Result
+                    FROM dbo.SilaPushLog l
+                    WHERE l.UserID = @SPId
+                    ORDER BY l.LogID DESC;
+                ELSE
+                    SELECT CAST(NULL AS DATETIME) AS LoggedAt WHERE 1 = 0;
                 RETURN;
             END
 
@@ -1804,6 +1827,7 @@ USING (VALUES
     (N'dbo.APISilaWebOperation', N'Settings user groups', N'System Settings (mhd only, checked in the SP): dbo.UserGroupMaster, read-only'),
     (N'dbo.APISilaWebOperation', N'Settings logins',      N'System Settings (mhd only, checked in the SP): everyone''s sign-ins of the last 1 / 7 / 30 days, no hash'),
     (N'dbo.APISilaWebOperation', N'Settings user logins', N'System Settings (mhd only, checked in the SP): one user''s latest 100 sign-ins, no hash'),
+    (N'dbo.APISilaWebOperation', N'Settings user push',   N'System Settings (mhd only, checked in the SP): one user''s Firebase tokens and latest 20 pushes (SilaPushLog)'),
     (N'dbo.APISilaWebOperation', N'Settings channels',    N'System Settings (mhd only, checked in the SP): channel master, read-only'),
     (N'dbo.APISilaWebOperation', N'Settings channel',     N'System Settings (mhd only, checked in the SP): one channel''s details, members, tickets'),
     (N'dbo.APISilaWebOperation', N'Save channel purpose', N'System Settings (mhd only, checked in the SP): what a channel handles (dbo.SilaChannelPurpose)'),

@@ -12,12 +12,19 @@ namespace Plus.Api.Push;
 public sealed record PushItem(string Src, int Id, int UserId, int ChatType, string Title, string Body,
     int SessionId, int GroupId, int ChannelId, int TicketId, int MailId, int TaskId, bool Muted, IReadOnlyList<string> Tokens);
 
+// What one claimed message came to (dbo.SilaPushLog, shown in the user form):
+// Result Sent / Failed (retried) / TokenGone / NoDevice / Muted; Devices = tokens
+// tried, Delivered = how many Firebase accepted.
+public sealed record PushLogEntry(string Src, int Id, int UserId, int ChatType, string Title, string Body,
+    int Devices, int Delivered, string Result);
+
 public interface IPushStore
 {
     // Claims up to top unsent messages (counts an attempt; see dbo.SilaPushOperation).
     Task<IReadOnlyList<PushItem>> ClaimAsync(int top, int maxAgeMinutes, int holdSeconds, CancellationToken cancellationToken);
     Task MarkSentAsync(IReadOnlyCollection<(string Src, int Id)> sent, CancellationToken cancellationToken);
     Task RemoveTokensAsync(IReadOnlyCollection<string> tokens, CancellationToken cancellationToken);
+    Task LogAsync(IReadOnlyCollection<PushLogEntry> entries, CancellationToken cancellationToken);
 }
 
 // dbo.SilaPushOperation (SQLScript/SilaPushOperation.sql) on Push:Database,
@@ -78,5 +85,18 @@ public sealed class SqlPushStore(IConfiguration config, IOptionsMonitor<GatewayO
         if (tokens.Count == 0) return;
         await using var connection = await Open(cancellationToken);
         await using var reader = await Run(connection, "Remove tokens", new { Tokens = tokens }, cancellationToken);
+    }
+
+    public async Task LogAsync(IReadOnlyCollection<PushLogEntry> entries, CancellationToken cancellationToken)
+    {
+        if (entries.Count == 0) return;
+        await using var connection = await Open(cancellationToken);
+        await using var reader = await Run(connection, "Log", new
+        {
+            Items = entries.Select(e => new
+            {
+                e.Src, ID = e.Id, UserID = e.UserId, e.ChatType, e.Title, e.Body, e.Devices, e.Delivered, e.Result,
+            }),
+        }, cancellationToken);
     }
 }

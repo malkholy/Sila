@@ -25,6 +25,10 @@ GO
 --   Mark         { Sent: [ { Src, ID } ] }  IsSent = 1 for the delivered ones;
 --                failed ones keep their attempt and are retried.
 --   Remove tokens {  Tokens: [ "..." ] }  tokens Firebase reports as gone.
+--   Log          { Items: [ { Src, ID, UserID, ChatType, Title, Body, Devices,
+--                Delivered, Result } ] }  what each claimed message came to,
+--                into dbo.SilaPushLog (SilaPushLog.sql); rows older than 30
+--                days are removed here.
 --
 -- Src: O one-to-one, G group, C ticket, M mail, K task, N general notification.
 -- ChatType (the app's): 1 one-to-one, 2 group, 3 ticket, 4 mail, 5 task, 6 general.
@@ -149,6 +153,23 @@ BEGIN
         DELETE f FROM dbo.UserFireBaseHistory f
         WHERE f.FireBaseToken IN (SELECT [value] FROM OPENJSON(@LineData, '$.Tokens') WHERE LEN([value]) > 20);
         SELECT @@ROWCOUNT AS Removed;
+        RETURN;
+    END
+
+    IF @Operation = N'Log'
+    BEGIN
+        INSERT INTO dbo.SilaPushLog (UserID, Src, RefID, ChatType, Title, Body, Devices, Delivered, Result)
+        SELECT x.UserID, LEFT(x.Src, 1), x.ID, ISNULL(x.ChatType, 0), LEFT(x.Title, 200), LEFT(x.Body, 300),
+               ISNULL(x.Devices, 0), ISNULL(x.Delivered, 0), x.Result
+        FROM OPENJSON(@LineData, '$.Items') WITH (
+            Src NVARCHAR(5) '$.Src', ID INT '$.ID', UserID INT '$.UserID', ChatType INT '$.ChatType',
+            Title NVARCHAR(400) '$.Title', Body NVARCHAR(1000) '$.Body', Devices INT '$.Devices',
+            Delivered INT '$.Delivered', Result VARCHAR(10) '$.Result') x
+        WHERE x.UserID IS NOT NULL AND x.ID IS NOT NULL
+          AND x.Result IN ('Sent', 'Failed', 'TokenGone', 'NoDevice', 'Muted');
+        DECLARE @Logged INT = @@ROWCOUNT;
+        DELETE TOP (2000) FROM dbo.SilaPushLog WHERE LoggedAt < DATEADD(DAY, -30, GETDATE());
+        SELECT @Logged AS Logged;
         RETURN;
     END
 

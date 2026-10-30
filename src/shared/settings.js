@@ -49,6 +49,19 @@ export async function loadUserLogins(userId) {
     reset: r ? { at: date(r.ResetAt), by: r.ResetBy || '' } : null,
   };
 }
+// A person's phones (Firebase device tokens, newest first) and the latest 20
+// messages the push sender handled for them (Result: Sent / Failed / TokenGone /
+// NoDevice / Muted).
+export async function loadUserPush(userId) {
+  const res = await apiExec(PROC, 'Settings user push', { UserID: userId });
+  return {
+    tokens: (res?.data?.List0 || []).map(x => ({ token: x.FireBaseToken || '', created: date(x.CreatedDate), lastUsed: date(x.LastUsedDate) })),
+    pushes: (res?.data?.List1 || []).map(x => ({
+      at: date(x.LoggedAt), src: x.Src || '', ref: x.RefID, title: x.Title || '', body: x.Body || '',
+      devices: Number(x.Devices) || 0, delivered: Number(x.Delivered) || 0, result: x.Result || '',
+    })),
+  };
+}
 // Everyone's sign-ins of the last `days` (1, 7 or 30), newest first, max 5000.
 export async function loadLogins(days) {
   const res = await apiExec(PROC, 'Settings logins', { Days: days });

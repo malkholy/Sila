@@ -14,12 +14,15 @@ public sealed class FakePushStore(params PushItem[] items) : IPushStore
 {
     public List<(string Src, int Id)> Marked { get; } = [];
     public List<string> Removed { get; } = [];
+    public List<PushLogEntry> Logged { get; } = [];
     public Task<IReadOnlyList<PushItem>> ClaimAsync(int top, int maxAgeMinutes, int holdSeconds, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<PushItem>>(items);
     public Task MarkSentAsync(IReadOnlyCollection<(string Src, int Id)> sent, CancellationToken cancellationToken)
     { Marked.AddRange(sent); return Task.CompletedTask; }
     public Task RemoveTokensAsync(IReadOnlyCollection<string> tokens, CancellationToken cancellationToken)
     { Removed.AddRange(tokens); return Task.CompletedTask; }
+    public Task LogAsync(IReadOnlyCollection<PushLogEntry> entries, CancellationToken cancellationToken)
+    { Logged.AddRange(entries); return Task.CompletedTask; }
 }
 
 public sealed class FakeTransport(Func<string, PushResult> result) : IPushTransport
@@ -82,6 +85,8 @@ public sealed class PushTests
         Assert.Equal(2, transport.Sent.Count);
         Assert.Equal([("C", 1), ("C", 2), ("O", 3)], store.Marked.OrderBy(x => x.Id).ToArray());
         Assert.Empty(store.Removed);
+        Assert.Equal(["Sent", "Muted", "NoDevice", "Failed"], store.Logged.OrderBy(x => x.Id).Select(x => x.Result).ToArray());
+        Assert.Equal(1, store.Logged.Single(x => x.Id == 1).Delivered);
     }
 
     [Fact]
@@ -92,6 +97,8 @@ public sealed class PushTests
         await Sender(store, transport).Tick(CancellationToken.None);
         Assert.Equal(["dead", "old"], store.Removed.OrderBy(x => x).ToArray());
         Assert.Equal([1, 2], store.Marked.Select(x => x.Id).OrderBy(x => x).ToArray());
+        Assert.Equal(["Sent", "TokenGone"], store.Logged.OrderBy(x => x.Id).Select(x => x.Result).ToArray());
+        Assert.Equal((2, 1), (store.Logged.Single(x => x.Id == 1).Devices, store.Logged.Single(x => x.Id == 1).Delivered));
     }
 
     [Theory]
