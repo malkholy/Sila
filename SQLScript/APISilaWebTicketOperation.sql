@@ -64,7 +64,9 @@ GO
 --   Ticket media          { TicketID }  files and messages with links (newest 500), for the
 --                            details panel; the same visibility as Ticket messages.
 --   Mark ticket read      { TicketID }
---   New ticket            { ChannelID, Subject, Text, Members: [ { UserID, IsCC } ], TempTicketID? }
+--   New ticket            { ChannelID, Subject, Text, Members: [ { UserID, IsCC } ], TempTicketID?,
+--                            ExcludeAdmins?: [ UserID ] }  the channel's plain admins the
+--                            creator left out (team leaders always join; one manager must stay)
 --   Send ticket chat      { TicketID, Text, LocalChatID, ReplayMsgID?, AdminOnly?: 1, Html? }
 --                            Html (also on New ticket / Edit ticket chat): formatted text,
 --                            stored in TextStyle; Text stays plain.
@@ -94,6 +96,10 @@ GO
 --   Set ticket flag       { TicketID, Flagged: 1|0, DueDate?: 'yyyy-mm-dd', Note? }  the caller's
 --                            own follow-up flag (dbo.SilaTicketFlag); lists, the header and
 --                            the Home list return MyFlagged / MyFlagDue / MyFlagNote
+--   Remove ended ticket   { TicketID }  an Ended (10) ticket leaves the caller's own Home
+--                            list now instead of at night (dbo.SqlAgentDeleteEndedTicket):
+--                            his SilaHistory row goes, and his phone reloads its list
+--                            (UserSyncMaster.ForceFullSync = 1). Other members keep theirs.
 -- Writes on a message return it (Ticket messages columns + TicketID); writes on
 -- a ticket return the ticket row (Ticket list columns).
 --
@@ -315,16 +321,25 @@ BEGIN
                 LEFT JOIN CHA.ChannelMembers cm ON cm.ChannelID = @NChannel AND cm.UserID = x.UserID
                 WHERE x.UserID <> @UserID
                 GROUP BY x.UserID;
+                -- ExcludeAdmins: channel admins the creator took off this ticket. Only a plain
+                -- admin can be left out; a team leader (admin or not) always joins.
                 INSERT INTO @NMembers (UserID, IsAdmin, IsTeamLeader, IsCreatedBy, IsCC)
                 SELECT cm.UserID, cm.IsAdmin, cm.IsTeamLeader, 0, 0
                 FROM CHA.ChannelMembers cm JOIN dbo.UserMaster u ON u.UserID = cm.UserID AND u.IsNotActive = 0
                 WHERE cm.ChannelID = @NChannel AND (cm.IsAdmin = 1 OR cm.IsTeamLeader = 1) AND cm.UserID <> @UserID
-                  AND NOT EXISTS (SELECT 1 FROM @NMembers n WHERE n.UserID = cm.UserID);
+                  AND NOT EXISTS (SELECT 1 FROM @NMembers n WHERE n.UserID = cm.UserID)
+                  AND NOT (ISNULL(cm.IsTeamLeader, 0) = 0
+                           AND cm.UserID IN (SELECT TRY_CAST([value] AS INT) FROM OPENJSON(@LineData, '$.ExcludeAdmins')
+                                            WHERE TRY_CAST([value] AS INT) IS NOT NULL));
                 INSERT INTO @NMembers (UserID, IsAdmin, IsTeamLeader, IsCreatedBy, IsCC)
                 SELECT @UserID, ISNULL(cm.IsAdmin, 0), ISNULL(cm.IsTeamLeader, 0), 1, 0
                 FROM (SELECT 1 AS one) z LEFT JOIN CHA.ChannelMembers cm ON cm.ChannelID = @NChannel AND cm.UserID = @UserID;
                 IF (SELECT COUNT(*) FROM @NMembers) > 300
                 BEGIN SET @State = 1; SET @Message = N'A ticket can have at most 300 members.'; RETURN; END
+                -- someone has to be able to pick it up: an admin or team leader stays on every ticket
+                IF EXISTS (SELECT 1 FROM CHA.ChannelMembers cm WHERE cm.ChannelID = @NChannel AND (cm.IsAdmin = 1 OR cm.IsTeamLeader = 1))
+                   AND NOT EXISTS (SELECT 1 FROM @NMembers WHERE IsAdmin = 1 OR IsTeamLeader = 1)
+                BEGIN SET @State = 1; SET @Message = N'Keep at least one admin or team leader on the ticket.'; RETURN; END
 
                 BEGIN TRANSACTION;
                 SET @RetTicket = NEXT VALUE FOR dbo.TicketID;
@@ -438,7 +453,7 @@ BEGIN
         IF @Operation IN (N'Ticket messages', N'Ticket members', N'Ticket media', N'Mark ticket read', N'Send ticket chat', N'Send ticket file',
                           N'Change ticket state', N'Forward ticket', N'Answer forward', N'Cancel forward',
                           N'Invite ticket members', N'Remove ticket member', N'Leave ticket', N'Set ticket flag',
-                          N'Assign ticket', N'Take ticket', N'Unassign ticket')
+                          N'Remove ended ticket', N'Assign ticket', N'Take ticket', N'Unassign ticket')
         BEGIN
             SET @TicketID = TRY_CAST(JSON_VALUE(@LineData, '$.TicketID') AS INT);
             SELECT @TState = th.TicketState, @TChannel = th.TicketChannelID, @TCreatedBy = th.CreatedByUser,
@@ -481,6 +496,23 @@ BEGIN
             END
             SELECT @TicketID AS TicketID, CASE WHEN f.TicketID IS NULL THEN 0 ELSE 1 END AS MyFlagged, f.DueDate AS MyFlagDue, f.Note AS MyFlagNote
             FROM (SELECT 1 AS one) z LEFT JOIN dbo.SilaTicketFlag f ON f.TicketID = @TicketID AND f.UserID = @UserID;
+            RETURN;
+        END
+
+        -- -----------------------------------------------------------------
+        -- Remove ended ticket: the caller's own Home row of an Ended ticket (the
+        -- nightly dbo.SqlAgentDeleteEndedTicket does this for everyone). The
+        -- ticket itself is untouched; the phone's MaxSeq delta never drops a
+        -- deleted row, so it is told to reload in full.
+        -- -----------------------------------------------------------------
+        IF @Operation = N'Remove ended ticket'
+        BEGIN
+            IF @TState <> 10
+            BEGIN SET @State = 1; SET @Message = N'Only an ended ticket can be removed from Home.'; RETURN; END
+            DELETE FROM dbo.SilaHistory WHERE TicketID = @TicketID AND RecordType = 'C' AND UserID = @UserID;
+            DECLARE @RmRemoved INT = @@ROWCOUNT;
+            UPDATE dbo.UserSyncMaster SET ForceFullSync = 1 WHERE UserID = @UserID;
+            SELECT @TicketID AS TicketID, @RmRemoved AS Removed;
             RETURN;
         END
 
@@ -1340,6 +1372,7 @@ USING (VALUES
     (N'CHA.APISilaWebTicketOperation', N'Remove ticket member',  N'Managers remove members (not the creator); anyone may leave'),
     (N'CHA.APISilaWebTicketOperation', N'Leave ticket',          N'The caller leaves a ticket; not the last admin / team leader of an open one'),
     (N'CHA.APISilaWebTicketOperation', N'Set ticket flag',       N'The caller''s own follow-up flag on a ticket he is in (due date, note)'),
+    (N'CHA.APISilaWebTicketOperation', N'Remove ended ticket',   N'Home: drop an Ended ticket from the caller''s own list (his SilaHistory row) and resync his phone'),
     (N'CHA.APISilaWebTicketOperation', N'Assign ticket',         N'Managers assign the ticket to someone in it'),
     (N'CHA.APISilaWebTicketOperation', N'Ticket report',         N'Times per channel / assignee for the channels the caller manages (all for mhd)'),
     (N'CHA.APISilaWebTicketOperation', N'Take ticket',           N'A ticket admin / team leader takes an unassigned ticket'),

@@ -6,6 +6,7 @@ import { onLive } from '../../shared/live.js';
 import Avatar from './Avatar.jsx';
 import { noWordSelect } from '../../shared/textSelection.js';
 import { moveRowFocus } from '../../shared/rowNav.js';
+import { useDrawerWidth, drawerWidth, DrawerResizeHandle } from './DrawerResize.jsx';
 import ChatPane from './ChatPane.jsx';
 import ClearSearch from './ClearSearch.jsx';
 import { FlagMark } from './TicketFlag.jsx';
@@ -33,7 +34,7 @@ export const TICKET_STATES = [
 ];
 const STATE = Object.fromEntries(TICKET_STATES.map(s => [s.id, s]));
 const stateOf = (id) => STATE[id] || { id, label: `State ${id}`, tone: ['var(--text2)', 'var(--soft)'] };
-const OPEN_ONLY = [0, 1, 2];
+const OPEN_ONLY = [0, 1, 2, 3, 5];   // every state before Ended / Closed
 const DEFAULT_PICK = [0, 1, 2, 3, 5, 10];
 const CLOSED = 50;
 
@@ -50,7 +51,6 @@ function periodRange(key, now = new Date()) {
 const TITLES = { status: 'Tickets by status', channel: 'Tickets by channel', creator: 'Tickets by creator', assignee: 'Tickets by assignee' };
 // who owns the tickets shown: everyone's, mine, nobody's
 const OWNERS = [['all', 'All'], ['me', 'Mine'], ['none', 'Unassigned']];
-const SORTS = [['last', 'Last update'], ['unread', 'Unread'], ['count', 'Tickets'], ['name', 'Name']];
 
 const store = {
   get(key, fallback) { try { const v = localStorage.getItem(key); return v == null ? fallback : JSON.parse(v); } catch { return fallback; } },
@@ -238,7 +238,9 @@ function SortTh({ label, k, sort, onSort, align = 'left' }) {
 // A click selects a row, Up / Down move the selection (also into the next
 // group), Enter or a double-click opens the ticket, F flags / unflags it.
 // sort / onSort: the column sort shared by every group (else kept here).
-function TicketTable({ rows, show, onOpen, onPerson, onChannel, onToggleFlag, me, sort: sortProp, onSort }) {
+// openId: the ticket open in the drawer now -- while one is, the drawer follows
+// the selected row (Up / Down, or a click on another row) instead of staying put.
+function TicketTable({ rows, show, onOpen, onPerson, onChannel, onToggleFlag, me, sort: sortProp, onSort, openId = null }) {
   const [sel, setSel] = useState(null);
   const [ownSort, setOwnSort] = useState(null);
   const sort = onSort ? sortProp : ownSort;
@@ -252,9 +254,8 @@ function TicketTable({ rows, show, onOpen, onPerson, onChannel, onToggleFlag, me
         <thead>
           <tr style={{ background: 'var(--bg)' }}>
             <SortTh label="Ticket" k="id" {...h} />
-            <SortTh label="Subject" k="subject" {...h} />
+            <SortTh label={show.channel ? 'Channel · Subject' : 'Subject'} k="subject" {...h} />
             <SortTh label="Last message" k="message" {...h} />
-            {show.channel && <SortTh label="Channel" k="channel" {...h} />}
             {show.status && <SortTh label="Status" k="status" {...h} />}
             {show.creator && <SortTh label="Created by" k="creator" {...h} />}
             {show.assignee && <SortTh label="Assigned to" k="assignee" {...h} />}
@@ -272,7 +273,7 @@ function TicketTable({ rows, show, onOpen, onPerson, onChannel, onToggleFlag, me
                 else if ((e.key === 'f' || e.key === 'F') && onToggleFlag && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); onToggleFlag(t); }
                 else moveRowFocus(e);
               }}
-              onFocus={() => setSel(t.id)} onBlur={() => setSel(null)}
+              onFocus={() => { setSel(t.id); if (openId != null && openId !== t.id) onOpen(t); }} onBlur={() => setSel(null)}
               style={{ borderTop: '1px solid var(--border)', outline: 'none', background: bg(t),
                 boxShadow: sel === t.id ? 'inset 3px 0 0 var(--accent)' : 'none' }}
               onMouseEnter={e => { if (sel !== t.id) e.currentTarget.style.background = 'var(--orange-soft)'; }}
@@ -284,6 +285,17 @@ function TicketTable({ rows, show, onOpen, onPerson, onChannel, onToggleFlag, me
                 }}>#{t.id}</button>
               </td>
               <td style={{ ...td, textAlign: 'left', whiteSpace: 'normal', fontWeight: 600, minWidth: 220, color: 'var(--text)' }}>
+                {/* the channel sits on a quiet line above the subject (no column of its own) */}
+                {show.channel && (
+                  <span style={{ display: 'block', fontSize: 11.5, fontWeight: 600, color: 'var(--muted)', marginBottom: 1 }}>
+                    {onChannel ? (
+                      <button onClick={() => onChannel(t.channelId)} style={{
+                        padding: 0, border: 'none', background: 'none', color: 'inherit', font: 'inherit', cursor: 'pointer',
+                        textDecoration: 'underline', textDecorationColor: 'var(--border2)',
+                      }}># <span dir="auto">{t.channel}</span></button>
+                    ) : <># <span dir="auto">{t.channel}</span></>}
+                  </span>
+                )}
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <FlagMark flag={t.flag} /><span dir="auto">{t.subject}</span><SlaBadge sla={t.sla} state={t.state} compact />
                 </span>
@@ -292,16 +304,6 @@ function TicketTable({ rows, show, onOpen, onPerson, onChannel, onToggleFlag, me
                 ...td, maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text2)',
                 textAlign: 'left',
               }}><span dir="auto">{preview(t.lastMessage) || '-'}</span></td>
-              {show.channel && (
-                <td style={{ ...td, textAlign: 'left', color: 'var(--text2)' }}>
-                  {onChannel ? (
-                    <button onClick={() => onChannel(t.channelId)} style={{
-                      padding: 0, border: 'none', background: 'none', color: 'var(--text2)', fontSize: 13, cursor: 'pointer',
-                      textDecoration: 'underline', textDecorationColor: 'var(--border2)', fontFamily: 'var(--font)',
-                    }}># <span dir="auto">{t.channel}</span></button>
-                  ) : <># <span dir="auto">{t.channel}</span></>}
-                </td>
-              )}
               {show.status && <td style={td}><Pill state={t.state}>{t.stateLabel || undefined}</Pill></td>}
               {show.creator && (
                 <td style={td}>
@@ -476,13 +478,16 @@ function TicketDrawer({ ticket, isOnline, onRead, onChange, onClose, onFlagChang
     // ChatPane reads these at open time only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [ticket.id]);
+  const [width, setWidth] = useDrawerWidth('silaTicketDrawerWidth');   // dragged by the user, shared with Home's drawer
+  const ref = useRef(null);
   return (
     <>
       <div aria-hidden="true" onMouseDown={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.25)', zIndex: 1000 }} />
-      <aside role="dialog" aria-label={`Ticket ${ticket.id}`} style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(1240px, 94vw)', zIndex: 1001, background: 'var(--soft)',
+      <aside ref={ref} role="dialog" aria-label={`Ticket ${ticket.id}`} style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: drawerWidth(width, 'min(1240px, 94vw)'), zIndex: 1001, background: 'var(--soft)',
         boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column',
       }}>
+        <DrawerResizeHandle asideRef={ref} onWidth={setWidth} />
         <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
           <ChatPane item={item} isOnline={isOnline} onRead={() => onRead(ticket.id)} onTicketChange={onChange} onClose={onClose}
             onFlagChange={(_, flag) => onFlagChange(ticket.id, flag)} />
@@ -511,7 +516,6 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
   const [period, setPeriod] = useState(() => store.get('silaBoardPeriod', 'all'));
   const pickPeriod = (key) => { setPeriod(key); store.set('silaBoardPeriod', key); };
   const [q, setQ] = useState('');
-  const [sort, setSort] = useState(() => store.get('silaBoardSort', { key: 'last', desc: true }));
   const [colSort, setColSort] = useState(() => store.get('silaTicketColSort', null));   // the ticket tables' column sort
   const [expanded, setExpanded] = useState(() => new Set());
   const [ticket, setTicket] = useState(null);
@@ -520,11 +524,6 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
   const seq = useRef(0);
 
   const pick = (list) => { setPicked(list); store.set('silaBoardStatus', list); };
-  const pickSort = (key) => setSort(s => {
-    const next = s.key === key ? { key, desc: !s.desc } : { key, desc: key !== 'name' };
-    store.set('silaBoardSort', next);
-    return next;
-  });
   const pickColSort = (key) => setColSort(s => {
     const next = nextColSort(s, key);
     store.set('silaTicketColSort', next);
@@ -533,6 +532,7 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
 
   // ---- loading: full loads, then deltas (RowVer watermark) between them
   const wantClosed = picked.includes(CLOSED);
+  const openOnly = picked.length === OPEN_ONLY.length && OPEN_ONLY.every(x => picked.includes(x));
   const wantClosedRef = useRef(wantClosed);
   wantClosedRef.current = wantClosed;
   const deltaBusy = useRef(false);
@@ -686,16 +686,9 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
       mix: [...new Set(g.rows.map(t => t.state))].sort((a, b) => a - b)
         .map(s => ({ state: s, count: g.rows.filter(t => t.state === s).length })),
     }));
-    const val = {
-      last: g => g.last?.getTime() || 0, unread: g => g.unread, count: g => g.count,
-      name: g => (view === 'status' ? g.key : g.label.toLowerCase()),
-    }[sort.key];
-    return list.sort((a, b) => {
-      const x = val(a), y = val(b);
-      const c = x < y ? -1 : x > y ? 1 : 0;
-      return sort.desc ? -c : c;
-    });
-  }, [filtered, view, sort]);
+    // groups: the most recently updated first
+    return list.sort((a, b) => (b.last?.getTime() || 0) - (a.last?.getTime() || 0));
+  }, [filtered, view]);
 
   const keyStr = (g) => `${view}:${g.key}`;
   const isOpen = (g) => expanded.has(keyStr(g));
@@ -749,7 +742,12 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
         <Checklist label="Channel" allText="All channels" unit="channels" picked={channels} onChange={pickChannels}
           onClear={() => pickChannels(null)}
           searchable={channelOptions.length > 8} options={channelOptions} />
-        <button onClick={() => pick(OPEN_ONLY)} title="New, In progress, Forwarded" style={{ ...plainBtn, height: 36, background: 'var(--bg)' }}>Open only</button>
+        <button onClick={() => pick(openOnly ? DEFAULT_PICK : OPEN_ONLY)} aria-pressed={openOnly}
+          title={openOnly ? 'Show ended tickets too' : 'Only open tickets: New, In progress, Forwarded, Approve waiting, Hold'} style={{
+            ...plainBtn, height: 36,
+            border: `1px solid ${openOnly ? 'var(--accent)' : 'var(--border)'}`,
+            background: openOnly ? 'var(--accent-soft)' : 'var(--bg)', color: openOnly ? 'var(--accent-strong)' : 'var(--text)',
+          }}>Open only</button>
         <button onClick={() => setFlaggedOnly(v => !v)} aria-pressed={flaggedOnly}
           title={flaggedOnly ? 'Show all tickets' : 'Only the tickets you flagged (F flags the selected row)'} style={{
             ...plainBtn, height: 36, display: 'flex', alignItems: 'center', gap: 6,
@@ -788,9 +786,6 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
             {groups.length} groups · {filtered.length} tickets · {unreadTotal} unread
           </span>
           <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>Sort by</span>
-          <Segmented label="Sort by" height={34} value={sort.key} onPick={pickSort}
-            items={SORTS.map(([k, t]) => [k, t, null, sort.key === k ? (sort.desc ? ' ↓' : ' ↑') : ''])} />
           {onNewTicket && (
             <button onClick={onNewTicket} style={{
               ...plainBtn, display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'var(--accent)',
@@ -883,7 +878,7 @@ export default function ChannelsBoard({ view, viewSwitch, isOnline, onNewTicket,
               </div>
               {exp && (
                 <div style={{ borderTop: '1px solid var(--border)' }}>
-                  <TicketTable rows={g.rows} show={show} onOpen={setTicket} onPerson={setPersonKey} onChannel={setChannelKey} onToggleFlag={toggleFlag} me={me}
+                  <TicketTable rows={g.rows} show={show} onOpen={setTicket} onPerson={setPersonKey} onChannel={setChannelKey} onToggleFlag={toggleFlag} me={me} openId={ticket?.id ?? null}
                     sort={colSort} onSort={pickColSort} />
                 </div>
               )}

@@ -7,10 +7,10 @@ const API_URL = IS_DEV
 const SP_NAME = 'Pls.APIPlusOperationV1';
 
 const BASE_BODY = {
-  AppVersionWeb: '293',
-  AppVersionAndroid: '293',
-  AppVersionIos: '293',
-  AppVersionDesktop: '293',
+  AppVersionWeb: '304',
+  AppVersionAndroid: '304',
+  AppVersionIos: '304',
+  AppVersionDesktop: '304',
   FireBaseToken: '',
   PlatForm: 'web',
   deviceID: '',

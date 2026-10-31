@@ -11,6 +11,7 @@ body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); colo
   --green: #16a34a; --green-soft: #f0fdf4;
   --red: #dc2626; --red-soft: #fef2f2;
   --amber: #d97706; --amber-soft: #fffbeb;
+  --announce-bg: #fef3c7; --announce-line: #f59e0b;   /* broadcast (announcement) rows on Home */
   --blue: #2563eb; --blue-soft: #eff6ff;
   --radius: 14px; --radius-sm: 10px; --radius-xs: 7px;
   --font: 'Plus Jakarta Sans', sans-serif;
@@ -31,6 +32,7 @@ body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg); colo
   --green-soft: rgba(22,163,74,.12);
   --red-soft: rgba(220,38,38,.12);
   --amber-soft: rgba(217,119,6,.12);
+  --announce-bg: rgba(245,158,11,.16); --announce-line: #d97706;
   --blue-soft: rgba(37,99,235,.12);
   --accent: #ea580c; --accent-strong: #fdba74; --accent-soft: rgba(234,88,12,.14); --accent-line: #9a3412;
   --text2: #a5b4c3;

@@ -6,10 +6,11 @@ import {
 } from 'lucide-react';
 import { useLive, retryLiveNow, onLive } from '../../shared/live.js';
 import { loadLeftSide, mergeLeftSide, formatWhen } from '../../shared/leftSide.js';
+import { useDrawerWidth, drawerWidth, DrawerResizeHandle } from './DrawerResize.jsx';
 import { notifyMessage, useNotifyState, enableNotify, disableNotify } from '../../shared/notify.js';
 import { isSelectingText, noWordSelect } from '../../shared/textSelection.js';
 import { moveRowFocus } from '../../shared/rowNav.js';
-import { loadDirectory, startDirectory, loadChannels } from '../../shared/chat.js';
+import { loadDirectory, startDirectory, loadChannels, removeEndedTicket } from '../../shared/chat.js';
 import Avatar from './Avatar.jsx';
 import ChatPane from './ChatPane.jsx';
 import ChannelsBoard, { Segmented } from './ChannelsBoard.jsx';
@@ -88,19 +89,18 @@ const newTextBtn = {
 const KIND_ICON = { group: Users, ticket: Hash, mail: Mail, task: CheckSquare, other: MessageCircle };
 
 // Square badge for non-person conversations (group / ticket / mail / task);
-// a ticket's badge takes its state colour (tone = [fg, bg]) when it has one
+// a ticket's badge is always in the accent colours (its state shows in the pill)
 // broadcast: an announcement group -- megaphone, accent colours and a "B" tag
-function KindBadge({ kind, size = 46, tone, broadcast = false }) {
+function KindBadge({ kind, size = 46, broadcast = false }) {
   const Icon = broadcast ? Megaphone : KIND_ICON[kind] || MessageCircle;
   const ticket = kind === 'ticket';
-  const toned = ticket && tone && tone[0] !== 'var(--text2)';
   return (
     <span style={{
       flex: `0 0 ${size}px`, width: size, height: size, borderRadius: 13, display: 'flex', alignItems: 'center',
       justifyContent: 'center', position: 'relative',
-      background: toned ? tone[1] : ticket || broadcast ? 'var(--accent-soft)' : 'var(--soft)',
-      border: `1.5px solid ${toned ? tone[0] : ticket || broadcast ? 'var(--accent-line)' : 'var(--border)'}`,
-      color: toned ? tone[0] : ticket || broadcast ? 'var(--accent-strong)' : 'var(--text2)',
+      background: ticket || broadcast ? 'var(--accent-soft)' : 'var(--soft)',
+      border: `1.5px solid ${ticket || broadcast ? 'var(--accent-line)' : 'var(--border)'}`,
+      color: ticket || broadcast ? 'var(--accent-strong)' : 'var(--text2)',
     }}>
       <Icon size={22} strokeWidth={1.8} />
       {/* a group's "G" tag ("B" for broadcast), so groups stand out from people and tickets */}
@@ -134,18 +134,60 @@ function ticketPreview(text, ticketId) {
 // The search text marked inside a row's name / channel / number / preview
 // (terms: the active searches, lower case; empty = plain text).
 
+// The x on an Ended ticket row: the first click asks ("Remove?"), the second
+// removes it from the user's Home (onRemove resolves / throws); the question
+// goes away on its own after 4 s, or with Esc. A sibling of the row button
+// (a button can't hold another), placed over the row's right edge.
+function RemoveEnded({ onRemove }) {
+  const [step, setStep] = useState('idle');   // idle | confirm | busy | error
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (step !== 'confirm' && step !== 'error') return undefined;
+    const t = setTimeout(() => setStep('idle'), step === 'confirm' ? 4000 : 3000);
+    return () => clearTimeout(t);
+  }, [step]);
+  const click = () => {
+    if (step === 'idle') { setStep('confirm'); return; }
+    if (step !== 'confirm') return;
+    setStep('busy');
+    onRemove().catch(err => { setError(err.message || 'Could not remove it.'); setStep('error'); });
+  };
+  const asking = step === 'confirm' || step === 'busy';
+  return (
+    <button type="button" onClick={click} disabled={step === 'busy'}
+      onKeyDown={(e) => { if (e.key === 'Escape' && step === 'confirm') { e.stopPropagation(); setStep('idle'); } }}
+      aria-label={asking ? 'Confirm: remove this ended ticket from Home' : 'Remove this ended ticket from Home'}
+      title={step === 'error' ? error : asking ? 'Click again to remove it from your Home' : 'Remove from Home (the ticket is ended)'}
+      style={{
+        position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', zIndex: 1,
+        height: 26, minWidth: 26, padding: asking || step === 'error' ? '0 10px' : 0, borderRadius: 13, cursor: step === 'busy' ? 'wait' : 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: 'var(--font)', fontSize: 12, fontWeight: 700,
+        border: `1px solid ${asking || step === 'error' ? 'var(--red)' : 'var(--border)'}`,
+        background: asking ? 'var(--red)' : step === 'error' ? 'var(--red-soft)' : 'var(--surface)',
+        color: asking ? '#fff' : step === 'error' ? 'var(--red)' : 'var(--muted)',
+      }}>
+      <X size={14} strokeWidth={2.4} aria-hidden="true" />
+      {step === 'confirm' && 'Remove?'}
+      {step === 'busy' && 'Removing…'}
+      {step === 'error' && 'Failed'}
+    </button>
+  );
+}
+
 // onToggleFlag(item): F on a selected ticket row flags / unflags it.
-function ConversationRow({ item, active, online, onPick, dbl = false, terms, onToggleFlag, meUser }) {
+// onRemove(item): an Ended ticket row gets an x that removes it from Home.
+function ConversationRow({ item, active, online, onPick, dbl = false, terms, onToggleFlag, onRemove, meUser }) {
   const [focused, setFocused] = useState(false);
   const unread = item.unread > 0;
   const ticket = item.kind === 'ticket';
+  const removable = ticket && !!onRemove && Number(item.raw?.TicketState) === 10;
   const ticketCreator = ticket ? String(item.raw?.TicketCreatedBy || item.raw?.CreatedByName || item.raw?.CreatedByUser || '').trim() : '';
   const when = (
     <span style={{ fontSize: 12, color: unread ? 'var(--accent-strong)' : 'var(--muted)', flexShrink: 0, fontWeight: unread ? 700 : 400 }}>
       {formatWhen(item.at)}
     </span>
   );
-  return (
+  const row = (
     <button data-row data-rowid={item.id} onClick={(e) => { e.currentTarget.focus(); if (dbl && e.detail !== 0) return; if (!isSelectingText()) onPick(); }}
       onMouseDown={dbl ? noWordSelect : undefined} onDoubleClick={dbl ? onPick : undefined}
       onKeyDown={(e) => {
@@ -161,13 +203,15 @@ function ConversationRow({ item, active, online, onPick, dbl = false, terms, onT
       }}
       onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
       aria-current={active ? 'true' : undefined} style={{
-      display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: 12, borderRadius: 12, border: 'none',
-      background: active ? 'var(--accent-soft)' : focused ? 'var(--soft)' : 'transparent', textAlign: 'left', cursor: 'pointer',
-      outline: 'none', boxShadow: focused ? 'inset 0 0 0 2px var(--accent)' : 'none',
+      display: 'flex', alignItems: 'center', gap: 12, width: '100%', padding: removable ? '12px 46px 12px 12px' : 12, borderRadius: 12, border: 'none',
+      // an announcement (broadcast group) row is a warm card with an amber edge, unless selected / focused
+      background: active ? 'var(--accent-soft)' : focused ? 'var(--soft)' : item.broadcast ? 'var(--announce-bg)' : 'transparent',
+      textAlign: 'left', cursor: 'pointer', outline: 'none',
+      boxShadow: focused ? 'inset 0 0 0 2px var(--accent)' : item.broadcast && !active ? 'inset 4px 0 0 var(--announce-line)' : 'none',
       color: 'var(--text)', fontFamily: 'var(--font)',
     }}>
       {item.kind === 'chat' ? <Avatar name={item.title} size={46} online={online} photoUrl={item.photoUrl} username={item.username} />
-        : <KindBadge kind={item.kind} tone={item.tone} broadcast={item.broadcast} />}
+        : <KindBadge kind={item.kind} broadcast={item.broadcast} />}
       <span style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: ticket ? 'center' : 'baseline' }}>
           {/* a ticket leads with where it lives (the number quieter in mono), its subject below */}
@@ -226,7 +270,7 @@ function ConversationRow({ item, active, online, onPick, dbl = false, terms, onT
             fontSize: 11.5, color: 'var(--muted)',
           }}>
             <User size={12} aria-hidden="true" style={{ flexShrink: 0 }} />
-            <span style={{ flexShrink: 0 }}>Created by</span>
+            <span style={{ flexShrink: 0 }}>By</span>
             <span dir="auto" style={{
               minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               color: 'var(--text2)', fontWeight: 600,
@@ -252,6 +296,13 @@ function ConversationRow({ item, active, online, onPick, dbl = false, terms, onT
         </span>
       </span>
     </button>
+  );
+  if (!removable) return row;
+  return (
+    <div style={{ position: 'relative' }}>
+      {row}
+      <RemoveEnded onRemove={() => onRemove(item)} />
+    </div>
   );
 }
 
@@ -336,6 +387,10 @@ export default function HomeShell({ user, onSignOut }) {
     try { localStorage.setItem('silaHomeView', v); } catch { /* private mode: not remembered */ }
   };
   const [drawerId, setDrawerId] = useState(null);   // Panels view: the conversation open in the drawer
+  // its width, dragged by the user: tickets and other conversations each remember their own
+  const [ticketDrawerW, setTicketDrawerW] = useDrawerWidth('silaTicketDrawerWidth');
+  const [chatDrawerW, setChatDrawerW] = useDrawerWidth('silaChatDrawerWidth');
+  const drawerRef = useRef(null);
   // Panels view: each panel's rows in the order shown (filled while rendering),
   // so Up / Down with the drawer open load the previous / next conversation of
   // the same panel -- unless the key is meant for a text box or a picker.
@@ -681,6 +736,12 @@ export default function HomeShell({ user, onSignOut }) {
     if (!tid) return;
     setTicketFlag(tid, item.flag ? null : {}).then(flag => onFlagChange(item.id, flag)).catch(() => { /* unchanged */ });
   }, [onFlagChange]);
+  // an Ended ticket's x: gone from this list at once (a delta never drops a deleted row)
+  const removeEnded = useCallback((item) => removeEndedTicket(Number(item.raw?.TicketID)).then(() => {
+    setLeft(s => ({ ...s, items: s.items.filter(i => i.id !== item.id) }));
+    setSelectedId(id => (id === item.id ? null : id));
+    setDrawerId(id => (id === item.id ? null : id));
+  }), []);
 
   const list = (
     <section aria-label={current.title} style={{
@@ -792,7 +853,7 @@ export default function HomeShell({ user, onSignOut }) {
           {withDayLines(visible, item => (
             <ConversationRow key={item.id} item={item} active={item.id === selectedId} terms={[query.trim().toLowerCase()]}
               online={!!item.username && live.online.has(item.username)}
-              onPick={() => setSelectedId(item.id)} onToggleFlag={toggleFlag} meUser={user.username} />
+              onPick={() => setSelectedId(item.id)} onToggleFlag={toggleFlag} onRemove={removeEnded} meUser={user.username} />
           ))}
         </div>
       )}
@@ -1041,7 +1102,7 @@ export default function HomeShell({ user, onSignOut }) {
               ) : (sortKey === 'last' ? withDayLines : (list, render) => list.map(render))(rows, item => (
                 <ConversationRow key={item.id} item={item} active={item.id === drawerId} terms={[panelsQ, ownQ]}
                   online={!!item.username && live.online.has(item.username)}
-                  dbl onPick={() => setDrawerId(item.id)} onToggleFlag={toggleFlag} meUser={user.username} />
+                  dbl onPick={() => setDrawerId(item.id)} onToggleFlag={toggleFlag} onRemove={removeEnded} meUser={user.username} />
               ))}
             </div>
           </section>
@@ -1089,10 +1150,11 @@ export default function HomeShell({ user, onSignOut }) {
         row.focus({ preventScroll: true });
       }}
         style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.25)', zIndex: 1000 }} />
-      <aside role="dialog" aria-label={drawerItem.title} style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, width: drawerItem.kind === 'ticket' ? 'min(1240px, 94vw)' : 'min(980px, 90vw)',
-        zIndex: 1001, background: 'var(--soft)', boxShadow: 'var(--shadow-lg)', display: 'flex',
+      <aside ref={drawerRef} role="dialog" aria-label={drawerItem.title} style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 1001, background: 'var(--soft)', boxShadow: 'var(--shadow-lg)', display: 'flex',
+        width: drawerItem.kind === 'ticket' ? drawerWidth(ticketDrawerW, 'min(1240px, 94vw)') : drawerWidth(chatDrawerW, 'min(980px, 90vw)'),
       }}>
+        <DrawerResizeHandle asideRef={drawerRef} onWidth={drawerItem.kind === 'ticket' ? setTicketDrawerW : setChatDrawerW} />
         <ChatPane key={drawerItem.id} item={drawerItem} onRead={markRead} onActivity={onActivity} isOnline={isOnline}
           onTicketChange={onTicketChange} onLeave={onLeaveGroup} onFlagChange={onFlagChange} onChatStarted={onChatStarted}
           homeItems={left.items} onForwarded={onTicketChange} onClose={() => setDrawerId(null)} />

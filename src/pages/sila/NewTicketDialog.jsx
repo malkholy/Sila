@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Search, Hash, Star, Lock, UserPlus, Check } from 'lucide-react';
+import { X, Search, Hash, Star, Lock, UserPlus, Check, RotateCcw } from 'lucide-react';
 import Avatar from './Avatar.jsx';
 import AddMembersDialog from './AddMembersDialog.jsx';
 import ClearSearch from './ClearSearch.jsx';
 import { createTicket, loadChannelMembers, loadChannels, newLocalId } from '../../shared/chat.js';
+import { currentUser } from '../../shared/auth.js';
 
 // New ticket (the quick + button): pick a channel (favorites first; the last
 // one used is remembered), a subject and the request, optionally more people
 // (CC or not). The channel's admins and team leaders join every ticket -- the
-// SP adds them and takes everyone's role from the channel. On success
+// SP adds them and takes everyone's role from the channel. The creator may
+// leave a plain admin out (x on the chip, undo to bring them back); team
+// leaders always join, and one manager has to stay. On success
 // onCreated(row): the new ticket's row ('Ticket list' columns).
 
 const SUBJECT_MAX = 300;
@@ -31,6 +34,7 @@ export default function NewTicketDialog({ onClose, onCreated }) {
   const [subject, setSubject] = useState('');
   const [text, setText] = useState('');
   const [extra, setExtra] = useState([]);       // [{ ...user, cc }] picked on top of the channel's managers
+  const [left, setLeft] = useState(() => new Set());   // ids of plain admins left off this ticket
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -55,6 +59,7 @@ export default function NewTicketDialog({ onClose, onCreated }) {
     if (!channelId) { setPeople({ status: 'idle', list: [] }); return undefined; }
     let alive = true;
     setPeople({ status: 'loading', list: [] });
+    setLeft(new Set());   // another channel, other admins
     loadChannelMembers(channelId)
       .then(list => { if (alive) setPeople({ status: 'ready', list }); })
       .catch(() => { if (alive) setPeople({ status: 'error', list: [] }); });
@@ -78,6 +83,11 @@ export default function NewTicketDialog({ onClose, onCreated }) {
   }, [channels.list, find]);
   const channel = channels.list.find(c => c.id === channelId);
   const managers = people.list.filter(m => m.admin || m.leader);
+  const me = currentUser()?.username?.toLowerCase() || '';
+  const joining = managers.filter(m => !left.has(m.id));
+  // a plain admin who isn't the creator, while another manager would still join
+  const canLeaveOut = (m) => m.admin && !m.leader && m.username !== me && joining.length > 1;
+  const toggleLeft = (id) => setLeft(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const t = subject.trim(), d = text.trim();
   const canCreate = !!channel && t.length > 0 && t.length <= SUBJECT_MAX && d.length > 0 && d.length <= TEXT_MAX && !busy;
@@ -86,7 +96,7 @@ export default function NewTicketDialog({ onClose, onCreated }) {
     if (!canCreate) return;
     setBusy(true); setError('');
     try {
-      const row = await createTicket({ channelId, subject: t, text: d, members: extra, tempId: tempId.current });
+      const row = await createTicket({ channelId, subject: t, text: d, members: extra, excludeAdmins: [...left], tempId: tempId.current });
       saveLast(channelId);
       onCreated(row);
     } catch (err) { setError(err.message || 'Could not create the ticket.'); setBusy(false); }
@@ -215,21 +225,39 @@ export default function NewTicketDialog({ onClose, onCreated }) {
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
               {!channel ? 'Pick a channel: its admins and team leaders join every ticket.'
                 : people.status === 'loading' ? 'Loading the channel’s admins…'
-                  : managers.length ? `${managers.length} admin${managers.length === 1 ? '' : 's'} / team leader${managers.length === 1 ? '' : 's'} of # ${channel.name} join automatically.`
+                  : managers.length ? `${joining.length} admin${joining.length === 1 ? '' : 's'} / team leader${joining.length === 1 ? '' : 's'} of # ${channel.name} join. Admins can be taken off; team leaders always join.`
                     : `# ${channel.name} has no admin or team leader to pick the ticket up.`}
             </span>
             {managers.length > 0 && (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {managers.map(m => (
-                  <span key={m.id} title={m.jobTitle || m.username} style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 10px 0 3px', borderRadius: 999,
-                    background: 'var(--soft)', fontSize: 12, color: 'var(--text2)',
-                  }}>
-                    <Avatar name={m.name} size={22} photoUrl={m.photoUrl} />
-                    <span dir="auto">{m.name}</span>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent-strong)' }}>{m.admin ? 'Admin' : 'Team leader'}</span>
-                  </span>
-                ))}
+                {managers.map(m => {
+                  const out = left.has(m.id);
+                  const lock = m.leader;   // team leaders always join
+                  const chipBtn = {
+                    width: 20, height: 20, marginRight: -4, borderRadius: 10, border: 'none', background: 'transparent',
+                    color: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: 0,
+                  };
+                  return (
+                    <span key={m.id} title={out ? `${m.name} will not be on this ticket` : m.jobTitle || m.username} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6, height: 28, padding: '0 8px 0 3px', borderRadius: 999,
+                      background: out ? 'transparent' : 'var(--soft)', border: `1px ${out ? 'dashed var(--border2)' : 'solid transparent'}`,
+                      fontSize: 12, color: out ? 'var(--muted)' : 'var(--text2)', opacity: out ? 0.75 : 1,
+                    }}>
+                      <Avatar name={m.name} size={22} photoUrl={m.photoUrl} />
+                      <span dir="auto" style={{ textDecoration: out ? 'line-through' : 'none' }}>{m.name}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: out ? 'var(--muted)' : 'var(--accent-strong)' }}>{m.leader ? 'Team leader' : 'Admin'}</span>
+                      {lock ? (
+                        <Lock size={11} aria-label="Team leaders always join" style={{ color: 'var(--muted)' }} />
+                      ) : out ? (
+                        <button type="button" onClick={() => toggleLeft(m.id)} disabled={busy} aria-label={`Add ${m.name} back`}
+                          title="Add back" style={chipBtn}><RotateCcw size={12} /></button>
+                      ) : canLeaveOut(m) ? (
+                        <button type="button" onClick={() => toggleLeft(m.id)} disabled={busy} aria-label={`Take ${m.name} off this ticket`}
+                          title="Take off this ticket" style={chipBtn}><X size={13} /></button>
+                      ) : null}
+                    </span>
+                  );
+                })}
               </div>
             )}
             {extra.length > 0 && (

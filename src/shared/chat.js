@@ -259,10 +259,12 @@ export async function loadChannelMembers(channelId) {
 // ... and the ticket itself: members = [{ id, cc }] (roles come from the channel,
 // set by the SP). tempId makes a retried request return the same ticket.
 // Resolves to the new ticket's row ('Ticket list' columns).
-export async function createTicket({ channelId, subject, text, members = [], tempId }) {
+// excludeAdmins: user ids of the channel's plain admins left off this ticket
+// (the SP ignores team leaders there: they always join).
+export async function createTicket({ channelId, subject, text, members = [], excludeAdmins = [], tempId }) {
   const res = await apiExec(TICKET_PROC, 'New ticket', {
     ChannelID: channelId, Subject: subject, Text: text, TempTicketID: tempId,
-    Members: members.map(m => ({ UserID: m.id, IsCC: m.cc ? 1 : 0 })),
+    Members: members.map(m => ({ UserID: m.id, IsCC: m.cc ? 1 : 0 })), ExcludeAdmins: excludeAdmins,
   });
   const row = res?.data?.List0?.[0];
   if (!row?.TicketID) throw new Error('The server did not return the new ticket.');
@@ -327,6 +329,11 @@ export async function removeTicketMember(ticketId, userId) {
 }
 export async function leaveTicket(ticketId) {
   await apiExec(TICKET_PROC, 'Leave ticket', { TicketID: ticketId });
+}
+// An Ended ticket leaves the caller's own Home list now (not at night); his
+// phone reloads its list. The ticket and the other members are untouched.
+export async function removeEndedTicket(ticketId) {
+  await apiExec(TICKET_PROC, 'Remove ended ticket', { TicketID: ticketId });
 }
 
 // The group details panel: { members (admins first, with photo / job / badges), creator }.
